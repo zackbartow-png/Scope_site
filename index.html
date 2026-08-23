@@ -37,7 +37,11 @@
           <button class="btn btn-primary btn-full" type="submit" id="authSubmit">Sign in</button>
         </form>
         <button class="text-btn" id="toggleAuthMode" type="button">Create an account</button>
-        <p class="auth-note">This prototype saves accounts and projects in this browser. Production authentication/database can be connected next.</p>
+        <div class="auth-backup-row">
+          <span>Opening a newer prototype build?</span>
+          <button class="text-btn" id="restoreBackupAuthBtn" type="button">Restore Scope Builder Backup</button>
+        </div>
+        <p class="auth-note">Projects are stored in a versioned local workspace. Before moving to a different prototype file/build, download a backup and restore it here. The production hosted version will use permanent server storage.</p>
       </div>
     </div>
   </section>
@@ -63,6 +67,8 @@
             <div class="user-popover-name" id="userDisplayName">User</div>
             <div class="user-role-badge" id="userRoleBadge">Employee</div>
             <button id="adminPopoverBtn" class="popover-btn hidden">Admin Settings</button>
+            <button id="downloadBackupBtn" class="popover-btn">Download Data Backup</button>
+            <button id="restoreBackupBtn" class="popover-btn">Restore Data Backup</button>
             <button id="logoutBtn" class="popover-btn">Sign out</button>
           </div>
         </div>
@@ -318,6 +324,7 @@
       <div class="admin-tabs">
         <button class="admin-tab-btn active" data-admin-tab="disclaimers" type="button">Disclaimer Library</button>
         <button class="admin-tab-btn" data-admin-tab="users" type="button">User Roles</button>
+        <button class="admin-tab-btn" data-admin-tab="backup" type="button">Data Backup</button>
       </div>
       <section id="adminDisclaimersTab" class="admin-tab-panel active">
         <div class="admin-section-head">
@@ -342,10 +349,26 @@
           <div><h3>User Access Levels</h3><p>Admins can manage legal disclaimer wording and user roles. Employees can create projects, select an approved disclaimer, and export proposals.</p></div>
         </div>
         <div id="adminUsersList" class="admin-users-list"></div>
-        <p class="admin-note">Prototype note: users and roles are stored only in this browser. Production will move authentication and permissions to the server/database.</p>
+        <p class="admin-note">Roles are included in the full Admin workspace backup. The production version will move authentication and permissions to the server/database.</p>
+      </section>
+      <section id="adminBackupTab" class="admin-tab-panel">
+        <div class="admin-section-head">
+          <div><h3>Workspace Backup & Migration</h3><p>Use this whenever you are moving to a new prototype build. Admin backups contain all users, projects, company information, pricing selections, and disclaimer versions.</p></div>
+        </div>
+        <div class="backup-card">
+          <div><strong>Full Workspace Backup</strong><span>Creates one portable .ksb file containing the complete Scope Builder workspace.</span></div>
+          <button id="adminDownloadBackupBtn" class="btn btn-primary" type="button">Download Full Backup</button>
+        </div>
+        <div class="backup-card">
+          <div><strong>Restore / Merge Backup</strong><span>Imports projects from an earlier build without deleting newer projects already in this build.</span></div>
+          <button id="adminRestoreBackupBtn" class="btn btn-secondary" type="button">Restore Backup</button>
+        </div>
+        <p class="admin-note"><strong>Important:</strong> local browser storage cannot automatically cross from one downloaded prototype file/sandbox location to another. This backup file is the safe migration path until the app is hosted on its permanent URL with a database.</p>
       </section>
     </div>
   </dialog>
+
+  <input id="backupFileInput" type="file" accept=".ksb,.json,application/json" hidden />
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="app.js"></script>

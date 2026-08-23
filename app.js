@@ -51,41 +51,88 @@ async function hashPassword(password) {
   return [...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,"0")).join("");
 }
 
-function userKey(username) { return `ksb:user:${username.toLowerCase()}`; }
-function projectsKey(username) { return `ksb:projects:${username.toLowerCase()}`; }
-function sessionKey() { return "ksb:session"; }
-function disclaimersKey() { return "ksb:disclaimers"; }
+const STORAGE_KEY = "koehncs.scopeBuilder.data.v1";
+const SESSION_KEY = "koehncs.scopeBuilder.session";
+const BACKUP_VERSION = 1;
 
-function getAllUsers() {
-  const users = [];
+function blankDataStore() {
+  return { schemaVersion: 1, updatedAt: nowIso(), users: {}, projects: {}, disclaimers: DEFAULT_DISCLAIMERS.map(x=>({...x})) };
+}
+function readDataStore() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const data = JSON.parse(raw);
+      data.users = data.users || {};
+      data.projects = data.projects || {};
+      data.disclaimers = Array.isArray(data.disclaimers) && data.disclaimers.length ? data.disclaimers : DEFAULT_DISCLAIMERS.map(x=>({...x}));
+      return data;
+    }
+  } catch {}
+  return migrateLegacyStorage();
+}
+function writeDataStore(data) {
+  data.schemaVersion = 1;
+  data.updatedAt = nowIso();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  return data;
+}
+function migrateLegacyStorage() {
+  const data = blankDataStore();
+  let found = false;
   for (let i=0;i<localStorage.length;i++) {
     const key = localStorage.key(i);
-    if (!key || !key.startsWith("ksb:user:")) continue;
-    try { users.push(JSON.parse(localStorage.getItem(key))); } catch {}
+    if (!key) continue;
+    if (key.startsWith("ksb:user:")) {
+      try {
+        const u = JSON.parse(localStorage.getItem(key));
+        if (u?.username) { data.users[u.username.toLowerCase()] = u; found = true; }
+      } catch {}
+    }
+    if (key.startsWith("ksb:projects:")) {
+      try {
+        const username = key.slice("ksb:projects:".length).toLowerCase();
+        const projects = JSON.parse(localStorage.getItem(key));
+        if (Array.isArray(projects)) { data.projects[username] = projects; found = true; }
+      } catch {}
+    }
   }
-  return users.filter(Boolean).sort((a,b)=>(a.username||"").localeCompare(b.username||""));
+  try {
+    const oldDisclaimers = JSON.parse(localStorage.getItem("ksb:disclaimers") || "null");
+    if (Array.isArray(oldDisclaimers) && oldDisclaimers.length) { data.disclaimers = oldDisclaimers; found = true; }
+  } catch {}
+  const oldSession = localStorage.getItem("ksb:session");
+  if (oldSession && !localStorage.getItem(SESSION_KEY)) localStorage.setItem(SESSION_KEY, oldSession);
+  writeDataStore(data);
+  if (found) setTimeout(()=>toast("Previous Scope Builder data migrated."), 400);
+  return data;
 }
-
+function sessionKey() { return SESSION_KEY; }
+function getUserRecord(username) {
+  if (!username) return null;
+  return readDataStore().users[username.toLowerCase()] || null;
+}
+function saveUserRecord(record) {
+  if (!record?.username) return;
+  const data = readDataStore();
+  data.users[record.username.toLowerCase()] = record;
+  writeDataStore(data);
+}
+function getAllUsers() {
+  return Object.values(readDataStore().users || {}).filter(Boolean).sort((a,b)=>(a.username||"").localeCompare(b.username||""));
+}
 function normalizeUser(record) {
   if (!record) return null;
   if (!record.role) {
     const otherAdmins = getAllUsers().filter(u=>u.username?.toLowerCase() !== record.username?.toLowerCase() && u.role === "admin");
     record.role = otherAdmins.length ? "employee" : "admin";
-    localStorage.setItem(userKey(record.username), JSON.stringify(record));
+    saveUserRecord(record);
   }
   return record;
 }
 function isAdmin() { return state.user?.role === "admin"; }
-
-function getDisclaimers() {
-  try {
-    const raw = localStorage.getItem(disclaimersKey());
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  localStorage.setItem(disclaimersKey(), JSON.stringify(DEFAULT_DISCLAIMERS));
-  return DEFAULT_DISCLAIMERS.map(x=>({...x}));
-}
-function saveDisclaimers(items) { localStorage.setItem(disclaimersKey(), JSON.stringify(items)); }
+function getDisclaimers() { return readDataStore().disclaimers.map(x=>({...x})); }
+function saveDisclaimers(items) { const data=readDataStore(); data.disclaimers=items.map(x=>({...x})); writeDataStore(data); }
 function getDisclaimer(id) { const all=getDisclaimers(); return all.find(d=>d.id===id) || all[0] || null; }
 
 function normalizeProject(p) {
@@ -99,9 +146,16 @@ function normalizeProject(p) {
 }
 function getProjects() {
   if (!state.user) return [];
-  try { return JSON.parse(localStorage.getItem(projectsKey(state.user.username)) || "[]").map(normalizeProject); } catch { return []; }
+  const data = readDataStore();
+  const projects = data.projects[state.user.username.toLowerCase()] || [];
+  return projects.map(normalizeProject);
 }
-function saveProjects(projects) { localStorage.setItem(projectsKey(state.user.username), JSON.stringify(projects)); }
+function saveProjects(projects) {
+  if (!state.user) return;
+  const data = readDataStore();
+  data.projects[state.user.username.toLowerCase()] = projects;
+  writeDataStore(data);
+}
 function getCurrentProject() { return getProjects().find(p => p.id === state.currentProjectId) || null; }
 function putProject(project) {
   project = normalizeProject(project);
@@ -133,7 +187,7 @@ function showApp() { $("#authView").classList.add("hidden"); $("#appView").class
 function updateAuthMode() {
   const register = state.authMode === "register";
   $("#authTitle").textContent = register ? "Create account" : "Sign in";
-  $("#authSubtitle").textContent = register ? "Create a local prototype account for this browser." : "Continue working on saved scope packages.";
+  $("#authSubtitle").textContent = register ? "Create an account in this Scope Builder workspace." : "Continue working on saved scope packages.";
   $("#authSubmit").textContent = register ? "Create account" : "Sign in";
   $("#toggleAuthMode").textContent = register ? "Already have an account? Sign in" : "Create an account";
 }
@@ -142,23 +196,23 @@ async function handleAuthSubmit(e) {
   e.preventDefault();
   const username=$("#authUsername").value.trim(), password=$("#authPassword").value;
   if (!username || !password) return;
-  const hash=await hashPassword(password), key=userKey(username);
+  const hash=await hashPassword(password);
   if (state.authMode === "register") {
-    if (localStorage.getItem(key)) return toast("That username already exists in this browser.");
+    if (getUserRecord(username)) return toast("That username already exists in this workspace.");
     const role = getAllUsers().length === 0 ? "admin" : "employee";
     const record={username,passwordHash:hash,role,createdAt:nowIso()};
-    localStorage.setItem(key,JSON.stringify(record)); localStorage.setItem(sessionKey(),username); state.user=record;
+    saveUserRecord(record); localStorage.setItem(sessionKey(),username); state.user=record;
     toast(role === "admin" ? "First account created as Admin." : "Employee account created."); enterDashboard();
   } else {
-    const raw=localStorage.getItem(key); if (!raw) return toast("Username not found in this browser.");
-    const record=normalizeUser(JSON.parse(raw)); if (record.passwordHash !== hash) return toast("Incorrect password.");
-    localStorage.setItem(sessionKey(),username); state.user=record; enterDashboard();
+    const stored=getUserRecord(username); if (!stored) return toast("Username not found in this workspace.");
+    const record=normalizeUser(stored); if (record.passwordHash !== hash) return toast("Incorrect password.");
+    localStorage.setItem(sessionKey(),record.username); state.user=record; enterDashboard();
   }
 }
 function restoreSession() {
   const username=localStorage.getItem(sessionKey()); if (!username) return showAuth();
-  const raw=localStorage.getItem(userKey(username)); if (!raw) return showAuth();
-  state.user=normalizeUser(JSON.parse(raw)); enterDashboard();
+  const record=getUserRecord(username); if (!record) return showAuth();
+  state.user=normalizeUser(record); enterDashboard();
 }
 function refreshRoleUi() {
   const admin=isAdmin();
@@ -170,7 +224,7 @@ function refreshRoleUi() {
   $("#adminPopoverBtn").classList.toggle("hidden",!admin);
 }
 function enterDashboard() {
-  showApp(); state.currentProjectId=null;
+  showApp(); requestPersistentBrowserStorage(); state.currentProjectId=null;
   $("#dashboardView").classList.remove("hidden"); $("#editorView").classList.add("hidden");
   $("#backToDashboard").classList.add("hidden"); $("#exportPdfBtn").classList.add("hidden");
   refreshRoleUi(); renderProjects();
@@ -323,15 +377,146 @@ function saveDisclaimerFromAdmin(){if(!isAdmin())return;const name=$("#disclaime
 function deleteDisclaimerFromAdmin(){if(!isAdmin())return;let items=getDisclaimers();if(items.length<=1)return toast("Keep at least one disclaimer in the library.");const id=$("#disclaimerEditId").value;if(!id)return;const d=items.find(x=>x.id===id);if(!confirm(`Delete disclaimer “${d?.name||'this disclaimer'}”?`))return;items=items.filter(x=>x.id!==id);saveDisclaimers(items);state.adminDisclaimerId=items[0]?.id||null;renderAdminDisclaimers();refreshProjectDisclaimerAfterAdmin();toast("Disclaimer deleted.");}
 function refreshProjectDisclaimerAfterAdmin(){if(!state.currentProjectId)return;const p=getCurrentProject();if(!p)return;const all=getDisclaimers();if(!all.some(d=>d.id===p.disclaimerId))p.disclaimerId=all[0]?.id||"";putProject(p);renderDisclaimerSelect(p);$("#projectDisclaimerSelect").value=p.disclaimerId;updateSelectedDisclaimerPreview();updatePreview();}
 function renderAdminUsers(){const wrap=$("#adminUsersList");wrap.innerHTML="";getAllUsers().forEach(u=>{u=normalizeUser(u);const row=document.createElement('div');row.className='admin-user-row';row.innerHTML=`<div><strong>${esc(u.username)}${u.username.toLowerCase()===state.user.username.toLowerCase()?' · You':''}</strong><span>Created ${esc(fmtTime(u.createdAt))}</span></div><select class="admin-role-select" data-role-user="${esc(u.username)}"><option value="employee" ${u.role==='employee'?'selected':''}>Employee</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select>`;wrap.appendChild(row);});$$('.admin-role-select').forEach(sel=>sel.addEventListener('change',()=>changeUserRole(sel.dataset.roleUser,sel.value,sel)));}
-function changeUserRole(username,role,selectEl){if(!isAdmin())return;const raw=localStorage.getItem(userKey(username));if(!raw)return;const record=normalizeUser(JSON.parse(raw));const admins=getAllUsers().filter(u=>normalizeUser(u).role==='admin');if(record.role==='admin'&&role==='employee'&&admins.length<=1){selectEl.value='admin';return toast("At least one Admin account is required.");}record.role=role;localStorage.setItem(userKey(username),JSON.stringify(record));if(username.toLowerCase()===state.user.username.toLowerCase()){state.user=record;refreshRoleUi();if(!isAdmin()){closeAdminDialog();toast("Your role is now Employee.");return;}}renderAdminUsers();toast(`${username} is now ${role === 'admin' ? 'an Admin' : 'an Employee'}.`);}
+function changeUserRole(username,role,selectEl){if(!isAdmin())return;const stored=getUserRecord(username);if(!stored)return;const record=normalizeUser(stored);const admins=getAllUsers().filter(u=>normalizeUser(u).role==='admin');if(record.role==='admin'&&role==='employee'&&admins.length<=1){selectEl.value='admin';return toast("At least one Admin account is required.");}record.role=role;saveUserRecord(record);if(username.toLowerCase()===state.user.username.toLowerCase()){state.user=record;refreshRoleUi();if(!isAdmin()){closeAdminDialog();toast("Your role is now Employee.");return;}}renderAdminUsers();toast(`${username} is now ${role === 'admin' ? 'an Admin' : 'an Employee'}.`);}
+
+// Portable data backup / restore for moving between prototype builds
+function buildBackupPayload() {
+  if (state.currentProjectId) saveEditorProject();
+  const data = readDataStore();
+  let backupData;
+  if (isAdmin()) {
+    backupData = JSON.parse(JSON.stringify(data));
+  } else if (state.user) {
+    const key = state.user.username.toLowerCase();
+    backupData = blankDataStore();
+    backupData.users = { [key]: data.users[key] };
+    backupData.projects = { [key]: data.projects[key] || [] };
+    backupData.disclaimers = data.disclaimers;
+  } else {
+    backupData = JSON.parse(JSON.stringify(data));
+  }
+  return {
+    type: "Koehn Scope Builder Backup",
+    backupVersion: BACKUP_VERSION,
+    exportedAt: nowIso(),
+    scope: isAdmin() ? "full-workspace" : "user-workspace",
+    data: backupData
+  };
+}
+function downloadDataBackup() {
+  const payload = buildBackupPayload();
+  const stamp = new Date().toISOString().slice(0,10);
+  const suffix = isAdmin() ? "FULL" : (state.user?.username || "USER").replace(/[^a-z0-9_-]+/gi,"_");
+  const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Koehn_Scope_Builder_Backup_${suffix}_${stamp}.ksb`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  $("#userMenuPopover")?.classList.add("hidden");
+  toast("Scope Builder backup downloaded.");
+}
+function triggerRestoreBackup() {
+  if (state.currentProjectId) saveEditorProject();
+  $("#userMenuPopover")?.classList.add("hidden");
+  const input=$("#backupFileInput");
+  input.value="";
+  input.click();
+}
+function mergeProjectArrays(existing=[], incoming=[]) {
+  const byId = new Map();
+  [...existing, ...incoming].forEach(p=>{
+    if (!p?.id) return;
+    const prior = byId.get(p.id);
+    if (!prior) { byId.set(p.id,p); return; }
+    const priorTime = new Date(prior.updatedAt || prior.createdAt || 0).getTime();
+    const nextTime = new Date(p.updatedAt || p.createdAt || 0).getTime();
+    if (nextTime >= priorTime) byId.set(p.id,p);
+  });
+  return [...byId.values()].sort((a,b)=>new Date(b.updatedAt||0)-new Date(a.updatedAt||0));
+}
+function mergeDisclaimers(existing=[], incoming=[]) {
+  const result = existing.map(x=>({...x}));
+  incoming.forEach(d=>{
+    if (!d?.id || !d?.name || !d?.text) return;
+    const idx=result.findIndex(x=>x.id===d.id);
+    if (idx<0) { result.push({...d}); return; }
+    if (result[idx].name===d.name && result[idx].text===d.text) return;
+    // Preserve both when the same ID has different wording so a restore never silently destroys an approved disclaimer.
+    result.push({...d,id:`${d.id}-restored-${Date.now()}-${Math.random().toString(16).slice(2,6)}`,name:`${d.name} (Restored)`});
+  });
+  return result.length ? result : DEFAULT_DISCLAIMERS.map(x=>({...x}));
+}
+async function restoreDataBackup(file) {
+  if (!file) return;
+  try {
+    const text=await file.text();
+    const payload=JSON.parse(text);
+    if (payload?.type!=="Koehn Scope Builder Backup" || !payload?.data) throw new Error("Not a Koehn Scope Builder backup file.");
+    const incoming=payload.data;
+    if (!incoming.users || !incoming.projects) throw new Error("Backup data is incomplete.");
+    const current=readDataStore();
+    const currentUserCount=Object.keys(current.users||{}).length;
+    const currentProjectCount=Object.values(current.projects||{}).reduce((n,arr)=>n+(Array.isArray(arr)?arr.length:0),0);
+    const freshWorkspace=currentUserCount===0 && currentProjectCount===0;
+    let merged;
+    if (freshWorkspace) {
+      merged={
+        schemaVersion:1, updatedAt:nowIso(),
+        users:{...(incoming.users||{})},
+        projects:{...(incoming.projects||{})},
+        disclaimers:Array.isArray(incoming.disclaimers)&&incoming.disclaimers.length?incoming.disclaimers:DEFAULT_DISCLAIMERS.map(x=>({...x}))
+      };
+    } else {
+      merged=JSON.parse(JSON.stringify(current));
+      Object.entries(incoming.users||{}).forEach(([key,u])=>{ if (!merged.users[key]) merged.users[key]=u; });
+      Object.entries(incoming.projects||{}).forEach(([key,projects])=>{ merged.projects[key]=mergeProjectArrays(merged.projects[key]||[],Array.isArray(projects)?projects:[]); });
+      merged.disclaimers=mergeDisclaimers(merged.disclaimers||[],incoming.disclaimers||[]);
+    }
+    const users=Object.values(merged.users||{}).filter(Boolean);
+    if (users.length && !users.some(u=>u.role==="admin")) {
+      users[0].role="admin";
+      merged.users[users[0].username.toLowerCase()]=users[0];
+    }
+    writeDataStore(merged);
+    const importedCount=Object.values(incoming.projects||{}).reduce((n,arr)=>n+(Array.isArray(arr)?arr.length:0),0);
+    if (state.user) {
+      const refreshed=getUserRecord(state.user.username);
+      if (refreshed) state.user=normalizeUser(refreshed);
+      refreshRoleUi();
+      enterDashboard();
+    } else {
+      const firstUser=Object.values(incoming.users||{})[0];
+      if (firstUser?.username) $("#authUsername").value=firstUser.username;
+      showAuth();
+    }
+    toast(`Backup restored · ${importedCount} project${importedCount===1?"":"s"} imported.`);
+  } catch (err) {
+    console.error(err);
+    alert(`Could not restore this backup. ${err.message || "The file may be invalid."}`);
+  } finally {
+    $("#backupFileInput").value="";
+  }
+}
+async function requestPersistentBrowserStorage() {
+  try {
+    if (navigator.storage?.persist) await navigator.storage.persist();
+  } catch {}
+}
 
 // Event wiring
 $("#authForm").addEventListener("submit",handleAuthSubmit);
 $("#toggleAuthMode").addEventListener("click",()=>{state.authMode=state.authMode==='login'?'register':'login';updateAuthMode();});
+$("#restoreBackupAuthBtn").addEventListener("click",triggerRestoreBackup);
+$("#downloadBackupBtn").addEventListener("click",downloadDataBackup);
+$("#restoreBackupBtn").addEventListener("click",triggerRestoreBackup);
+$("#backupFileInput").addEventListener("change",e=>restoreDataBackup(e.target.files?.[0]));
 $("#logoutBtn").addEventListener("click",()=>{localStorage.removeItem(sessionKey());state.user=null;$("#userMenuPopover").classList.add('hidden');showAuth();});
 $("#userMenuBtn").addEventListener("click",()=>$("#userMenuPopover").classList.toggle('hidden'));
 $("#adminPanelBtn").addEventListener("click",openAdminDialog);$("#adminPopoverBtn").addEventListener("click",()=>{$("#userMenuPopover").classList.add('hidden');openAdminDialog();});
 $("#closeAdminDialog").addEventListener("click",closeAdminDialog);$("#newDisclaimerBtn").addEventListener("click",newDisclaimer);$("#saveDisclaimerBtn").addEventListener("click",saveDisclaimerFromAdmin);$("#deleteDisclaimerBtn").addEventListener("click",deleteDisclaimerFromAdmin);$$('.admin-tab-btn').forEach(b=>b.addEventListener('click',()=>activateAdminTab(b.dataset.adminTab)));
+$("#adminDownloadBackupBtn").addEventListener("click",downloadDataBackup);$("#adminRestoreBackupBtn").addEventListener("click",triggerRestoreBackup);
 $("#newProjectBtn").addEventListener("click",openNewProjectDialog);$("#emptyNewProjectBtn").addEventListener("click",openNewProjectDialog);$("#newProjectForm").addEventListener("submit",handleNewProject);$("#projectSearch").addEventListener("input",renderProjects);$("#projectSort").addEventListener("change",renderProjects);
 $("#backToDashboard").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#sidebarBack").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#exportPdfBtn").addEventListener("click",exportPdf);$("#deleteProjectBtn").addEventListener("click",deleteCurrentProject);
 $("#divisionSearch").addEventListener("input",filterDivisionNav);$("#expandAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.add('open')));$("#collapseAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.remove('open')));
@@ -343,4 +528,4 @@ document.addEventListener("input",e=>{if(e.target.matches('[data-field],[data-co
 document.addEventListener("change",e=>{if(e.target.matches('[data-section-enabled],[data-company]')){scheduleSave();updatePreview();}});
 window.addEventListener('beforeunload',()=>{if(state.currentProjectId)saveEditorProject();});
 
-updateAuthMode();getDisclaimers();restoreSession();
+updateAuthMode();readDataStore();restoreSession();

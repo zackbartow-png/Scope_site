@@ -1,39 +1,39 @@
-# Koehn Scope Builder — Prototype
+# KoehnCS Scope Builder — Prototype
 
-A browser-based scope/proposal editor styled from the Koehn Construction Services letterhead.
+Open `index.html` in a modern browser.
 
-## Current prototype features
+## Current features
+- Admin and Employee user levels
+- Project/client/company information
+- CSI division scope editor
+- Clarifications, exclusions and alternates
+- Admin-controlled legal disclaimer library
+- Client selectable price items
+- Request-to-proceed-to-contract acknowledgment and signature/date area
+- US Letter portrait PDF export
+- KoehnCS orange/charcoal/triangle branding
+- Autosave
 
-- Username/password sign-in stored locally in the browser.
-- Two access levels: **Admin** and **Employee**.
-  - The first account created in a browser becomes Admin.
-  - Later accounts default to Employee.
-  - Admins can change user roles in **Admin Settings**.
-- Project dashboard with multiple saved scope projects.
-- Project/client information fields.
-- CSI MasterFormat division editor with enable/disable controls and paste-friendly scope boxes.
-- Clarifications, exclusions, and alternates sections.
-- **Client Selections** pricing section:
-  - Add individual option/scope names.
-  - Optional description.
-  - Individual price field.
-  - PDF prints an empty client checkbox for each item.
-- **Admin-controlled Legal Disclaimer Library**:
-  - Save multiple named disclaimer versions.
-  - Admins may create, edit, and delete wording.
-  - Employees may select an approved disclaimer per proposal but cannot alter its wording.
-  - Two generic sample disclaimer versions are included only to demonstrate the workflow and should be replaced with KoehnCS-approved language.
-- Final **Request to Proceed to Contract** acknowledgment with client/authorized representative, signature, and date lines.
-  - Wording states the signature requests preparation/issuance of a formal contract.
-  - It does not itself create a contract or authorize construction work.
-- Live PDF preview.
-- 8.5 x 11 in. portrait PDF output using Koehn orange, charcoal, logo, and triangle branding.
-- Browser autosave.
+## Data persistence — important
+This build introduces a stable, versioned workspace datastore:
 
-## Running the prototype
+`koehncs.scopeBuilder.data.v1`
 
-For the simplest test, serve this folder with any basic static web server and open `index.html` in a current browser. The PDF exporter uses jsPDF from a CDN, so an internet connection is required for PDF export in this prototype.
+When the app runs on the **same browser origin**, future builds can reuse this datastore and legacy `ksb:*` data is migrated automatically.
 
-## Prototype data/security note
+Downloaded prototype files/sandbox links may use different browser origins or file URLs. Browsers do not allow one origin to automatically read another origin's local storage. Because of that limitation, this prototype also includes a portable `.ksb` backup system.
 
-Accounts, roles, projects, and disclaimer settings currently use browser `localStorage`. This is suitable for UI/workflow testing only. A production version should use server-side authentication and a shared database so permissions cannot be bypassed from the browser, employee work follows the user across devices, and company-wide disclaimer/user settings are centrally managed.
+### Before opening a different prototype build
+1. Sign in to the current build.
+2. Open the user menu and choose **Download Data Backup**.
+3. Admin accounts export the complete workspace: users, roles, projects, disclaimers, company info and project data.
+4. In the new build, choose **Restore Scope Builder Backup** from the login screen.
+5. Select the `.ksb` file. Existing projects are merged rather than blindly replaced. When duplicate project IDs exist, the most recently updated copy is retained.
+
+Admin users also have a **Data Backup** tab under Admin Settings.
+
+## Production persistence
+The permanent hosted version should use server-side authentication and a database. Once it is hosted on one permanent URL with database storage, projects will persist automatically across deployments and can follow authorized users between computers.
+
+## Prototype security note
+Passwords in this prototype are hashed in browser storage, but this local prototype is not a replacement for production authentication/security.
