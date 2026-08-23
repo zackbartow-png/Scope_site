@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Koehn Scope Builder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <section id="authView" class="auth-view">
+    <div class="auth-brand-panel">
+      <img src="assets/koehn-logo.png" class="auth-logo" alt="Koehn Construction Services" />
+      <div class="auth-copy">
+        <span class="eyebrow">Internal estimating tool</span>
+        <h1>Build polished scopes without fighting Word formatting.</h1>
+        <p>Write by CSI division, save project progress, and export a professional US Letter PDF based on the KoehnCS visual identity.</p>
+      </div>
+      <img src="assets/triangle-band.png" class="auth-band" alt="" />
+    </div>
+    <div class="auth-form-panel">
+      <div class="auth-card">
+        <div class="prototype-badge">Prototype · local account storage</div>
+        <h2 id="authTitle">Sign in</h2>
+        <p id="authSubtitle">Continue working on saved scope packages.</p>
+        <form id="authForm">
+          <label>Username
+            <input id="authUsername" autocomplete="username" required placeholder="Enter username" />
+          </label>
+          <label>Password
+            <input id="authPassword" type="password" autocomplete="current-password" required placeholder="Enter password" />
+          </label>
+          <button class="btn btn-primary btn-full" type="submit" id="authSubmit">Sign in</button>
+        </form>
+        <button class="text-btn" id="toggleAuthMode" type="button">Create an account</button>
+        <p class="auth-note">This prototype saves accounts and projects in this browser. Production authentication/database can be connected next.</p>
+      </div>
+    </div>
+  </section>
+
+  <div id="appView" class="app-shell hidden">
+    <header class="topbar">
+      <div class="topbar-brand">
+        <img src="assets/koehn-logo.png" alt="Koehn Construction Services" />
+        <div class="brand-divider"></div>
+        <div>
+          <div class="app-name">Scope Builder</div>
+          <div class="app-subtitle">Proposal & Scope Workspace</div>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span id="saveStatus" class="save-status">All changes saved</span>
+        <button id="backToDashboard" class="btn btn-ghost hidden">Projects</button>
+        <button id="exportPdfBtn" class="btn btn-primary hidden">Export PDF</button>
+        <div class="user-menu">
+          <button id="userMenuBtn" class="avatar-btn"><span id="avatarInitial">Z</span></button>
+          <div id="userMenuPopover" class="user-popover hidden">
+            <div class="user-popover-name" id="userDisplayName">User</div>
+            <button id="logoutBtn" class="popover-btn">Sign out</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main id="dashboardView" class="dashboard-view">
+      <section class="dashboard-hero">
+        <div>
+          <span class="eyebrow">Scope workspace</span>
+          <h1>Project Scopes</h1>
+          <p>Create, revise, and export client-ready scope documents while keeping every project organized by CSI division.</p>
+        </div>
+        <button id="newProjectBtn" class="btn btn-primary btn-lg">+ New Scope Project</button>
+      </section>
+
+      <section class="dashboard-toolbar">
+        <div class="search-box">
+          <span>⌕</span>
+          <input id="projectSearch" placeholder="Search projects, clients, or project numbers" />
+        </div>
+        <select id="projectSort" class="select-control">
+          <option value="updated">Recently updated</option>
+          <option value="name">Project name</option>
+          <option value="client">Client</option>
+        </select>
+      </section>
+
+      <section id="projectsGrid" class="projects-grid"></section>
+      <section id="emptyProjects" class="empty-state hidden">
+        <div class="empty-icon">△</div>
+        <h3>No scope projects yet</h3>
+        <p>Create your first project and start pasting scope language into CSI divisions.</p>
+        <button class="btn btn-primary" id="emptyNewProjectBtn">Create First Project</button>
+      </section>
+    </main>
+
+    <main id="editorView" class="editor-view hidden">
+      <aside class="division-sidebar">
+        <div class="sidebar-project">
+          <button id="sidebarBack" class="icon-btn" title="Back to projects">←</button>
+          <div>
+            <div class="sidebar-label">Current Project</div>
+            <div id="sidebarProjectName" class="sidebar-project-name">Untitled Project</div>
+          </div>
+        </div>
+        <div class="sidebar-search">
+          <input id="divisionSearch" placeholder="Find division" />
+        </div>
+        <nav id="divisionNav" class="division-nav"></nav>
+        <div class="sidebar-footer">
+          <button id="deleteProjectBtn" class="danger-link">Delete Project</button>
+        </div>
+      </aside>
+
+      <section class="editor-workspace">
+        <div class="editor-header">
+          <div>
+            <span class="eyebrow">Document editor</span>
+            <input id="projectTitleInline" class="inline-title" value="Untitled Project" />
+          </div>
+          <div class="editor-header-actions">
+            <button id="previewToggle" class="btn btn-secondary">PDF Preview</button>
+          </div>
+        </div>
+
+        <div class="workspace-tabs">
+          <button class="tab-btn active" data-tab="info">Project Info</button>
+          <button class="tab-btn" data-tab="scope">Scope by Division</button>
+          <button class="tab-btn" data-tab="closeout">Clarifications & Alternates</button>
+          <button class="tab-btn" data-tab="company">Company Info</button>
+        </div>
+
+        <div id="infoTab" class="tab-panel active">
+          <div class="section-heading">
+            <div>
+              <h2>Project & Client Information</h2>
+              <p>These fields populate the cover/header information on the PDF.</p>
+            </div>
+          </div>
+          <div class="form-card form-grid two-col">
+            <label>Project Name<input data-field="projectName" placeholder="Project name" /></label>
+            <label>Project Number<input data-field="projectNumber" placeholder="Optional project / estimate number" /></label>
+            <label>Client / Owner<input data-field="clientName" placeholder="Client or owner" /></label>
+            <label>Attention<input data-field="attention" placeholder="Contact person" /></label>
+            <label class="full">Project Address<textarea data-field="projectAddress" rows="2" placeholder="Street, City, State ZIP"></textarea></label>
+            <label>Proposal Date<input data-field="proposalDate" type="date" /></label>
+            <label>Revision<input data-field="revision" placeholder="Original / Rev. 1 / Budget Update" /></label>
+            <label>Prepared By<input data-field="preparedBy" placeholder="Estimator / PM" /></label>
+            <label>Document Title<input data-field="documentTitle" placeholder="Scope of Work" /></label>
+            <label class="full">Intro / Proposal Note<textarea data-field="introNote" rows="5" placeholder="Optional introductory paragraph shown before the scope divisions."></textarea></label>
+          </div>
+        </div>
+
+        <div id="scopeTab" class="tab-panel">
+          <div class="section-heading split-heading">
+            <div>
+              <h2>CSI Scope Divisions</h2>
+              <p>Enable only the divisions you want in the finished PDF. Paste plain text or bulleted scope directly into each box.</p>
+            </div>
+            <div class="scope-actions">
+              <button id="expandAllBtn" class="btn btn-secondary">Expand All</button>
+              <button id="collapseAllBtn" class="btn btn-secondary">Collapse All</button>
+            </div>
+          </div>
+          <div id="divisionCards" class="division-cards"></div>
+        </div>
+
+        <div id="closeoutTab" class="tab-panel">
+          <div class="section-heading">
+            <div>
+              <h2>Clarifications, Exclusions & Alternates</h2>
+              <p>Keep proposal qualifications separate from the trade scope while still presenting them in the same professional document.</p>
+            </div>
+          </div>
+          <div class="stacked-cards">
+            <div class="text-section-card">
+              <div class="text-card-header"><div><span class="section-number">C</span><h3>Clarifications</h3></div><label class="switch-label"><input type="checkbox" data-section-enabled="clarifications" checked><span class="switch"></span>Include</label></div>
+              <textarea data-field="clarifications" rows="9" placeholder="Enter one clarification per line or paste a bullet list."></textarea>
+            </div>
+            <div class="text-section-card">
+              <div class="text-card-header"><div><span class="section-number">E</span><h3>Exclusions</h3></div><label class="switch-label"><input type="checkbox" data-section-enabled="exclusions" checked><span class="switch"></span>Include</label></div>
+              <textarea data-field="exclusions" rows="9" placeholder="Enter project exclusions."></textarea>
+            </div>
+            <div class="text-section-card">
+              <div class="text-card-header"><div><span class="section-number">A</span><h3>Alternates</h3></div><label class="switch-label"><input type="checkbox" data-section-enabled="alternates" checked><span class="switch"></span>Include</label></div>
+              <textarea data-field="alternates" rows="9" placeholder="Example: Alternate 01 – 10' x 70' bridge: Add $20,123.00"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div id="companyTab" class="tab-panel">
+          <div class="section-heading">
+            <div>
+              <h2>Company Information</h2>
+              <p>The KoehnCS brand is preloaded from the uploaded letterhead, while the contact information remains editable.</p>
+            </div>
+          </div>
+          <div class="form-card form-grid two-col">
+            <label>Company Name<input data-company="companyName" /></label>
+            <label>Website<input data-company="website" /></label>
+            <label class="full">Mailing Address<textarea data-company="address" rows="2"></textarea></label>
+            <label>Phone<input data-company="phone" /></label>
+            <label>Fax<input data-company="fax" /></label>
+            <label>Email<input data-company="email" placeholder="Optional" /></label>
+            <label>Brand Orange<input data-company="orange" type="color" /></label>
+            <label>Brand Charcoal<input data-company="charcoal" type="color" /></label>
+          </div>
+        </div>
+      </section>
+
+      <aside id="previewPane" class="preview-pane">
+        <div class="preview-toolbar">
+          <div>
+            <strong>PDF Preview</strong>
+            <span>US Letter · Portrait</span>
+          </div>
+          <button id="closePreviewBtn" class="icon-btn">×</button>
+        </div>
+        <div class="paper-wrap">
+          <div id="paperPreview" class="paper-preview">
+            <div class="paper-header">
+              <img src="assets/koehn-logo.png" alt="" />
+              <div class="paper-title"><span id="previewDocTitle">Scope of Work</span><small id="previewProjectNo">PROJECT</small></div>
+            </div>
+            <div class="paper-rule"></div>
+            <div class="paper-project-grid">
+              <div><span>Project</span><strong id="previewProjectName">Untitled Project</strong></div>
+              <div><span>Date</span><strong id="previewDate">—</strong></div>
+              <div><span>Client</span><strong id="previewClient">—</strong></div>
+              <div><span>Prepared By</span><strong id="previewPrepared">—</strong></div>
+            </div>
+            <div id="previewBody" class="paper-body"></div>
+            <div class="paper-footer-contact" id="previewFooterContact"></div>
+            <img src="assets/triangle-band.png" class="paper-band" alt="" />
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <dialog id="newProjectDialog" class="modal">
+    <form method="dialog" id="newProjectForm" class="modal-card">
+      <div class="modal-header">
+        <div><span class="eyebrow">New scope</span><h2>Create Project</h2></div>
+        <button class="icon-btn" value="cancel" type="submit">×</button>
+      </div>
+      <label>Project Name<input id="newProjectName" required placeholder="Project name" /></label>
+      <label>Client / Owner<input id="newClientName" placeholder="Client or owner" /></label>
+      <label>Project Number<input id="newProjectNumber" placeholder="Optional" /></label>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" value="cancel" type="submit">Cancel</button>
+        <button class="btn btn-primary" id="createProjectConfirm" value="default" type="submit">Create Project</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
