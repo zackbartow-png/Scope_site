@@ -1,39 +1,39 @@
-# Koehn Scope Builder – Prototype
+# Koehn Scope Builder — Prototype
 
-A browser-based scope-writing prototype styled from the uploaded Koehn Construction Services letterhead.
+A browser-based scope/proposal editor styled from the Koehn Construction Services letterhead.
 
 ## Current prototype features
-- Local username/password account creation and sign-in (browser-local prototype only)
-- Project dashboard with search and sorting
-- Autosaved scope projects in browser localStorage
-- Company, client, project, revision, estimator, and proposal information
-- Active CSI MasterFormat divisions organized into dedicated scope boxes
-- Clarifications, exclusions, and alternates sections
-- Live US Letter portrait PDF preview
-- Client-side PDF generation with repeating branded header/footer, page numbering, Koehn orange/grey accents, and triangle banding
-- Responsive editor UI
 
-## Run locally
-Open `index.html` in a browser, or serve the folder with any static web server.
+- Username/password sign-in stored locally in the browser.
+- Two access levels: **Admin** and **Employee**.
+  - The first account created in a browser becomes Admin.
+  - Later accounts default to Employee.
+  - Admins can change user roles in **Admin Settings**.
+- Project dashboard with multiple saved scope projects.
+- Project/client information fields.
+- CSI MasterFormat division editor with enable/disable controls and paste-friendly scope boxes.
+- Clarifications, exclusions, and alternates sections.
+- **Client Selections** pricing section:
+  - Add individual option/scope names.
+  - Optional description.
+  - Individual price field.
+  - PDF prints an empty client checkbox for each item.
+- **Admin-controlled Legal Disclaimer Library**:
+  - Save multiple named disclaimer versions.
+  - Admins may create, edit, and delete wording.
+  - Employees may select an approved disclaimer per proposal but cannot alter its wording.
+  - Two generic sample disclaimer versions are included only to demonstrate the workflow and should be replaced with KoehnCS-approved language.
+- Final **Request to Proceed to Contract** acknowledgment with client/authorized representative, signature, and date lines.
+  - Wording states the signature requests preparation/issuance of a formal contract.
+  - It does not itself create a contract or authorize construction work.
+- Live PDF preview.
+- 8.5 x 11 in. portrait PDF output using Koehn orange, charcoal, logo, and triangle branding.
+- Browser autosave.
 
-For best results, use a local server so browser asset loading behaves the same way it will when hosted.
+## Running the prototype
 
-Example:
+For the simplest test, serve this folder with any basic static web server and open `index.html` in a current browser. The PDF exporter uses jsPDF from a CDN, so an internet connection is required for PDF export in this prototype.
 
-```bash
-python -m http.server 8080
-```
+## Prototype data/security note
 
-Then open http://localhost:8080
-
-## Important production note
-The prototype login and saved data use localStorage so it can be tested immediately without external credentials. It is **not production authentication** and data does not sync between devices.
-
-Recommended production upgrade:
-- Host frontend on Vercel
-- Supabase Auth for username/email + password authentication
-- Supabase Postgres for users/projects/scope divisions
-- Row Level Security so each user only sees their projects
-- Optional organization/team sharing later
-
-The UI/data model in this prototype is already structured so the local storage layer can be replaced with Supabase without redesigning the scope editor.
+Accounts, roles, projects, and disclaimer settings currently use browser `localStorage`. This is suitable for UI/workflow testing only. A production version should use server-side authentication and a shared database so permissions cannot be bypassed from the browser, employee work follows the user across devices, and company-wide disclaimer/user settings are centrally managed.

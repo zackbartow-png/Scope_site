@@ -56,10 +56,13 @@
         <span id="saveStatus" class="save-status">All changes saved</span>
         <button id="backToDashboard" class="btn btn-ghost hidden">Projects</button>
         <button id="exportPdfBtn" class="btn btn-primary hidden">Export PDF</button>
+        <button id="adminPanelBtn" class="btn btn-secondary hidden">Admin</button>
         <div class="user-menu">
           <button id="userMenuBtn" class="avatar-btn"><span id="avatarInitial">Z</span></button>
           <div id="userMenuPopover" class="user-popover hidden">
             <div class="user-popover-name" id="userDisplayName">User</div>
+            <div class="user-role-badge" id="userRoleBadge">Employee</div>
+            <button id="adminPopoverBtn" class="popover-btn hidden">Admin Settings</button>
             <button id="logoutBtn" class="popover-btn">Sign out</button>
           </div>
         </div>
@@ -130,6 +133,7 @@
           <button class="tab-btn active" data-tab="info">Project Info</button>
           <button class="tab-btn" data-tab="scope">Scope by Division</button>
           <button class="tab-btn" data-tab="closeout">Clarifications & Alternates</button>
+          <button class="tab-btn" data-tab="approval">Pricing & Approval</button>
           <button class="tab-btn" data-tab="company">Company Info</button>
         </div>
 
@@ -187,6 +191,54 @@
             <div class="text-section-card">
               <div class="text-card-header"><div><span class="section-number">A</span><h3>Alternates</h3></div><label class="switch-label"><input type="checkbox" data-section-enabled="alternates" checked><span class="switch"></span>Include</label></div>
               <textarea data-field="alternates" rows="9" placeholder="Example: Alternate 01 – 10' x 70' bridge: Add $20,123.00"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div id="approvalTab" class="tab-panel">
+          <div class="section-heading split-heading">
+            <div>
+              <h2>Client Selections & Acknowledgment</h2>
+              <p>Add individually priced scope items or alternates for the client to mark on the printed proposal. The signature requests preparation of a formal contract; it is not the contract itself.</p>
+            </div>
+            <label class="switch-label"><input type="checkbox" data-section-enabled="clientSelections" checked><span class="switch"></span>Include Pricing</label>
+          </div>
+
+          <div class="form-card approval-card">
+            <div class="approval-card-head">
+              <div>
+                <h3>Selectable Pricing</h3>
+                <p>Each row prints with an empty checkbox for the client.</p>
+              </div>
+              <button id="addPriceItemBtn" class="btn btn-secondary" type="button">+ Add Item</button>
+            </div>
+            <div class="price-item-head"><span></span><span>Selection Name</span><span>Description</span><span>Price</span><span></span></div>
+            <div id="priceItems" class="price-items"></div>
+            <div id="emptyPriceItems" class="inline-empty">No priced selection items added yet.</div>
+          </div>
+
+          <div class="form-card disclaimer-selector-card">
+            <div class="approval-card-head">
+              <div>
+                <h3>Legal Disclaimer</h3>
+                <p>Select the approved disclaimer that applies to this proposal. Only Admin users can create or change disclaimer wording.</p>
+              </div>
+              <span id="disclaimerAdminOnlyBadge" class="admin-only-badge">Admin controlled</span>
+            </div>
+            <label>Disclaimer Version
+              <select id="projectDisclaimerSelect" data-field="disclaimerId"></select>
+            </label>
+            <div id="selectedDisclaimerPreview" class="disclaimer-readonly"></div>
+          </div>
+
+          <div class="form-card acknowledgement-card">
+            <span class="eyebrow">Printed at end of proposal</span>
+            <h3>Request to Proceed to Contract</h3>
+            <p>By signing below, the client acknowledges the selections marked above and requests that Koehn Construction Services prepare and issue a formal contract reflecting those selections. This acknowledgment is not a contract, does not authorize construction work, and does not modify any existing agreement. Work will proceed only after execution of the applicable contract or other written authorization acceptable to Koehn Construction Services.</p>
+            <div class="signature-demo">
+              <div><span>Client / Authorized Representative</span></div>
+              <div><span>Signature</span></div>
+              <div><span>Date</span></div>
             </div>
           </div>
         </div>
@@ -255,6 +307,44 @@
         <button class="btn btn-primary" id="createProjectConfirm" value="default" type="submit">Create Project</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="adminDialog" class="modal admin-modal">
+    <div class="modal-card admin-modal-card">
+      <div class="modal-header">
+        <div><span class="eyebrow">Admin only</span><h2>Admin Settings</h2></div>
+        <button id="closeAdminDialog" class="icon-btn" type="button">×</button>
+      </div>
+      <div class="admin-tabs">
+        <button class="admin-tab-btn active" data-admin-tab="disclaimers" type="button">Disclaimer Library</button>
+        <button class="admin-tab-btn" data-admin-tab="users" type="button">User Roles</button>
+      </div>
+      <section id="adminDisclaimersTab" class="admin-tab-panel active">
+        <div class="admin-section-head">
+          <div><h3>Proposal Disclaimer Library</h3><p>Save multiple approved versions and select the applicable one on each project.</p></div>
+          <button id="newDisclaimerBtn" class="btn btn-secondary" type="button">+ New Disclaimer</button>
+        </div>
+        <div class="admin-disclaimer-layout">
+          <div id="disclaimerList" class="disclaimer-list"></div>
+          <div class="disclaimer-editor">
+            <input id="disclaimerEditId" type="hidden" />
+            <label>Disclaimer Name<input id="disclaimerEditName" placeholder="Example: Standard Proposal" /></label>
+            <label>Disclaimer Text<textarea id="disclaimerEditText" rows="12" placeholder="Paste the approved legal disclaimer here."></textarea></label>
+            <div class="modal-actions">
+              <button id="deleteDisclaimerBtn" class="btn btn-danger" type="button">Delete</button>
+              <button id="saveDisclaimerBtn" class="btn btn-primary" type="button">Save Disclaimer</button>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section id="adminUsersTab" class="admin-tab-panel">
+        <div class="admin-section-head">
+          <div><h3>User Access Levels</h3><p>Admins can manage legal disclaimer wording and user roles. Employees can create projects, select an approved disclaimer, and export proposals.</p></div>
+        </div>
+        <div id="adminUsersList" class="admin-users-list"></div>
+        <p class="admin-note">Prototype note: users and roles are stored only in this browser. Production will move authentication and permissions to the server/database.</p>
+      </section>
+    </div>
   </dialog>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
