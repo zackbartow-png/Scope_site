@@ -37,3 +37,9 @@ The permanent hosted version should use server-side authentication and a databas
 
 ## Prototype security note
 Passwords in this prototype are hashed in browser storage, but this local prototype is not a replacement for production authentication/security.
+
+
+## Current build changes
+- Revision is optional; new projects leave it blank and the PDF omits it when unused.
+- The standard document title is now **Proposal**. Older saved projects using the prior default **Scope of Work** migrate to **Proposal** automatically.
+- Company Info is Admin-only in the editor. Employee users do not see or edit that tab, while the saved company branding/contact information still appears on proposal previews and PDF exports.

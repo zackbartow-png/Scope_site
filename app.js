@@ -136,6 +136,8 @@ function saveDisclaimers(items) { const data=readDataStore(); data.disclaimers=i
 function getDisclaimer(id) { const all=getDisclaimers(); return all.find(d=>d.id===id) || all[0] || null; }
 
 function normalizeProject(p) {
+  // Keep older saved projects compatible while updating the standard export title.
+  if (!p.documentTitle || p.documentTitle.trim().toLowerCase() === "scope of work") p.documentTitle = "Proposal";
   p.divisions = p.divisions || Object.fromEntries(CSI_DIVISIONS.map(([n,t]) => [n,{number:n,title:t,enabled:false,text:""}]));
   CSI_DIVISIONS.forEach(([n,t]) => { if (!p.divisions[n]) p.divisions[n] = {number:n,title:t,enabled:false,text:""}; });
   p.company = {...DEFAULT_COMPANY, ...(p.company||{})};
@@ -172,7 +174,7 @@ function makeProject(name="Untitled Project", client="", projectNumber="") {
   const divisions = Object.fromEntries(CSI_DIVISIONS.map(([n,t]) => [n,{number:n,title:t,enabled:false,text:""}]));
   return normalizeProject({
     id: uid(), createdAt: nowIso(), updatedAt: nowIso(), projectName: name, projectNumber, clientName: client,
-    attention: "", projectAddress: "", proposalDate: dateValue, revision: "Original", preparedBy: "", documentTitle: "Scope of Work", introNote: "",
+    attention: "", projectAddress: "", proposalDate: dateValue, revision: "", preparedBy: "", documentTitle: "Proposal", introNote: "",
     clarifications: "", exclusions: "", alternates: "", priceItems: [], disclaimerId: getDisclaimers()[0]?.id || "",
     sectionEnabled: { clarifications:true, exclusions:true, alternates:true, clientSelections:true }, divisions, company: {...DEFAULT_COMPANY}
   });
@@ -222,6 +224,15 @@ function refreshRoleUi() {
   $("#userRoleBadge").classList.toggle("admin",admin);
   $("#adminPanelBtn").classList.toggle("hidden",!admin);
   $("#adminPopoverBtn").classList.toggle("hidden",!admin);
+
+  // Company information is controlled by Admin users. Employees still carry
+  // the saved company data into previews/PDFs, but do not see or edit the tab.
+  const companyTabButton = $('.tab-btn[data-tab="company"]');
+  if (companyTabButton) companyTabButton.classList.toggle("hidden", !admin);
+  const companyPanel = $("#companyTab");
+  if (companyPanel) companyPanel.classList.toggle("role-hidden", !admin);
+  $$(`[data-company]`).forEach(el => el.disabled = !admin);
+  if (!admin && companyTabButton?.classList.contains("active")) activateTab("info");
 }
 function enterDashboard() {
   showApp(); requestPersistentBrowserStorage(); state.currentProjectId=null;
@@ -318,13 +329,19 @@ function collectEditorProject() {
   return p;
 }
 function saveEditorProject() { const p=collectEditorProject();if(!p)return;putProject(p);$("#sidebarProjectName").textContent=p.projectName; }
-function activateTab(name) { $$('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===name)); $$('.tab-panel').forEach(p=>p.classList.remove('active')); $(`#${name}Tab`).classList.add('active'); }
+function activateTab(name) {
+  if (name === "company" && !isAdmin()) name = "info";
+  $$('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
+  $$('.tab-panel').forEach(p=>p.classList.remove('active'));
+  const panel = $(`#${name}Tab`);
+  if (panel) panel.classList.add('active');
+}
 function filterDivisionNav() { const q=$("#divisionSearch").value.trim().toLowerCase(); $$('[data-nav-division]').forEach(btn=>btn.classList.toggle('hidden',!btn.textContent.toLowerCase().includes(q))); }
 
 function updatePreview() {
   const p=collectEditorProject();if(!p)return;
   document.documentElement.style.setProperty('--orange',p.company.orange||DEFAULT_COMPANY.orange);document.documentElement.style.setProperty('--charcoal',p.company.charcoal||DEFAULT_COMPANY.charcoal);
-  $("#previewDocTitle").textContent=p.documentTitle||"Scope of Work";$("#previewProjectNo").textContent=p.projectNumber||"PROJECT";$("#previewProjectName").textContent=p.projectName||"Untitled Project";$("#previewDate").textContent=fmtDate(p.proposalDate);$("#previewClient").textContent=p.clientName||"—";$("#previewPrepared").textContent=p.preparedBy||"—";
+  $("#previewDocTitle").textContent=p.documentTitle||"Proposal";$("#previewProjectNo").textContent=p.projectNumber||"PROJECT";$("#previewProjectName").textContent=p.projectName||"Untitled Project";$("#previewDate").textContent=fmtDate(p.proposalDate);$("#previewClient").textContent=p.clientName||"—";$("#previewPrepared").textContent=p.preparedBy||"—";
   const body=$("#previewBody");body.innerHTML="";if(p.introNote.trim())body.insertAdjacentHTML('beforeend',`<div class="preview-intro">${esc(p.introNote)}</div>`);
   const active=CSI_DIVISIONS.map(([n])=>p.divisions[n]).filter(d=>d?.enabled&&d.text.trim());active.slice(0,5).forEach(d=>body.insertAdjacentHTML('beforeend',`<section class="preview-section"><div class="preview-section-title">Division ${d.number} · ${esc(d.title)}</div><p>${esc(d.text)}</p></section>`));
   if(active.length>5)body.insertAdjacentHTML('beforeend',`<div style="margin-top:7px;color:#999">+ ${active.length-5} more divisions on following pages</div>`);
@@ -345,7 +362,7 @@ async function exportPdf() {
   const orange=hexToRgb(p.company.orange||DEFAULT_COMPANY.orange),charcoal=hexToRgb(p.company.charcoal||DEFAULT_COMPANY.charcoal),lightGray=[244,244,244],text=[52,54,57],muted=[120,123,127];
   const pageW=8.5,pageH=11,left=.72,right=.72,contentW=pageW-left-right;let y=1.62,page=1;let logoData=null,bandData=null;
   try{[logoData,bandData]=await Promise.all([imageToDataUrl('assets/koehn-logo.png'),imageToDataUrl('assets/triangle-band.png')]);}catch{}
-  function addHeader(first=false){if(logoData)doc.addImage(logoData,'PNG',left,.48,2.16,.48,undefined,'FAST');doc.setTextColor(...charcoal);doc.setFont('helvetica','bold');doc.setFontSize(10.5);doc.text((p.documentTitle||'Scope of Work').toUpperCase(),pageW-right,.62,{align:'right'});doc.setFont('helvetica','normal');doc.setFontSize(6.6);doc.setTextColor(...muted);doc.text((p.projectNumber||'PROJECT').toUpperCase(),pageW-right,.78,{align:'right'});doc.setDrawColor(...orange);doc.setLineWidth(.025);doc.line(left,1.03,left+1.72,1.03);doc.setDrawColor(...charcoal);doc.line(left+1.72,1.03,pageW-right,1.03);if(first){doc.setTextColor(...muted);doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.text('PROJECT',left,1.25);doc.text('DATE',5.75,1.25);doc.text('CLIENT',left,1.48);doc.text('PREPARED BY',5.75,1.48);doc.setTextColor(...text);doc.setFontSize(8.5);doc.text(p.projectName||'Untitled Project',left,1.36,{maxWidth:4.65});doc.text(fmtDate(p.proposalDate),5.75,1.36);doc.text(p.clientName||'—',left,1.59,{maxWidth:4.65});doc.text(p.preparedBy||'—',5.75,1.59,{maxWidth:2.0});}}
+  function addHeader(first=false){if(logoData)doc.addImage(logoData,'PNG',left,.48,2.16,.48,undefined,'FAST');doc.setTextColor(...charcoal);doc.setFont('helvetica','bold');doc.setFontSize(10.5);doc.text((p.documentTitle||'Proposal').toUpperCase(),pageW-right,.62,{align:'right'});doc.setFont('helvetica','normal');doc.setFontSize(6.6);doc.setTextColor(...muted);doc.text((p.projectNumber||'PROJECT').toUpperCase(),pageW-right,.78,{align:'right'});doc.setDrawColor(...orange);doc.setLineWidth(.025);doc.line(left,1.03,left+1.72,1.03);doc.setDrawColor(...charcoal);doc.line(left+1.72,1.03,pageW-right,1.03);if(first){doc.setTextColor(...muted);doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.text('PROJECT',left,1.25);doc.text('DATE',5.75,1.25);doc.text('CLIENT',left,1.48);doc.text('PREPARED BY',5.75,1.48);doc.setTextColor(...text);doc.setFontSize(8.5);doc.text(p.projectName||'Untitled Project',left,1.36,{maxWidth:4.65});doc.text(fmtDate(p.proposalDate),5.75,1.36);doc.text(p.clientName||'—',left,1.59,{maxWidth:4.65});doc.text(p.preparedBy||'—',5.75,1.59,{maxWidth:2.0});}}
   function addFooter(){const footerY=10.48;doc.setFont('helvetica','normal');doc.setFontSize(6.4);doc.setTextColor(...muted);const addr=(p.company.address||'').split(/\n/).join(' · ');const footer=`${addr}   P ${p.company.phone||''}${p.company.fax?`   F ${p.company.fax}`:''}   ${p.company.website||''}`;doc.text(footer,left,footerY,{maxWidth:6.4});doc.setFont('helvetica','bold');doc.setTextColor(...orange);doc.text(`PAGE ${page}`,pageW-right,footerY,{align:'right'});if(bandData)doc.addImage(bandData,'PNG',0,10.67,8.5,.33,undefined,'FAST');}
   function newPage(){addFooter();doc.addPage('letter','portrait');page++;y=1.28;addHeader(false);}
   function ensure(h){if(y+h>10.22)newPage();}
@@ -362,7 +379,7 @@ async function exportPdf() {
   const extras=[["Clarifications",p.clarifications,p.sectionEnabled?.clarifications],["Exclusions",p.exclusions,p.sectionEnabled?.exclusions],["Alternates",p.alternates,p.sectionEnabled?.alternates]].filter(([,txt,on])=>on&&txt.trim());extras.forEach(([title,txt])=>{drawSectionHeading(title);drawLines(txt);});
   drawSelections();drawFinalApproval();
   if(!active.length&&!extras.length&&!p.introNote.trim()&&!p.priceItems.length){doc.setFont('helvetica','italic');doc.setTextColor(...muted);doc.setFontSize(9);doc.text('No scope content has been entered yet.',left,y);}
-  addFooter();const safe=(p.projectName||'Scope').replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'');doc.save(`${safe||'Scope'}_${(p.documentTitle||'Scope_of_Work').replace(/[^a-z0-9]+/gi,'_')}.pdf`);setSaveStatus("All changes saved");toast("PDF exported.");
+  addFooter();const safe=(p.projectName||'Scope').replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'');doc.save(`${safe||'Scope'}_${(p.documentTitle||'Proposal').replace(/[^a-z0-9]+/gi,'_')}.pdf`);setSaveStatus("All changes saved");toast("PDF exported.");
 }
 
 function deleteCurrentProject(){const p=getCurrentProject();if(!p)return;if(!confirm(`Delete “${p.projectName}”? This cannot be undone in this prototype.`))return;saveProjects(getProjects().filter(x=>x.id!==p.id));enterDashboard();toast("Project deleted.");}

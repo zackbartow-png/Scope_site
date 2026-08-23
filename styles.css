@@ -276,3 +276,7 @@ textarea { resize: vertical; line-height: 1.5; }
 .backup-card strong { font-size: 12px; color: #4d5054; }
 .backup-card span { font-size: 10px; color: #85898e; line-height: 1.5; }
 @media (max-width: 650px) { .backup-card { align-items: stretch; flex-direction: column; } }
+
+/* Role-based editor visibility */
+.role-hidden { display: none !important; }
+.optional-label { color: #8b8e92; font-weight: 500; font-size: .86em; }
