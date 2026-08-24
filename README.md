@@ -71,3 +71,9 @@ Passwords in this prototype are hashed in browser storage, but this local protot
 - Multiple CSI divisions are packed onto each page whenever space allows.
 - When a division crosses a page break, it is split into separate rounded cards and continuation cards append `(CONT.)` to the division title.
 - Pagination is designed to use remaining page space rather than leaving unnecessary blank areas after a division.
+
+## V7.2 PDF export cleanup
+- Cover field values now render over clean cover masters instead of white masking boxes, eliminating doubled labels/text and the bottom-right white patch.
+- Original proposals use a cover master with the Revision area removed; V1/V2/etc. use the revision cover master.
+- Scope bullets are based only on explicit line breaks entered in the editor. A single running paragraph is not forced into a bullet, and automatic word wrapping never creates additional bullets.
+- Division headings and division scope body text export at no less than 12 pt. Pagination/continuation boxes are used instead of shrinking division scope text.

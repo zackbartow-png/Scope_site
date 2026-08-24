@@ -591,12 +591,13 @@ async function exportPdf() {
   const charcoal=[36,43,49], text=[17,17,17], muted=[107,111,114], bg=[250,250,249], pale=[244,244,243], shadow=[228,228,226];
   const sidebarW=.81, contentX=1.20, right=.36, contentW=pageW-contentX-right;
   const topY=1.08, bottomLimit=.54, cardGap=.14;
-  const bodyFont=7.05, bodyLeading=.128;
-  let logoData=null, coverData=null;
+  const bodyFont=12.0, bodyLeading=.215;
+  let logoData=null, coverDataRevision=null, coverDataOriginal=null;
   try {
-    [logoData,coverData]=await Promise.all([
+    [logoData,coverDataRevision,coverDataOriginal]=await Promise.all([
       imageToDataUrl('assets/koehn-logo.png'),
-      imageToDataUrl('assets/cover-reference-clean.png')
+      imageToDataUrl('assets/cover-base-revision.png'),
+      imageToDataUrl('assets/cover-base-original.png')
     ]);
   } catch {}
 
@@ -609,8 +610,9 @@ async function exportPdf() {
   function coverMask(x,y,w,h,color=[255,255,255]){doc.setFillColor(...color);doc.rect(x,y,w,h,'F');}
 
   function drawCover(){
-    // Use the locked cover as the visual base, but keep editable value areas
-    // visually transparent by redrawing them over a cleaned cover reference.
+    // Locked cover design. The master image contains only fixed labels/icons/artwork;
+    // project-specific values are drawn once so there are no white masks or doubled text.
+    const coverData=rev?coverDataRevision:coverDataOriginal;
     if(coverData) doc.addImage(coverData,'PNG',0,0,pageW,pageH,undefined,'FAST');
     else { setFill([255,255,255]);doc.rect(0,0,pageW,pageH,'F'); }
 
@@ -618,16 +620,7 @@ async function exportPdf() {
     doc.setFont('helvetica','normal');doc.setFontSize(15.5);setText([255,255,255]);
     doc.text(`${fmtProjectNo()}${rev?`  •  ${rev}`:''}`,.52,3.92);
 
-    // Cover field labels.
-    const labelColor=[58,58,58];
-    doc.setFont('helvetica','normal');doc.setFontSize(10.4);setText(labelColor);
-    doc.text('PROJECT',1.16,5.64);
-    doc.text('DATE',5.35,5.64);
-    doc.text('CLIENT',1.16,6.89);
-    doc.text('PREPARED BY',5.35,6.89);
-    doc.text('ATTN:',.60,8.15);
-
-    // Project values.
+    // Project values. Fixed labels and icons are baked into the clean cover master.
     doc.setFont('helvetica','bold');doc.setFontSize(15.0);setText(text);
     doc.text(p.projectName||'Untitled Project',1.16,5.93,{maxWidth:3.15});
     doc.text(fmtDate(p.proposalDate),5.35,5.93,{maxWidth:2.15});
@@ -641,10 +634,9 @@ async function exportPdf() {
       doc.text(addr,.60,8.72);
     }
 
-    // Revision is conditional: only show when this is a versioned proposal.
+    // Revision value is only drawn for V1/V2/etc.; Original proposals use the
+    // cover master with the entire revision label/icon area removed.
     if(rev){
-      doc.setFont('helvetica','normal');doc.setFontSize(10.4);setText(labelColor);
-      doc.text('REVISION',5.35,8.15);
       doc.setFont('helvetica','bold');doc.setFontSize(12.2);setText(text);
       doc.text(rev,5.34,8.52);
     }
@@ -681,12 +673,18 @@ async function exportPdf() {
   }
 
   function itemsFromText(value){
-    return String(value||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean).map(s=>s.replace(/^[-•▪◦*]\s*/,''));
+    const source=String(value||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+    const multipleManualLines=source.length>1;
+    return source.map(raw=>{
+      const explicitBullet=/^[-•▪◦*]\s+/.test(raw);
+      return {text:raw.replace(/^[-•▪◦*]\s*/,''),bullet:multipleManualLines||explicitBullet};
+    });
   }
-  function wrapItem(value,fontSize=bodyFont,maxW=contentW-.90){doc.setFont('helvetica','normal');doc.setFontSize(fontSize);return doc.splitTextToSize(value,maxW);}
+  function itemText(value){return typeof value==='string'?value:(value?.text||'');}
+  function wrapItem(value,fontSize=bodyFont,maxW=contentW-.90){doc.setFont('helvetica','normal');doc.setFontSize(fontSize);return doc.splitTextToSize(itemText(value),maxW);}
   function cardHeight(items,{fontSize=bodyFont,leading=bodyLeading,division=true}={}){
     let lineCount=0;items.forEach(i=>lineCount+=Math.max(1,wrapItem(i,fontSize).length));
-    const heading=.36, bottom=.17, itemGaps=Math.max(0,items.length-1)*.045;
+    const heading=.43, bottom=.20, itemGaps=Math.max(0,items.length-1)*.055;
     return Math.max(.76,heading+lineCount*leading+itemGaps+bottom);
   }
   function fitItems(items,available,opts){
@@ -733,17 +731,17 @@ async function exportPdf() {
   function drawDivisionCard(entry,y){
     const h=cardHeight(entry.items,{fontSize:bodyFont,leading:bodyLeading});drawCardBase(y,h);
     const hy=y+.28;
-    doc.setFont('helvetica','bold');doc.setFontSize(10.5);setText(orange);const leftText=`${entry.number} -`;doc.text(leftText,contentX+.42,hy);
+    doc.setFont('helvetica','bold');doc.setFontSize(12.0);setText(orange);const leftText=`${entry.number} -`;doc.text(leftText,contentX+.42,hy);
     const lw=doc.getTextWidth(leftText);setText(text);doc.text(`DIVISION ${entry.number} - ${String(entry.title).toUpperCase()}${entry.cont?' (CONT.)':''}`,contentX+.47+lw,hy);
-    let cy=y+.50;doc.setFont('helvetica','normal');doc.setFontSize(bodyFont);
-    for(const item of entry.items){const lines=wrapItem(item);setFill(orange);doc.circle(contentX+.39,cy-.025,.018,'F');setText(text);doc.text(lines,contentX+.58,cy,{lineHeightFactor:bodyLeading/bodyFont*72});cy+=lines.length*bodyLeading+.045;}
+    let cy=y+.58;doc.setFont('helvetica','normal');doc.setFontSize(bodyFont);
+    for(const item of entry.items){const lines=wrapItem(item);const bullet=typeof item==='string'?true:item.bullet!==false;setText(text);if(bullet){setFill(orange);doc.circle(contentX+.39,cy-.025,.022,'F');setText(text);doc.text(lines,contentX+.58,cy,{lineHeightFactor:bodyLeading/bodyFont*72});}else{doc.text(lines,contentX+.42,cy,{lineHeightFactor:bodyLeading/bodyFont*72});}cy+=lines.length*bodyLeading+.055;}
     return y+h+cardGap;
   }
   function drawSimpleCard(entry,y){
     const opts={fontSize:6.85,leading:.122};const h=cardHeight(entry.items,opts);drawCardBase(y,h);
     doc.setFont('helvetica','bold');doc.setFontSize(10.5);setText(text);doc.text(`${entry.title}${entry.cont?' (CONT.)':''}`,contentX+.42,y+.28);
     let cy=y+.50;doc.setFont('helvetica','normal');doc.setFontSize(opts.fontSize);
-    for(const item of entry.items){const lines=wrapItem(item,opts.fontSize);setFill(orange);doc.circle(contentX+.39,cy-.025,.018,'F');setText(text);doc.text(lines,contentX+.58,cy,{lineHeightFactor:opts.leading/opts.fontSize*72});cy+=lines.length*opts.leading+.045;}
+    for(const item of entry.items){const lines=wrapItem(item,opts.fontSize);const bullet=typeof item==='string'?true:item.bullet!==false;setText(text);if(bullet){setFill(orange);doc.circle(contentX+.39,cy-.025,.018,'F');setText(text);doc.text(lines,contentX+.58,cy,{lineHeightFactor:opts.leading/opts.fontSize*72});}else{doc.text(lines,contentX+.42,cy,{lineHeightFactor:opts.leading/opts.fontSize*72});}cy+=lines.length*opts.leading+.045;}
     return y+h+cardGap;
   }
   function drawSelections(y){
