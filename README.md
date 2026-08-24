@@ -1,3 +1,22 @@
+# Koehn Scope Builder — V7.4
+
+Page 1 PDF cover updated to the approved compact cover layout. Pages 2 through the final page remain unchanged from V7.3.
+
+Key cover details:
+- Actual Koehn Construction Services logo is baked into the cover artwork with no white logo box.
+- Smaller, distinct orange outline icons.
+- Commercial building icon for Project.
+- Phone corrected to 620.378.3002 (legacy 866.943.7751 values are corrected at export).
+- Footer message reads “Building with integrity. Delivering with pride.”
+- Original proposals omit the Revision block completely; V1/V2/etc. display it.
+
+Existing locked PDF rules remain intact:
+- Pages 2+ unchanged.
+- 12 pt minimum live PDF text.
+- Manual line breaks create bullets; automatic wrapping does not.
+- Division continuation boxes use (CONT.) and fill available page space.
+- Soft-delete/admin recovery, revisions, archive, roles, and backups remain unchanged.
+
 # KoehnCS Scope Builder — Prototype
 
 Open `index.html` in a modern browser.

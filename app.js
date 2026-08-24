@@ -15,7 +15,7 @@ const CSI_DIVISIONS = [
 const DEFAULT_COMPANY = {
   companyName: "Koehn Construction Services",
   address: "PO Box 420 · 1111 N 2nd\nFredonia, Kansas 66736",
-  phone: "866.943.7751", fax: "620.378.2283", email: "", website: "koehncs.com",
+  phone: "620.378.3002", fax: "620.378.2283", email: "", website: "koehncs.com",
   orange: "#f36f21", charcoal: "#55575a"
 };
 
@@ -596,8 +596,8 @@ async function exportPdf() {
   try {
     [logoData,coverDataRevision,coverDataOriginal]=await Promise.all([
       imageToDataUrl('assets/koehn-logo.png'),
-      imageToDataUrl('assets/cover-base-revision.png'),
-      imageToDataUrl('assets/cover-base-original.png')
+      imageToDataUrl('assets/cover-base-revision-v2.png'),
+      imageToDataUrl('assets/cover-base-original-v2.png')
     ]);
   } catch {}
 
@@ -610,44 +610,58 @@ async function exportPdf() {
   function coverMask(x,y,w,h,color=[255,255,255]){doc.setFillColor(...color);doc.rect(x,y,w,h,'F');}
 
   function drawCover(){
-    // Locked cover design. The master image contains only fixed labels/icons/artwork;
-    // project-specific values are drawn once so there are no white masks or doubled text.
+    // Page 1 only: approved compact cover layout. Pages 2+ remain unchanged.
+    // The master images contain the fixed artwork/icons/lines and no project-specific values.
     const coverData=rev?coverDataRevision:coverDataOriginal;
     if(coverData) doc.addImage(coverData,'PNG',0,0,pageW,pageH,undefined,'FAST');
-    else { setFill([255,255,255]);doc.rect(0,0,pageW,pageH,'F'); }
+    else { setFill([241,241,241]);doc.rect(0,0,pageW,pageH,'F'); }
 
-    // Proposal number / revision inside charcoal title band.
-    doc.setFont('helvetica','normal');doc.setFontSize(15.5);setText([255,255,255]);
-    doc.text(`${fmtProjectNo()}${rev?`  •  ${rev}`:''}`,.52,3.92);
+    const label=[55,55,55];
+    const value=text;
+    const livePhone=(p.company.phone||DEFAULT_COMPANY.phone)==='866.943.7751'?'620.378.3002':(p.company.phone||DEFAULT_COMPANY.phone);
 
-    // Project values. Fixed labels and icons are baked into the clean cover master.
-    doc.setFont('helvetica','bold');doc.setFontSize(15.0);setText(text);
-    doc.text(p.projectName||'Untitled Project',1.16,5.93,{maxWidth:3.15});
-    doc.text(fmtDate(p.proposalDate),5.35,5.93,{maxWidth:2.15});
-    doc.text(p.clientName||'—',1.16,7.20,{maxWidth:3.35});
-    doc.text(p.preparedBy||'—',5.35,7.20,{maxWidth:2.15});
-    doc.setFontSize(12.2);
-    if((p.attention||'').trim()) doc.text(p.attention.trim(),.60,8.45,{maxWidth:3.20});
+    // PROJECT / DATE
+    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(label);
+    doc.text('PROJECT',1.16,4.13);
+    doc.text('DATE',4.32,4.13);
+    doc.setFont('helvetica','bold');doc.setFontSize(13.5);setText(value);
+    doc.text(p.projectName||'Untitled Project',1.16,4.42,{maxWidth:2.65});
+    doc.text(fmtDate(p.proposalDate),4.32,4.42,{maxWidth:1.75});
+
+    // CLIENT / PREPARED BY
+    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(label);
+    doc.text('CLIENT',1.16,5.52);
+    doc.text('PREPARED BY',4.32,5.52);
+    doc.setFont('helvetica','bold');doc.setFontSize(13.0);setText(value);
+    const clientLines=doc.splitTextToSize(p.clientName||'—',2.65);
+    doc.text(clientLines,1.16,5.80,{lineHeightFactor:1.15});
+    doc.text(p.preparedBy||'—',4.32,5.80,{maxWidth:1.75});
+
+    // ATTN / ADDRESS
+    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(label);
+    doc.text('ATTN:',1.16,6.83);
+    doc.setFont('helvetica','bold');doc.setFontSize(12.5);setText(value);
+    if((p.attention||'').trim()) doc.text(p.attention.trim(),1.16,7.10,{maxWidth:2.65});
     if((p.projectAddress||'').trim()){
       doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);
-      const addr=doc.splitTextToSize(p.projectAddress.trim().replace(/\n/g,', '),3.25);
-      doc.text(addr,.60,8.72);
+      const addr=doc.splitTextToSize(p.projectAddress.trim().replace(/\n/g,', '),2.85);
+      doc.text(addr,1.16,7.37,{lineHeightFactor:1.16});
     }
 
-    // Revision value is only drawn for V1/V2/etc.; Original proposals use the
-    // cover master with the entire revision label/icon area removed.
+    // REVISION is omitted entirely on Original proposals.
     if(rev){
-      doc.setFont('helvetica','bold');doc.setFontSize(12.2);setText(text);
-      doc.text(rev,5.34,8.52);
+      doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(label);
+      doc.text('REVISION',4.32,6.83);
+      doc.setFont('helvetica','bold');doc.setFontSize(12.5);setText(value);
+      doc.text(rev,4.32,7.10);
     }
 
-    // Company information in locked footer positions.
+    // Footer contact values. The approved cover uses phone only; fax is not shown here.
     const addrRaw=(p.company.address||'').replace(/\s*·\s*/g,'\n').split(/\n/).map(s=>s.trim()).filter(Boolean);
-    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);
-    doc.text(addrRaw.slice(0,3),1.11,9.95,{lineHeightFactor:1.22,maxWidth:1.95});
-    const phoneLines=[p.company.phone||'',p.company.fax||''].filter(Boolean);
-    doc.text(phoneLines,3.92,9.96,{lineHeightFactor:1.25,maxWidth:1.70});
-    doc.setFontSize(minPdfFont);doc.text(p.company.website||'',6.18,10.04,{maxWidth:1.35});
+    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(value);
+    doc.text(addrRaw.slice(0,3),1.00,8.72,{lineHeightFactor:1.18,maxWidth:1.55});
+    doc.text(livePhone,3.39,8.80,{maxWidth:1.05});
+    doc.text(p.company.website||DEFAULT_COMPANY.website,5.12,8.80,{maxWidth:1.10});
   }
 
   function drawBackground(){
