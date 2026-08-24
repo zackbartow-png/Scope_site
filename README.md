@@ -62,3 +62,12 @@ Passwords in this prototype are hashed in browser storage, but this local protot
 - Deletion records retain the deleting username, deletion timestamp, and whether the action applied to a version or the project family.
 - Admin can restore an entire deleted project family or an individual deleted revision.
 - Deleted records remain included in Admin workspace backups, preserving recovery even when moving prototype builds.
+
+## V7 locked proposal PDF design
+- Page 1 uses the approved KoehnCS cover-sheet reference layout.
+- Original/base proposals omit the Revision field entirely on Page 1. Revised proposals show V1, V2, and so on.
+- Pages 2 through the last page use the locked charcoal left band, orange geometric accents, light-gray triangle background, Koehn header, rounded floating scope cards, and lower-right page numbering.
+- The left band is decorative only: no division number, division name, website, or globe icon is shown there or in the footer.
+- Multiple CSI divisions are packed onto each page whenever space allows.
+- When a division crosses a page break, it is split into separate rounded cards and continuation cards append `(CONT.)` to the division title.
+- Pagination is designed to use remaining page space rather than leaving unnecessary blank areas after a division.
