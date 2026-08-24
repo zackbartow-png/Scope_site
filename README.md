@@ -43,3 +43,12 @@ Passwords in this prototype are hashed in browser storage, but this local protot
 - Revision is optional; new projects leave it blank and the PDF omits it when unused.
 - The standard document title is now **Proposal**. Older saved projects using the prior default **Scope of Work** migrate to **Proposal** automatically.
 - Company Info is Admin-only in the editor. Employee users do not see or edit that tab, while the saved company branding/contact information still appears on proposal previews and PDF exports.
+
+
+## Revision / archive / retention model
+- Existing projects automatically become the Original revision.
+- Revise duplicates the latest version into V1, V2, and so on while preserving the full prior version.
+- Lock makes a specific revision read-only while still allowing PDF export.
+- Archive moves the full project family to the Archived library without deleting it.
+- Employee deletion is a soft removal: it disappears from that employee's project list, while Admin users retain the underlying proposal and can see its Removed by user status in All User Proposals.
+- In this local prototype, admin visibility applies within the same saved workspace. The hosted production version should enforce the same model in the shared server database so retention works across computers and browsers.

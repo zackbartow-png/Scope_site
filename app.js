@@ -34,7 +34,7 @@ const DEFAULT_DISCLAIMERS = [
   }
 ];
 
-const state = { user: null, currentProjectId: null, authMode: "login", saveTimer: null, previewOpen: true, adminDisclaimerId: null };
+const state = { user: null, currentProjectId: null, currentProjectOwner: null, authMode: "login", saveTimer: null, previewOpen: true, adminDisclaimerId: null, dashboardMode: "active", adminUserFilter: "all" };
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 
@@ -135,9 +135,19 @@ function getDisclaimers() { return readDataStore().disclaimers.map(x=>({...x}));
 function saveDisclaimers(items) { const data=readDataStore(); data.disclaimers=items.map(x=>({...x})); writeDataStore(data); }
 function getDisclaimer(id) { const all=getDisclaimers(); return all.find(d=>d.id===id) || all[0] || null; }
 
-function normalizeProject(p) {
-  // Keep older saved projects compatible while updating the standard export title.
+function normalizeProject(p, ownerUsername="") {
+  // Backward-compatible project normalization. Existing projects become the
+  // original/base version of a revision family automatically.
   if (!p.documentTitle || p.documentTitle.trim().toLowerCase() === "scope of work") p.documentTitle = "Proposal";
+  if (!p.familyId) p.familyId = p.id;
+  if (!Number.isInteger(p.version)) p.version = 0;
+  p.parentRevisionId = p.parentRevisionId || null;
+  p.archived = Boolean(p.archived);
+  p.locked = Boolean(p.locked);
+  p.deletedByUser = Boolean(p.deletedByUser);
+  p.deletedAt = p.deletedAt || null;
+  p.deletedBy = p.deletedBy || null;
+  p.ownerUsername = p.ownerUsername || ownerUsername || "";
   p.divisions = p.divisions || Object.fromEntries(CSI_DIVISIONS.map(([n,t]) => [n,{number:n,title:t,enabled:false,text:""}]));
   CSI_DIVISIONS.forEach(([n,t]) => { if (!p.divisions[n]) p.divisions[n] = {number:n,title:t,enabled:false,text:""}; });
   p.company = {...DEFAULT_COMPANY, ...(p.company||{})};
@@ -146,38 +156,72 @@ function normalizeProject(p) {
   p.disclaimerId = p.disclaimerId || getDisclaimers()[0]?.id || "";
   return p;
 }
+function ownerKey(username) { return String(username || "").toLowerCase(); }
+function getProjectsForUser(username, {includeDeleted=true}={}) {
+  if (!username) return [];
+  const key=ownerKey(username), data=readDataStore();
+  const projects=(data.projects[key] || []).map(p=>normalizeProject(p, username));
+  return includeDeleted ? projects : projects.filter(p=>!p.deletedByUser);
+}
+function saveProjectsForUser(username, projects) {
+  if (!username) return;
+  const key=ownerKey(username), data=readDataStore();
+  data.projects[key] = projects.map(p=>normalizeProject(p, username));
+  writeDataStore(data);
+}
 function getProjects() {
   if (!state.user) return [];
-  const data = readDataStore();
-  const projects = data.projects[state.user.username.toLowerCase()] || [];
-  return projects.map(normalizeProject);
+  return getProjectsForUser(state.user.username, {includeDeleted:false});
 }
 function saveProjects(projects) {
   if (!state.user) return;
-  const data = readDataStore();
-  data.projects[state.user.username.toLowerCase()] = projects;
-  writeDataStore(data);
+  saveProjectsForUser(state.user.username, projects);
 }
-function getCurrentProject() { return getProjects().find(p => p.id === state.currentProjectId) || null; }
-function putProject(project) {
-  project = normalizeProject(project);
-  const projects = getProjects();
+function getCurrentProject() {
+  if (!state.currentProjectId) return null;
+  const owner=state.currentProjectOwner || state.user?.username;
+  return getProjectsForUser(owner, {includeDeleted:true}).find(p=>p.id===state.currentProjectId) || null;
+}
+function putProject(project, ownerUsername=state.currentProjectOwner || state.user?.username) {
+  if (!project || !ownerUsername) return;
+  project = normalizeProject(project, ownerUsername);
+  project.ownerUsername = ownerUsername;
+  const projects = getProjectsForUser(ownerUsername, {includeDeleted:true});
   const idx = projects.findIndex(p=>p.id===project.id);
   project.updatedAt = nowIso();
   if (idx >= 0) projects[idx] = project; else projects.unshift(project);
-  saveProjects(projects);
+  saveProjectsForUser(ownerUsername, projects);
+}
+function versionLabel(p) { return Number(p?.version||0) > 0 ? `V${p.version}` : "Original"; }
+function familyProjects(ownerUsername, familyId, {includeDeleted=true}={}) {
+  return getProjectsForUser(ownerUsername,{includeDeleted}).filter(p=>p.familyId===familyId).sort((a,b)=>(a.version||0)-(b.version||0));
+}
+function latestFamilyProject(ownerUsername, familyId, {includeDeleted=false}={}) {
+  const versions=familyProjects(ownerUsername,familyId,{includeDeleted});
+  return versions.sort((a,b)=>(b.version||0)-(a.version||0))[0] || null;
+}
+function projectFamilies(projects) {
+  const map=new Map();
+  projects.forEach(p=>{ const id=p.familyId||p.id; if(!map.has(id))map.set(id,[]); map.get(id).push(p); });
+  return [...map.entries()].map(([familyId,versions])=>({
+    familyId,
+    versions:versions.sort((a,b)=>(a.version||0)-(b.version||0)),
+    latest:[...versions].sort((a,b)=>(b.version||0)-(a.version||0))[0]
+  }));
 }
 
 function makeProject(name="Untitled Project", client="", projectNumber="") {
   const date = new Date();
   const dateValue = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
   const divisions = Object.fromEntries(CSI_DIVISIONS.map(([n,t]) => [n,{number:n,title:t,enabled:false,text:""}]));
+  const id=uid();
   return normalizeProject({
-    id: uid(), createdAt: nowIso(), updatedAt: nowIso(), projectName: name, projectNumber, clientName: client,
-    attention: "", projectAddress: "", proposalDate: dateValue, revision: "", preparedBy: "", documentTitle: "Proposal", introNote: "",
+    id, familyId:id, version:0, parentRevisionId:null, archived:false, locked:false, deletedByUser:false,
+    createdAt: nowIso(), updatedAt: nowIso(), projectName: name, projectNumber, clientName: client,
+    attention: "", projectAddress: "", proposalDate: dateValue, preparedBy: "", documentTitle: "Proposal", introNote: "",
     clarifications: "", exclusions: "", alternates: "", priceItems: [], disclaimerId: getDisclaimers()[0]?.id || "",
     sectionEnabled: { clarifications:true, exclusions:true, alternates:true, clientSelections:true }, divisions, company: {...DEFAULT_COMPANY}
-  });
+  }, state.user?.username || "");
 }
 
 function toast(msg) { const el=$("#toast"); el.textContent=msg; el.classList.add("show"); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove("show"),2200); }
@@ -235,37 +279,150 @@ function refreshRoleUi() {
   if (!admin && companyTabButton?.classList.contains("active")) activateTab("info");
 }
 function enterDashboard() {
-  showApp(); requestPersistentBrowserStorage(); state.currentProjectId=null;
+  showApp(); requestPersistentBrowserStorage(); state.currentProjectId=null; state.currentProjectOwner=null;
   $("#dashboardView").classList.remove("hidden"); $("#editorView").classList.add("hidden");
   $("#backToDashboard").classList.add("hidden"); $("#exportPdfBtn").classList.add("hidden");
-  refreshRoleUi(); renderProjects();
+  refreshRoleUi(); refreshDashboardNav(); renderProjects();
+}
+function setDashboardMode(mode){
+  if(mode==="admin"&&!isAdmin())mode="active";
+  state.dashboardMode=mode;
+  $$('.project-nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.projectView===mode));
+  $("#dashboardSectionTitle").textContent=mode==="archived"?"Archived Proposals":mode==="admin"?"All User Proposals":"Active Proposals";
+  $("#adminUserFilter").classList.toggle("hidden",mode!=="admin"||!isAdmin());
+  renderProjects();
+}
+function refreshDashboardNav(){
+  const own=getProjectsForUser(state.user.username,{includeDeleted:false});
+  const families=projectFamilies(own);
+  $("#activeProjectCount").textContent=families.filter(f=>!f.versions.every(v=>v.archived)).length;
+  $("#archivedProjectCount").textContent=families.filter(f=>f.versions.every(v=>v.archived)).length;
+  $("#adminAllProjectsBtn").classList.toggle("hidden",!isAdmin());
+  if(!isAdmin()&&state.dashboardMode==="admin")state.dashboardMode="active";
+  $$('.project-nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.projectView===state.dashboardMode));
+  $("#dashboardSectionTitle").textContent=state.dashboardMode==="archived"?"Archived Proposals":state.dashboardMode==="admin"?"All User Proposals":"Active Proposals";
+  $("#adminUserFilter").classList.toggle("hidden",state.dashboardMode!=="admin"||!isAdmin());
+  if(isAdmin()){
+    const sel=$("#adminUserFilter"), current=sel.value||state.adminUserFilter||"all";
+    sel.innerHTML='<option value="all">All users</option>'+getAllUsers().map(u=>`<option value="${esc(u.username)}">${esc(u.username)}</option>`).join('');
+    sel.value=[...sel.options].some(o=>o.value===current)?current:"all"; state.adminUserFilter=sel.value;
+  }
 }
 
 function renderProjects() {
   const q=$("#projectSearch").value.trim().toLowerCase(), sort=$("#projectSort").value;
-  let projects=getProjects().filter(p=>[p.projectName,p.clientName,p.projectNumber].join(" ").toLowerCase().includes(q));
-  projects.sort((a,b)=> sort==="name"?a.projectName.localeCompare(b.projectName):sort==="client"?(a.clientName||"").localeCompare(b.clientName||""):new Date(b.updatedAt)-new Date(a.updatedAt));
-  const grid=$("#projectsGrid"); grid.innerHTML=""; $("#emptyProjects").classList.toggle("hidden",projects.length>0||q.length>0);
-  if (!projects.length&&q) grid.innerHTML=`<div class="empty-state" style="grid-column:1/-1"><h3>No matching projects</h3><p>Try a different project, client, or project number.</p></div>`;
-  projects.forEach(p=>{
-    const used=Object.values(p.divisions||{}).filter(d=>d.enabled&&d.text.trim()).length;
-    const card=document.createElement("article"); card.className="project-card";
-    card.innerHTML=`<div class="project-card-head"><div><div class="project-number">${esc(p.projectNumber||"No project number")}</div><h3>${esc(p.projectName||"Untitled Project")}</h3><div class="project-client">${esc(p.clientName||"No client entered")}</div></div><button class="project-open" data-open-project="${p.id}">Open →</button></div><div class="project-meta"><span>${used} divisions used · ${p.priceItems.length} priced items</span><span>Updated ${esc(fmtTime(p.updatedAt))}</span></div>`;
+  let entries=[];
+  if(state.dashboardMode==="admin"&&isAdmin()){
+    const filter=$("#adminUserFilter").value||"all"; state.adminUserFilter=filter;
+    const users=filter==="all"?getAllUsers():getAllUsers().filter(u=>u.username===filter);
+    users.forEach(u=>getProjectsForUser(u.username,{includeDeleted:true}).forEach(p=>entries.push({owner:u.username,p})));
+  }else{
+    getProjectsForUser(state.user.username,{includeDeleted:false}).forEach(p=>entries.push({owner:state.user.username,p}));
+  }
+  entries=entries.filter(({p})=>[p.projectName,p.clientName,p.projectNumber].join(" ").toLowerCase().includes(q));
+  const grouped=new Map();
+  entries.forEach(({owner,p})=>{const key=`${ownerKey(owner)}::${p.familyId||p.id}`;if(!grouped.has(key))grouped.set(key,{owner,familyId:p.familyId||p.id,versions:[]});grouped.get(key).versions.push(p);});
+  let families=[...grouped.values()].map(f=>{f.versions.sort((a,b)=>(a.version||0)-(b.version||0));f.latest=[...f.versions].sort((a,b)=>(b.version||0)-(a.version||0))[0];return f;});
+  if(state.dashboardMode==="active")families=families.filter(f=>!f.versions.every(v=>v.archived));
+  if(state.dashboardMode==="archived")families=families.filter(f=>f.versions.every(v=>v.archived));
+  families.sort((a,b)=> sort==="name"?(a.latest.projectName||"").localeCompare(b.latest.projectName||""):sort==="client"?(a.latest.clientName||"").localeCompare(b.latest.clientName||""):new Date(b.latest.updatedAt)-new Date(a.latest.updatedAt));
+  const grid=$("#projectsGrid"); grid.innerHTML="";
+  const noProjects=!families.length;
+  $("#emptyProjects").classList.toggle("hidden",!noProjects||q.length>0||state.dashboardMode==="admin");
+  if(noProjects){
+    const msg=q?"No matching projects":state.dashboardMode==="archived"?"No archived proposals":state.dashboardMode==="admin"?"No user proposals found":"";
+    if(msg)grid.innerHTML=`<div class="empty-state compact-empty" style="grid-column:1/-1"><h3>${msg}</h3><p>${q?'Try a different project, client, or project number.':state.dashboardMode==='archived'?'Archived project families will appear here.':'User proposals will appear here as they are created.'}</p></div>`;
+  }
+  families.forEach(f=>{
+    const p=f.latest, used=Object.values(p.divisions||{}).filter(d=>d.enabled&&d.text.trim()).length;
+    const familyArchived=f.versions.every(v=>v.archived);
+    const visibleVersions=state.dashboardMode==="admin"?f.versions:f.versions.filter(v=>!v.deletedByUser);
+    const status=[]; if(familyArchived)status.push('Archived'); if(p.locked)status.push('Locked'); if(p.deletedByUser)status.push('Removed by user');
+    const card=document.createElement("article"); card.className=`project-card ${familyArchived?'archived-card':''}`;
+    card.innerHTML=`
+      <div class="project-card-head">
+        <div>
+          <div class="project-card-kicker">${state.dashboardMode==='admin'?`<span class="owner-pill">${esc(f.owner)}</span>`:''}<span class="project-number">${esc(p.projectNumber||"No project number")}</span></div>
+          <h3>${esc(p.projectName||"Untitled Project")}</h3>
+          <div class="project-client">${esc(p.clientName||"No client entered")}</div>
+        </div>
+        <div class="project-card-actions">
+          <button class="project-open" data-open-project="${p.id}" data-owner="${esc(f.owner)}">Open →</button>
+          <button class="project-menu-btn" data-project-menu="${p.id}" data-owner="${esc(f.owner)}" aria-label="Project options">⋮</button>
+          <div class="project-menu hidden" data-menu-panel="${p.id}">
+            <button type="button" data-revise-project="${p.id}" data-owner="${esc(f.owner)}">Revise</button>
+            <button type="button" data-archive-family="${f.familyId}" data-owner="${esc(f.owner)}">${familyArchived?'Unarchive':'Archive'}</button>
+            <button type="button" data-lock-project="${p.id}" data-owner="${esc(f.owner)}">${p.locked?'Unlock':'Lock'}</button>
+          </div>
+        </div>
+      </div>
+      <div class="project-version-row">${visibleVersions.map(v=>`<button class="version-chip ${v.id===p.id?'current':''} ${v.locked?'locked':''} ${v.deletedByUser?'removed':''}" data-open-project="${v.id}" data-owner="${esc(f.owner)}">${versionLabel(v)}${v.locked?' · Locked':''}${v.deletedByUser?' · Removed':''}</button>`).join('')}</div>
+      ${status.length?`<div class="project-status-row">${status.map(s=>`<span>${esc(s)}</span>`).join('')}</div>`:''}
+      <div class="project-meta"><span>${used} divisions used · ${p.priceItems.length} priced items</span><span>Updated ${esc(fmtTime(p.updatedAt))}</span></div>`;
     grid.appendChild(card);
   });
-  $$('[data-open-project]').forEach(b=>b.addEventListener('click',()=>openProject(b.dataset.openProject)));
+  $$('[data-open-project]').forEach(b=>b.addEventListener('click',()=>openProject(b.dataset.openProject,b.dataset.owner)));
+  $$('[data-project-menu]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const panel=$(`[data-menu-panel="${CSS.escape(b.dataset.projectMenu)}"]`);$$('.project-menu').forEach(x=>{if(x!==panel)x.classList.add('hidden')});panel?.classList.toggle('hidden');}));
+  $$('[data-revise-project]').forEach(b=>b.addEventListener('click',()=>reviseProject(b.dataset.reviseProject,b.dataset.owner)));
+  $$('[data-archive-family]').forEach(b=>b.addEventListener('click',()=>toggleFamilyArchive(b.dataset.archiveFamily,b.dataset.owner)));
+  $$('[data-lock-project]').forEach(b=>b.addEventListener('click',()=>toggleProjectLock(b.dataset.lockProject,b.dataset.owner)));
+}
+function reviseProject(projectId, ownerUsername){
+  const source=getProjectsForUser(ownerUsername,{includeDeleted:true}).find(p=>p.id===projectId); if(!source)return;
+  if(ownerKey(ownerUsername)!==ownerKey(state.user.username)&&!isAdmin())return toast("You can only revise your own proposals.");
+  const family=familyProjects(ownerUsername,source.familyId,{includeDeleted:true});
+  const sourceLatest=source;
+  const nextVersion=Math.max(0,...family.map(v=>Number(v.version||0)))+1;
+  const revised=JSON.parse(JSON.stringify(sourceLatest));
+  revised.id=uid(); revised.familyId=sourceLatest.familyId||sourceLatest.id; revised.version=nextVersion; revised.parentRevisionId=sourceLatest.id;
+  revised.createdAt=nowIso(); revised.updatedAt=nowIso(); revised.locked=false; revised.archived=false; revised.deletedByUser=false; revised.deletedAt=null; revised.deletedBy=null;
+  revised.ownerUsername=ownerUsername;
+  // Creating a revision brings the family back to Active.
+  const all=getProjectsForUser(ownerUsername,{includeDeleted:true}).map(p=>p.familyId===revised.familyId?{...p,archived:false}:p);
+  all.unshift(revised); saveProjectsForUser(ownerUsername,all);
+  refreshDashboardNav(); toast(`${versionLabel(revised)} created from ${versionLabel(sourceLatest)}.`); openProject(revised.id,ownerUsername);
+}
+function toggleFamilyArchive(familyId,ownerUsername){
+  if(ownerKey(ownerUsername)!==ownerKey(state.user.username)&&!isAdmin())return;
+  const all=getProjectsForUser(ownerUsername,{includeDeleted:true}); const family=all.filter(p=>p.familyId===familyId); if(!family.length)return;
+  const archive=!family.every(p=>p.archived);
+  const next=all.map(p=>p.familyId===familyId?{...p,archived:archive,updatedAt:nowIso()}:p); saveProjectsForUser(ownerUsername,next);
+  refreshDashboardNav(); renderProjects(); toast(archive?"Proposal archived.":"Proposal restored to Active.");
+}
+function toggleProjectLock(projectId,ownerUsername){
+  if(ownerKey(ownerUsername)!==ownerKey(state.user.username)&&!isAdmin())return;
+  const all=getProjectsForUser(ownerUsername,{includeDeleted:true}); const idx=all.findIndex(p=>p.id===projectId); if(idx<0)return;
+  all[idx].locked=!all[idx].locked; all[idx].updatedAt=nowIso(); saveProjectsForUser(ownerUsername,all);
+  renderProjects(); toast(all[idx].locked?`${versionLabel(all[idx])} locked.`:`${versionLabel(all[idx])} unlocked.`);
 }
 function openNewProjectDialog() { $("#newProjectName").value=""; $("#newClientName").value=""; $("#newProjectNumber").value=""; $("#newProjectDialog").showModal(); setTimeout(()=>$("#newProjectName").focus(),100); }
 function handleNewProject(e) {
   e.preventDefault(); if (e.submitter&&e.submitter.value==="cancel") { $("#newProjectDialog").close(); return; }
   const name=$("#newProjectName").value.trim(); if (!name) return;
-  const p=makeProject(name,$("#newClientName").value.trim(),$("#newProjectNumber").value.trim()); putProject(p); $("#newProjectDialog").close(); openProject(p.id);
+  const p=makeProject(name,$("#newClientName").value.trim(),$("#newProjectNumber").value.trim()); state.currentProjectOwner=state.user.username; putProject(p,state.user.username); $("#newProjectDialog").close(); openProject(p.id,state.user.username);
 }
-function openProject(id) {
-  state.currentProjectId=id; const p=getCurrentProject(); if (!p) return enterDashboard();
+function openProject(id, ownerUsername=state.user?.username) {
+  state.currentProjectId=id; state.currentProjectOwner=ownerUsername||state.user?.username; const p=getCurrentProject(); if (!p) return enterDashboard();
   $("#dashboardView").classList.add("hidden"); $("#editorView").classList.remove("hidden"); $("#backToDashboard").classList.remove("hidden"); $("#exportPdfBtn").classList.remove("hidden");
   $("#projectTitleInline").value=p.projectName; $("#sidebarProjectName").textContent=p.projectName;
-  renderDivisionUI(p); renderPriceItems(p); renderDisclaimerSelect(p); populateEditor(p); updateSelectedDisclaimerPreview(); updatePreview(); activateTab("info");
+  $("#projectVersionBadge").textContent=versionLabel(p); $("#projectVersionBadge").classList.toggle("base",(p.version||0)===0);
+  $("#projectOwnerBadge").textContent=ownerKey(state.currentProjectOwner)===ownerKey(state.user.username)?"":`Owner: ${state.currentProjectOwner}`;
+  $("#projectOwnerBadge").classList.toggle("hidden",ownerKey(state.currentProjectOwner)===ownerKey(state.user.username));
+  renderDivisionUI(p); renderPriceItems(p); renderDisclaimerSelect(p); populateEditor(p); applyProjectLockUi(p); updateSelectedDisclaimerPreview(); updatePreview(); activateTab("info");
+}
+
+function applyProjectLockUi(p){
+  const locked=Boolean(p.locked), otherOwner=ownerKey(state.currentProjectOwner)!==ownerKey(state.user?.username);
+  $("#projectLockBadge").classList.toggle("hidden",!locked);
+  $("#editorView").classList.toggle("project-locked",locked);
+  $$('#editorView .editor-workspace input, #editorView .editor-workspace textarea, #editorView .editor-workspace select').forEach(el=>{
+    const companyEmployee=el.hasAttribute('data-company')&&!isAdmin();
+    el.disabled=locked||companyEmployee;
+  });
+  $("#addPriceItemBtn").disabled=locked;
+  $$('.remove-price-item').forEach(b=>b.disabled=locked);
+  $("#deleteProjectBtn").classList.toggle("hidden",otherOwner);
+  $("#deleteProjectBtn").textContent="Delete from My Projects";
 }
 
 function renderDivisionUI(p) {
@@ -328,7 +485,7 @@ function collectEditorProject() {
   $$('.division-card').forEach(card=>{ const n=card.dataset.division; p.divisions[n]=p.divisions[n]||{number:n,title:CSI_DIVISIONS.find(x=>x[0]===n)[1]};p.divisions[n].enabled=$('.division-enabled',card).checked;p.divisions[n].text=$('.division-text',card).value; });
   return p;
 }
-function saveEditorProject() { const p=collectEditorProject();if(!p)return;putProject(p);$("#sidebarProjectName").textContent=p.projectName; }
+function saveEditorProject() { const current=getCurrentProject();if(!current)return;if(current.locked){setSaveStatus("Locked · read only");return;}const p=collectEditorProject();if(!p)return;putProject(p,state.currentProjectOwner);$("#sidebarProjectName").textContent=p.projectName; }
 function activateTab(name) {
   if (name === "company" && !isAdmin()) name = "info";
   $$('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
@@ -341,7 +498,7 @@ function filterDivisionNav() { const q=$("#divisionSearch").value.trim().toLower
 function updatePreview() {
   const p=collectEditorProject();if(!p)return;
   document.documentElement.style.setProperty('--orange',p.company.orange||DEFAULT_COMPANY.orange);document.documentElement.style.setProperty('--charcoal',p.company.charcoal||DEFAULT_COMPANY.charcoal);
-  $("#previewDocTitle").textContent=p.documentTitle||"Proposal";$("#previewProjectNo").textContent=p.projectNumber||"PROJECT";$("#previewProjectName").textContent=p.projectName||"Untitled Project";$("#previewDate").textContent=fmtDate(p.proposalDate);$("#previewClient").textContent=p.clientName||"—";$("#previewPrepared").textContent=p.preparedBy||"—";
+  $("#previewDocTitle").textContent=p.documentTitle||"Proposal";$("#previewProjectNo").textContent=`${p.projectNumber||"PROJECT"}${(p.version||0)>0?` · ${versionLabel(p)}`:""}`;$("#previewProjectName").textContent=p.projectName||"Untitled Project";$("#previewDate").textContent=fmtDate(p.proposalDate);$("#previewClient").textContent=p.clientName||"—";$("#previewPrepared").textContent=p.preparedBy||"—";
   const body=$("#previewBody");body.innerHTML="";if(p.introNote.trim())body.insertAdjacentHTML('beforeend',`<div class="preview-intro">${esc(p.introNote)}</div>`);
   const active=CSI_DIVISIONS.map(([n])=>p.divisions[n]).filter(d=>d?.enabled&&d.text.trim());active.slice(0,5).forEach(d=>body.insertAdjacentHTML('beforeend',`<section class="preview-section"><div class="preview-section-title">Division ${d.number} · ${esc(d.title)}</div><p>${esc(d.text)}</p></section>`));
   if(active.length>5)body.insertAdjacentHTML('beforeend',`<div style="margin-top:7px;color:#999">+ ${active.length-5} more divisions on following pages</div>`);
@@ -362,7 +519,7 @@ async function exportPdf() {
   const orange=hexToRgb(p.company.orange||DEFAULT_COMPANY.orange),charcoal=hexToRgb(p.company.charcoal||DEFAULT_COMPANY.charcoal),lightGray=[244,244,244],text=[52,54,57],muted=[120,123,127];
   const pageW=8.5,pageH=11,left=.72,right=.72,contentW=pageW-left-right;let y=1.62,page=1;let logoData=null,bandData=null;
   try{[logoData,bandData]=await Promise.all([imageToDataUrl('assets/koehn-logo.png'),imageToDataUrl('assets/triangle-band.png')]);}catch{}
-  function addHeader(first=false){if(logoData)doc.addImage(logoData,'PNG',left,.48,2.16,.48,undefined,'FAST');doc.setTextColor(...charcoal);doc.setFont('helvetica','bold');doc.setFontSize(10.5);doc.text((p.documentTitle||'Proposal').toUpperCase(),pageW-right,.62,{align:'right'});doc.setFont('helvetica','normal');doc.setFontSize(6.6);doc.setTextColor(...muted);doc.text((p.projectNumber||'PROJECT').toUpperCase(),pageW-right,.78,{align:'right'});doc.setDrawColor(...orange);doc.setLineWidth(.025);doc.line(left,1.03,left+1.72,1.03);doc.setDrawColor(...charcoal);doc.line(left+1.72,1.03,pageW-right,1.03);if(first){doc.setTextColor(...muted);doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.text('PROJECT',left,1.25);doc.text('DATE',5.75,1.25);doc.text('CLIENT',left,1.48);doc.text('PREPARED BY',5.75,1.48);doc.setTextColor(...text);doc.setFontSize(8.5);doc.text(p.projectName||'Untitled Project',left,1.36,{maxWidth:4.65});doc.text(fmtDate(p.proposalDate),5.75,1.36);doc.text(p.clientName||'—',left,1.59,{maxWidth:4.65});doc.text(p.preparedBy||'—',5.75,1.59,{maxWidth:2.0});}}
+  function addHeader(first=false){if(logoData)doc.addImage(logoData,'PNG',left,.48,2.16,.48,undefined,'FAST');doc.setTextColor(...charcoal);doc.setFont('helvetica','bold');doc.setFontSize(10.5);doc.text((p.documentTitle||'Proposal').toUpperCase(),pageW-right,.62,{align:'right'});doc.setFont('helvetica','normal');doc.setFontSize(6.6);doc.setTextColor(...muted);doc.text(`${(p.projectNumber||'PROJECT').toUpperCase()}${(p.version||0)>0?` · ${versionLabel(p)}`:''}`,pageW-right,.78,{align:'right'});doc.setDrawColor(...orange);doc.setLineWidth(.025);doc.line(left,1.03,left+1.72,1.03);doc.setDrawColor(...charcoal);doc.line(left+1.72,1.03,pageW-right,1.03);if(first){doc.setTextColor(...muted);doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.text('PROJECT',left,1.25);doc.text('DATE',5.75,1.25);doc.text('CLIENT',left,1.48);doc.text('PREPARED BY',5.75,1.48);doc.setTextColor(...text);doc.setFontSize(8.5);doc.text(p.projectName||'Untitled Project',left,1.36,{maxWidth:4.65});doc.text(fmtDate(p.proposalDate),5.75,1.36);doc.text(p.clientName||'—',left,1.59,{maxWidth:4.65});doc.text(p.preparedBy||'—',5.75,1.59,{maxWidth:2.0});}}
   function addFooter(){const footerY=10.48;doc.setFont('helvetica','normal');doc.setFontSize(6.4);doc.setTextColor(...muted);const addr=(p.company.address||'').split(/\n/).join(' · ');const footer=`${addr}   P ${p.company.phone||''}${p.company.fax?`   F ${p.company.fax}`:''}   ${p.company.website||''}`;doc.text(footer,left,footerY,{maxWidth:6.4});doc.setFont('helvetica','bold');doc.setTextColor(...orange);doc.text(`PAGE ${page}`,pageW-right,footerY,{align:'right'});if(bandData)doc.addImage(bandData,'PNG',0,10.67,8.5,.33,undefined,'FAST');}
   function newPage(){addFooter();doc.addPage('letter','portrait');page++;y=1.28;addHeader(false);}
   function ensure(h){if(y+h>10.22)newPage();}
@@ -373,16 +530,16 @@ async function exportPdf() {
   function drawFinalApproval(){const disclaimer=getDisclaimer(p.disclaimerId);if(disclaimer){drawSectionHeading(`Legal Disclaimer · ${disclaimer.name}`);drawParagraph(disclaimer.text,6.7,.132);y+=.06;}const ackWrap=doc.splitTextToSize(ACKNOWLEDGMENT_TEXT,contentW-.16);const needed=.36+ackWrap.length*.135+.86;if(y+needed>10.18)newPage();drawSectionHeading('Request to Proceed to Contract');doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(...text);doc.text(ackWrap,left+.08,y);y+=ackWrap.length*.135+.34;const sigY=y+.26;doc.setDrawColor(105,108,112);doc.setLineWidth(.012);doc.line(left,sigY,left+2.25,sigY);doc.line(left+2.5,sigY,left+5.05,sigY);doc.line(left+5.3,sigY,pageW-right,sigY);doc.setFont('helvetica','normal');doc.setFontSize(6);doc.setTextColor(...muted);doc.text('CLIENT / AUTHORIZED REPRESENTATIVE',left,sigY+.12);doc.text('SIGNATURE',left+2.5,sigY+.12);doc.text('DATE',left+5.3,sigY+.12);y=sigY+.28;}
 
   addHeader(true);y=1.83;
-  if(p.projectAddress.trim()||p.attention.trim()||p.revision.trim()){doc.setFont('helvetica','normal');doc.setFontSize(7.2);doc.setTextColor(...muted);let meta=[];if(p.attention.trim())meta.push(`ATTN: ${p.attention.trim()}`);if(p.projectAddress.trim())meta.push(p.projectAddress.trim().replace(/\n/g,', '));if(p.revision.trim())meta.push(`REVISION: ${p.revision.trim()}`);doc.text(meta.join('   •   '),left,y,{maxWidth:contentW});y+=.22;}
+  if(p.projectAddress.trim()||p.attention.trim()||(p.version||0)>0){doc.setFont('helvetica','normal');doc.setFontSize(7.2);doc.setTextColor(...muted);let meta=[];if(p.attention.trim())meta.push(`ATTN: ${p.attention.trim()}`);if(p.projectAddress.trim())meta.push(p.projectAddress.trim().replace(/\n/g,', '));if((p.version||0)>0)meta.push(`REVISION: ${versionLabel(p)}`);doc.text(meta.join('   •   '),left,y,{maxWidth:contentW});y+=.22;}
   if(p.introNote.trim()){const wrapped=doc.splitTextToSize(p.introNote.trim(),contentW);ensure(wrapped.length*.16+.15);doc.setFont('helvetica','normal');doc.setFontSize(8.2);doc.setTextColor(...text);doc.text(wrapped,left,y);y+=wrapped.length*.16+.18;}
   const active=CSI_DIVISIONS.map(([n])=>p.divisions[n]).filter(d=>d?.enabled&&d.text.trim());active.forEach(d=>{drawSectionHeading(d.title,d.number);drawLines(d.text);});
   const extras=[["Clarifications",p.clarifications,p.sectionEnabled?.clarifications],["Exclusions",p.exclusions,p.sectionEnabled?.exclusions],["Alternates",p.alternates,p.sectionEnabled?.alternates]].filter(([,txt,on])=>on&&txt.trim());extras.forEach(([title,txt])=>{drawSectionHeading(title);drawLines(txt);});
   drawSelections();drawFinalApproval();
   if(!active.length&&!extras.length&&!p.introNote.trim()&&!p.priceItems.length){doc.setFont('helvetica','italic');doc.setTextColor(...muted);doc.setFontSize(9);doc.text('No scope content has been entered yet.',left,y);}
-  addFooter();const safe=(p.projectName||'Scope').replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'');doc.save(`${safe||'Scope'}_${(p.documentTitle||'Proposal').replace(/[^a-z0-9]+/gi,'_')}.pdf`);setSaveStatus("All changes saved");toast("PDF exported.");
+  addFooter();const safe=(p.projectName||'Scope').replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'');const versionSuffix=(p.version||0)>0?`_${versionLabel(p)}`:'';doc.save(`${safe||'Scope'}_${(p.documentTitle||'Proposal').replace(/[^a-z0-9]+/gi,'_')}${versionSuffix}.pdf`);setSaveStatus("All changes saved");toast("PDF exported.");
 }
 
-function deleteCurrentProject(){const p=getCurrentProject();if(!p)return;if(!confirm(`Delete “${p.projectName}”? This cannot be undone in this prototype.`))return;saveProjects(getProjects().filter(x=>x.id!==p.id));enterDashboard();toast("Project deleted.");}
+function deleteCurrentProject(){const p=getCurrentProject();if(!p)return;const owner=state.currentProjectOwner||state.user.username;if(ownerKey(owner)!==ownerKey(state.user.username))return toast("Admin records cannot be removed from another user’s workspace.");if(!confirm(`Remove ${versionLabel(p)} of “${p.projectName}” from your projects? Admin will retain access to this proposal.`))return;p.deletedByUser=true;p.deletedAt=nowIso();p.deletedBy=state.user.username;putProject(p,owner);enterDashboard();toast("Removed from your projects. Admin copy retained.");}
 
 // Admin disclaimer library
 function openAdminDialog(){if(!isAdmin())return toast("Admin access required.");if(state.currentProjectId)saveEditorProject();renderAdminDisclaimers();renderAdminUsers();$("#adminDialog").showModal();}
@@ -534,7 +691,7 @@ $("#userMenuBtn").addEventListener("click",()=>$("#userMenuPopover").classList.t
 $("#adminPanelBtn").addEventListener("click",openAdminDialog);$("#adminPopoverBtn").addEventListener("click",()=>{$("#userMenuPopover").classList.add('hidden');openAdminDialog();});
 $("#closeAdminDialog").addEventListener("click",closeAdminDialog);$("#newDisclaimerBtn").addEventListener("click",newDisclaimer);$("#saveDisclaimerBtn").addEventListener("click",saveDisclaimerFromAdmin);$("#deleteDisclaimerBtn").addEventListener("click",deleteDisclaimerFromAdmin);$$('.admin-tab-btn').forEach(b=>b.addEventListener('click',()=>activateAdminTab(b.dataset.adminTab)));
 $("#adminDownloadBackupBtn").addEventListener("click",downloadDataBackup);$("#adminRestoreBackupBtn").addEventListener("click",triggerRestoreBackup);
-$("#newProjectBtn").addEventListener("click",openNewProjectDialog);$("#emptyNewProjectBtn").addEventListener("click",openNewProjectDialog);$("#newProjectForm").addEventListener("submit",handleNewProject);$("#projectSearch").addEventListener("input",renderProjects);$("#projectSort").addEventListener("change",renderProjects);
+$("#newProjectBtn").addEventListener("click",openNewProjectDialog);$("#emptyNewProjectBtn").addEventListener("click",openNewProjectDialog);$("#newProjectForm").addEventListener("submit",handleNewProject);$("#projectSearch").addEventListener("input",renderProjects);$("#projectSort").addEventListener("change",renderProjects);$$('.project-nav-btn').forEach(b=>b.addEventListener('click',()=>setDashboardMode(b.dataset.projectView)));$("#adminUserFilter").addEventListener("change",()=>{state.adminUserFilter=$("#adminUserFilter").value;renderProjects();});
 $("#backToDashboard").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#sidebarBack").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#exportPdfBtn").addEventListener("click",exportPdf);$("#deleteProjectBtn").addEventListener("click",deleteCurrentProject);
 $("#divisionSearch").addEventListener("input",filterDivisionNav);$("#expandAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.add('open')));$("#collapseAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.remove('open')));
 $("#previewToggle").addEventListener("click",()=>togglePreview());$("#closePreviewBtn").addEventListener("click",()=>togglePreview(false));$$('.tab-btn').forEach(b=>b.addEventListener('click',()=>activateTab(b.dataset.tab)));
@@ -543,6 +700,7 @@ $("#priceItems").addEventListener("click",e=>{const b=e.target.closest('.remove-
 $("#projectDisclaimerSelect").addEventListener("change",()=>{updateSelectedDisclaimerPreview();scheduleSave();updatePreview();});
 document.addEventListener("input",e=>{if(e.target.matches('[data-field],[data-company],.price-item-input')){scheduleSave();updatePreview();}});
 document.addEventListener("change",e=>{if(e.target.matches('[data-section-enabled],[data-company]')){scheduleSave();updatePreview();}});
+document.addEventListener('click',e=>{if(!e.target.closest('.project-card-actions'))$$('.project-menu').forEach(x=>x.classList.add('hidden'));});
 window.addEventListener('beforeunload',()=>{if(state.currentProjectId)saveEditorProject();});
 
 updateAuthMode();readDataStore();restoreSession();

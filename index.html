@@ -85,25 +85,40 @@
         <button id="newProjectBtn" class="btn btn-primary btn-lg">+ New Scope Project</button>
       </section>
 
-      <section class="dashboard-toolbar">
-        <div class="search-box">
-          <span>⌕</span>
-          <input id="projectSearch" placeholder="Search projects, clients, or project numbers" />
-        </div>
-        <select id="projectSort" class="select-control">
-          <option value="updated">Recently updated</option>
-          <option value="name">Project name</option>
-          <option value="client">Client</option>
-        </select>
-      </section>
+      <div class="dashboard-layout">
+        <aside class="project-library-nav">
+          <div class="library-nav-title">Proposal Library</div>
+          <button class="project-nav-btn active" data-project-view="active" type="button"><span>Active Proposals</span><strong id="activeProjectCount">0</strong></button>
+          <button class="project-nav-btn" data-project-view="archived" type="button"><span>Archived</span><strong id="archivedProjectCount">0</strong></button>
+          <button id="adminAllProjectsBtn" class="project-nav-btn admin-project-nav hidden" data-project-view="admin" type="button"><span>All User Proposals</span><strong>Admin</strong></button>
+          <p class="library-nav-note">Archived proposals remain saved and can be restored at any time.</p>
+        </aside>
+        <section class="dashboard-projects-panel">
+          <div class="dashboard-panel-head">
+            <div><span class="eyebrow">Proposal library</span><h2 id="dashboardSectionTitle">Active Proposals</h2></div>
+            <select id="adminUserFilter" class="select-control hidden" aria-label="Filter proposals by user"><option value="all">All users</option></select>
+          </div>
+          <section class="dashboard-toolbar">
+            <div class="search-box">
+              <span>⌕</span>
+              <input id="projectSearch" placeholder="Search projects, clients, or project numbers" />
+            </div>
+            <select id="projectSort" class="select-control">
+              <option value="updated">Recently updated</option>
+              <option value="name">Project name</option>
+              <option value="client">Client</option>
+            </select>
+          </section>
 
-      <section id="projectsGrid" class="projects-grid"></section>
-      <section id="emptyProjects" class="empty-state hidden">
-        <div class="empty-icon">△</div>
-        <h3>No scope projects yet</h3>
-        <p>Create your first project and start pasting scope language into CSI divisions.</p>
-        <button class="btn btn-primary" id="emptyNewProjectBtn">Create First Project</button>
-      </section>
+          <section id="projectsGrid" class="projects-grid"></section>
+          <section id="emptyProjects" class="empty-state hidden">
+            <div class="empty-icon">△</div>
+            <h3>No scope projects yet</h3>
+            <p>Create your first project and start pasting scope language into CSI divisions.</p>
+            <button class="btn btn-primary" id="emptyNewProjectBtn">Create First Project</button>
+          </section>
+        </section>
+      </div>
     </main>
 
     <main id="editorView" class="editor-view hidden">
@@ -120,7 +135,7 @@
         </div>
         <nav id="divisionNav" class="division-nav"></nav>
         <div class="sidebar-footer">
-          <button id="deleteProjectBtn" class="danger-link">Delete Project</button>
+          <button id="deleteProjectBtn" class="danger-link">Delete from My Projects</button>
         </div>
       </aside>
 
@@ -129,6 +144,7 @@
           <div>
             <span class="eyebrow">Document editor</span>
             <input id="projectTitleInline" class="inline-title" value="Untitled Project" />
+            <div class="editor-project-badges"><span id="projectVersionBadge" class="project-version-badge">Original</span><span id="projectLockBadge" class="project-lock-badge hidden">Locked · Read Only</span><span id="projectOwnerBadge" class="project-owner-badge hidden"></span></div>
           </div>
           <div class="editor-header-actions">
             <button id="previewToggle" class="btn btn-secondary">PDF Preview</button>
@@ -157,7 +173,6 @@
             <label>Attention<input data-field="attention" placeholder="Contact person" /></label>
             <label class="full">Project Address<textarea data-field="projectAddress" rows="2" placeholder="Street, City, State ZIP"></textarea></label>
             <label>Proposal Date<input data-field="proposalDate" type="date" /></label>
-            <label>Revision <span class="optional-label">(Optional)</span><input data-field="revision" placeholder="Rev. 1 / Budget Update" /></label>
             <label>Prepared By<input data-field="preparedBy" placeholder="Estimator / PM" /></label>
             <label>Document Title<input data-field="documentTitle" placeholder="Proposal" /></label>
             <label class="full">Intro / Proposal Note<textarea data-field="introNote" rows="5" placeholder="Optional introductory paragraph shown before the scope divisions."></textarea></label>
