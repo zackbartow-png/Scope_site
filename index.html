@@ -270,7 +270,7 @@
           <div class="section-heading split-heading">
             <div>
               <h2>Proposal Summary</h2>
-              <p>Optionally append a summary after the current final proposal page. Basic uses Proposed Pricing. Advanced provides a division-by-division cost model.</p>
+              <p>Optionally append a summary after the current final proposal page. Basic summarizes the CSI divisions used; Advanced supports division-level breakouts, hidden divisions, and section subtotals.</p>
             </div>
             <label>Summary Type
               <select id="summaryMode" class="select-control summary-mode-select">
@@ -289,31 +289,38 @@
           <div id="basicSummaryEditor" class="summary-editor-block hidden">
             <div class="form-card">
               <div class="approval-card-head">
-                <div><h3>Basic Summary</h3><p>Automatically summarizes the Base Bid and any alternates/add-ons from Proposed Pricing.</p></div>
+                <div><h3>Basic Summary</h3><p>Uses only the CSI divisions included in this proposal. The description and amount for every summary line are editable.</p></div>
               </div>
               <label>Optional Summary Note
-                <textarea id="basicSummaryNote" rows="4" placeholder="Optional note displayed above the pricing recap."></textarea>
+                <textarea id="basicSummaryNote" rows="4" placeholder="Optional note displayed above the summary table."></textarea>
               </label>
-              <div id="basicSummaryPricingPreview" class="summary-pricing-preview"></div>
+              <div class="basic-summary-head"><span>Description</span><span>Amount</span></div>
+              <div id="basicSummaryDivisionRows" class="basic-summary-division-rows"></div>
+              <div class="basic-overhead-row">
+                <label class="switch-label"><input id="basicOverheadEnabled" type="checkbox"><span class="switch"></span>Include Overhead Line</label>
+                <input id="basicOverheadLabel" placeholder="Overhead">
+                <input id="basicOverheadAmount" placeholder="$0.00">
+              </div>
+              <div class="summary-total-preview"><span>Basic Summary Total</span><strong id="basicSummaryTotal">$0.00</strong></div>
             </div>
           </div>
 
           <div id="advancedSummaryEditor" class="summary-editor-block hidden">
             <div class="form-card">
               <div class="approval-card-head">
-                <div><h3>Advanced Cost Summary</h3><p>Enter the client-facing amount and optional notes for each included CSI division. The Direct Cost Total is calculated automatically.</p></div>
+                <div><h3>Advanced Cost Summary</h3><p>Break each included CSI division into optional subsections. Divisions can be hidden from the summary without removing them from the proposal scope.</p></div>
               </div>
-              <div class="summary-table-head"><span>Description</span><span>Total</span><span>Notes</span></div>
+              <div class="summary-table-head advanced-division-head"><span>Show</span><span>Division</span><span>Division Amount</span><span>Total</span><span></span></div>
               <div id="advancedDivisionRows" class="advanced-summary-rows"></div>
               <div class="summary-total-preview"><span>Direct Cost Total</span><strong id="advancedDirectTotal">$0.00</strong></div>
             </div>
 
             <div class="form-card">
               <div class="approval-card-head">
-                <div><h3>Additional Cost / Subtotal Lines</h3><p>Add fees, permits, bonds, allowances, contingency, or subtotal breaks below the division costs.</p></div>
+                <div><h3>Additional Costs &amp; Section Subtotals</h3><p>Add fees, permits, bonds, allowances, contingency, or other costs. A Section Subtotal calculates only the cost lines since the previous subtotal; that subtotal is then carried into the grand total without double counting.</p></div>
                 <button id="addSummaryRowBtn" class="btn btn-secondary" type="button">+ Add Summary Line</button>
               </div>
-              <div class="summary-extra-head"><span>Description</span><span>Amount</span><span>Notes</span><span>Row Type</span><span></span></div>
+              <div class="summary-extra-head"><span>Description</span><span>Amount</span><span>Row Type</span><span></span></div>
               <div id="advancedExtraRows" class="advanced-summary-rows"></div>
               <div class="summary-grand-total-preview"><span>Proposal Summary Total</span><strong id="advancedGrandTotal">$0.00</strong></div>
             </div>

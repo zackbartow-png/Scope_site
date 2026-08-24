@@ -172,9 +172,26 @@ function normalizeProject(p, ownerUsername="") {
   p.summary = p.summary || {};
   if(!["none","basic","advanced"].includes(p.summary.mode)) p.summary.mode="none";
   p.summary.basicNote = p.summary.basicNote || "";
+  p.summary.basicDivisions = p.summary.basicDivisions || {};
+  CSI_DIVISIONS.forEach(([n,t])=>{
+    const existing=p.summary.basicDivisions[n]||{};
+    const fallbackLabel=`${n} - ${p.divisions[n]?.title||t}`;
+    p.summary.basicDivisions[n]={
+      label:Object.prototype.hasOwnProperty.call(existing,"label")?existing.label:fallbackLabel,
+      amount:Object.prototype.hasOwnProperty.call(existing,"amount")?existing.amount:(p.summary.divisionCosts?.[n]?.amount||"")
+    };
+  });
+  p.summary.basicOverhead={enabled:false,label:"Overhead",amount:"",...(p.summary.basicOverhead||{})};
   p.summary.divisionCosts = p.summary.divisionCosts || {};
-  CSI_DIVISIONS.forEach(([n])=>{ p.summary.divisionCosts[n] = {...(p.summary.divisionCosts[n]||{}), amount:p.summary.divisionCosts[n]?.amount||"", notes:p.summary.divisionCosts[n]?.notes||""}; });
-  p.summary.extraRows = Array.isArray(p.summary.extraRows) ? p.summary.extraRows.map(r=>({id:r.id||uid(),label:r.label||"",amount:r.amount||"",notes:r.notes||"",type:r.type==="subtotal"?"subtotal":"cost"})) : [];
+  CSI_DIVISIONS.forEach(([n])=>{
+    const saved=p.summary.divisionCosts[n]||{};
+    p.summary.divisionCosts[n]={
+      amount:saved.amount||"",
+      hidden:Boolean(saved.hidden),
+      subRows:Array.isArray(saved.subRows)?saved.subRows.map(r=>({id:r.id||uid(),label:r.label||"",amount:r.amount||""})):[]
+    };
+  });
+  p.summary.extraRows = Array.isArray(p.summary.extraRows) ? p.summary.extraRows.map(r=>({id:r.id||uid(),label:r.label||"",amount:r.amount||"",type:r.type==="subtotal"?"subtotal":"cost"})) : [];
   p.disclaimerId = p.disclaimerId || getDisclaimers()[0]?.id || "";
   return p;
 }
@@ -242,7 +259,7 @@ function makeProject(name="Untitled Project", client="", projectNumber="") {
     createdAt: nowIso(), updatedAt: nowIso(), projectName: name, projectNumber, clientName: client,
     attention: "", projectAddress: "", proposalDate: dateValue, preparedBy: "", documentTitle: "Proposal", introNote: "",
     clarifications: "", exclusions: "", alternates: "", priceItems: [{id:`base-bid-${id}`,name:"Base Bid",description:"",price:"",isBaseBid:true}], disclaimerId: getDisclaimers()[0]?.id || "",
-    summary: {mode:"none",basicNote:"",divisionCosts:{},extraRows:[]},
+    summary: {mode:"none",basicNote:"",basicDivisions:{},basicOverhead:{enabled:false,label:"Overhead",amount:""},divisionCosts:{},extraRows:[]},
     sectionEnabled: { clarifications:true, exclusions:true, alternates:true, clientSelections:true }, divisions, company: {...DEFAULT_COMPANY}
   }, state.user?.username || "");
 }
@@ -559,66 +576,143 @@ function updateSelectedDisclaimerPreview() {
   $("#selectedDisclaimerPreview").textContent=d?.text||"No approved Terms & Conditions are currently available.";
 }
 
+function activeSummaryDivisions(p){
+  return CSI_DIVISIONS.map(([n,t])=>p.divisions[n]||{number:n,title:t,enabled:false}).filter(d=>d.enabled);
+}
 function renderSummaryEditor(p){
-  const summary=p.summary||{mode:"none",basicNote:"",divisionCosts:{},extraRows:[]};
+  const summary=p.summary||{mode:"none",basicNote:"",basicDivisions:{},basicOverhead:{enabled:false,label:"Overhead",amount:""},divisionCosts:{},extraRows:[]};
   const mode=summary.mode||"none";
   $("#summaryMode").value=mode;
   $("#basicSummaryNote").value=summary.basicNote||"";
   $("#summaryNoneState").classList.toggle("hidden",mode!=="none");
   $("#basicSummaryEditor").classList.toggle("hidden",mode!=="basic");
   $("#advancedSummaryEditor").classList.toggle("hidden",mode!=="advanced");
-  renderBasicSummaryPricing(p);
+  renderBasicSummaryRows(p);
   renderAdvancedDivisionRows(p);
   renderAdvancedExtraRows(p);
+  updateBasicSummaryTotal();
   updateAdvancedSummaryTotals();
 }
-function renderBasicSummaryPricing(p){
-  const wrap=$("#basicSummaryPricingPreview"); if(!wrap)return; wrap.innerHTML="";
-  const items=(p.priceItems||[]).filter(i=>i.isBaseBid || (i.name||"").trim() || (i.price||"").trim());
-  items.forEach(item=>{const row=document.createElement("div");row.className="summary-pricing-preview-row";row.innerHTML=`<span>${esc(item.isBaseBid?"Base Bid":((item.name||"").trim()||"Alternate / Add-On"))}</span><strong>${esc((item.price||"").trim()||"—")}</strong>`;wrap.appendChild(row);});
-  if(!items.length)wrap.innerHTML='<div class="inline-empty">No Proposed Pricing entered yet.</div>';
+function renderBasicSummaryRows(p){
+  const wrap=$("#basicSummaryDivisionRows"); if(!wrap)return; wrap.innerHTML="";
+  const active=activeSummaryDivisions(p);
+  if(!active.length){wrap.innerHTML='<div class="inline-empty">Enable scope divisions to add them to the Basic Summary.</div>';}
+  active.forEach(d=>{
+    const saved=p.summary?.basicDivisions?.[d.number]||{};
+    const row=document.createElement("div");row.className="basic-summary-division-row";row.dataset.basicSummaryDivision=d.number;
+    const defaultLabel=`${d.number} - ${d.title}`;
+    row.innerHTML=`<input class="basic-summary-label" value="${esc(Object.prototype.hasOwnProperty.call(saved,'label')?saved.label:defaultLabel)}" placeholder="${esc(defaultLabel)}"><input class="basic-summary-amount" value="${esc(saved.amount||'')}" placeholder="$0.00">`;
+    wrap.appendChild(row);
+  });
+  const overhead=p.summary?.basicOverhead||{enabled:false,label:"Overhead",amount:""};
+  const enabled=$("#basicOverheadEnabled"),label=$("#basicOverheadLabel"),amount=$("#basicOverheadAmount");
+  if(enabled)enabled.checked=Boolean(overhead.enabled);
+  if(label){label.value=overhead.label||"Overhead";label.disabled=!overhead.enabled;}
+  if(amount){amount.value=overhead.amount||"";amount.disabled=!overhead.enabled;}
+}
+function updateBasicSummaryTotal(){
+  let total=0; $$('.basic-summary-amount').forEach(el=>total+=moneyNumber(el.value));
+  if($("#basicOverheadEnabled")?.checked)total+=moneyNumber($("#basicOverheadAmount")?.value||"");
+  if($("#basicSummaryTotal"))$("#basicSummaryTotal").textContent=formatMoneyNumber(total);
 }
 function renderAdvancedDivisionRows(p){
   const wrap=$("#advancedDivisionRows"); if(!wrap)return; wrap.innerHTML="";
-  const active=CSI_DIVISIONS.map(([n,t])=>p.divisions[n]||{number:n,title:t,enabled:false}).filter(d=>d.enabled);
+  const active=activeSummaryDivisions(p);
   if(!active.length){wrap.innerHTML='<div class="inline-empty">Enable scope divisions to add them to the Advanced Summary.</div>';return;}
   active.forEach(d=>{
-    const saved=p.summary?.divisionCosts?.[d.number]||{};
-    const row=document.createElement("div");row.className="summary-division-row";row.dataset.summaryDivision=d.number;
-    row.innerHTML=`<div class="summary-division-description"><strong>${esc(d.number)} - ${esc(d.title)}</strong><span>Included CSI division</span></div><input class="summary-division-amount" value="${esc(saved.amount||'')}" placeholder="$0.00"><input class="summary-division-notes" value="${esc(saved.notes||'')}" placeholder="Optional notes">`;
-    wrap.appendChild(row);
+    const saved=p.summary?.divisionCosts?.[d.number]||{amount:"",hidden:false,subRows:[]};
+    const group=document.createElement("div");group.className="summary-division-group";group.dataset.summaryDivision=d.number;
+    group.innerHTML=`
+      <div class="summary-division-row">
+        <label class="summary-division-show"><input type="checkbox" class="summary-division-visible" ${saved.hidden?'':'checked'}><span>Show</span></label>
+        <div class="summary-division-description"><strong>${esc(d.number)} - ${esc(d.title)}</strong><span>Enter a Division Amount as the total, or leave it blank to calculate the total from subsection rows.</span></div>
+        <input class="summary-division-amount" value="${esc(saved.amount||'')}" placeholder="$0.00" title="Division / unallocated amount">
+        <strong class="summary-division-total">$0.00</strong>
+        <button class="add-summary-subrow btn btn-secondary btn-small" type="button">+ Subsection</button>
+      </div>
+      <div class="summary-subrows"></div>`;
+    const subWrap=$('.summary-subrows',group);
+    (saved.subRows||[]).forEach(item=>{
+      const row=document.createElement('div');row.className='summary-subrow';row.dataset.summarySubrowId=item.id;
+      row.innerHTML=`<span class="summary-sub-indent">↳</span><input class="summary-sub-label" value="${esc(item.label||'')}" placeholder="Subsection description"><input class="summary-sub-amount" value="${esc(item.amount||'')}" placeholder="$0.00"><button class="remove-summary-subrow" type="button" title="Remove subsection">×</button>`;
+      subWrap.appendChild(row);
+    });
+    wrap.appendChild(group);
   });
 }
 function renderAdvancedExtraRows(p){
   const wrap=$("#advancedExtraRows"); if(!wrap)return; wrap.innerHTML="";
   (p.summary?.extraRows||[]).forEach(item=>{
     const row=document.createElement("div");row.className="summary-extra-row";row.dataset.summaryRowId=item.id;
-    row.innerHTML=`<input class="summary-extra-label" value="${esc(item.label||'')}" placeholder="Fee / allowance / contingency"><input class="summary-extra-amount" value="${esc(item.amount||'')}" placeholder="$0.00" ${item.type==='subtotal'?'disabled':''}><input class="summary-extra-notes" value="${esc(item.notes||'')}" placeholder="Optional notes"><select class="summary-extra-type"><option value="cost" ${item.type!=='subtotal'?'selected':''}>Cost Line</option><option value="subtotal" ${item.type==='subtotal'?'selected':''}>Subtotal</option></select><button class="remove-summary-row" type="button" title="Remove line">×</button>`;
+    row.innerHTML=`<input class="summary-extra-label" value="${esc(item.label||'')}" placeholder="Fee / allowance / contingency"><input class="summary-extra-amount" value="${esc(item.amount||'')}" placeholder="$0.00" ${item.type==='subtotal'?'disabled':''}><select class="summary-extra-type"><option value="cost" ${item.type!=='subtotal'?'selected':''}>Cost Line</option><option value="subtotal" ${item.type==='subtotal'?'selected':''}>Section Subtotal</option></select><button class="remove-summary-row" type="button" title="Remove line">×</button>`;
     wrap.appendChild(row);
   });
 }
 function collectSummaryEditor(p){
-  p.summary=p.summary||{mode:"none",basicNote:"",divisionCosts:{},extraRows:[]};
+  p.summary=p.summary||{mode:"none",basicNote:"",basicDivisions:{},basicOverhead:{enabled:false,label:"Overhead",amount:""},divisionCosts:{},extraRows:[]};
   p.summary.mode=$("#summaryMode")?.value||p.summary.mode||"none";
   p.summary.basicNote=$("#basicSummaryNote")?.value||"";
+  p.summary.basicDivisions=p.summary.basicDivisions||{};
+  $$('.basic-summary-division-row').forEach(row=>{
+    const n=row.dataset.basicSummaryDivision;
+    p.summary.basicDivisions[n]={label:$('.basic-summary-label',row)?.value||"",amount:$('.basic-summary-amount',row)?.value||""};
+  });
+  p.summary.basicOverhead={
+    enabled:Boolean($("#basicOverheadEnabled")?.checked),
+    label:$("#basicOverheadLabel")?.value||"Overhead",
+    amount:$("#basicOverheadAmount")?.value||""
+  };
   p.summary.divisionCosts=p.summary.divisionCosts||{};
-  $$('.summary-division-row').forEach(row=>{const n=row.dataset.summaryDivision;p.summary.divisionCosts[n]={amount:$('.summary-division-amount',row)?.value||"",notes:$('.summary-division-notes',row)?.value||""};});
-  p.summary.extraRows=$$('.summary-extra-row').map(row=>({id:row.dataset.summaryRowId||uid(),label:$('.summary-extra-label',row)?.value||"",amount:$('.summary-extra-amount',row)?.value||"",notes:$('.summary-extra-notes',row)?.value||"",type:$('.summary-extra-type',row)?.value==='subtotal'?"subtotal":"cost"}));
+  $$('.summary-division-group').forEach(group=>{
+    const n=group.dataset.summaryDivision;
+    p.summary.divisionCosts[n]={
+      amount:$('.summary-division-amount',group)?.value||"",
+      hidden:!Boolean($('.summary-division-visible',group)?.checked),
+      subRows:$$('.summary-subrow',group).map(row=>({id:row.dataset.summarySubrowId||uid(),label:$('.summary-sub-label',row)?.value||"",amount:$('.summary-sub-amount',row)?.value||""}))
+    };
+  });
+  p.summary.extraRows=$$('.summary-extra-row').map(row=>({id:row.dataset.summaryRowId||uid(),label:$('.summary-extra-label',row)?.value||"",amount:$('.summary-extra-amount',row)?.value||"",type:$('.summary-extra-type',row)?.value==='subtotal'?"subtotal":"cost"}));
   return p.summary;
+}
+function addAdvancedDivisionSubRow(divisionNumber){
+  const p=collectEditorProject();if(!p)return;
+  p.summary=p.summary||{mode:"advanced",divisionCosts:{},extraRows:[]};
+  p.summary.divisionCosts=p.summary.divisionCosts||{};
+  const saved=p.summary.divisionCosts[divisionNumber]||{amount:"",hidden:false,subRows:[]};
+  saved.subRows=Array.isArray(saved.subRows)?saved.subRows:[];
+  saved.subRows.push({id:uid(),label:"",amount:""});
+  p.summary.divisionCosts[divisionNumber]=saved;putProject(p);renderAdvancedDivisionRows(p);updateAdvancedSummaryTotals();updatePreview();
+  const group=$(`.summary-division-group[data-summary-division="${divisionNumber}"]`);
+  $$('.summary-sub-label',group).at(-1)?.focus();
 }
 function addAdvancedSummaryRow(){
   const p=collectEditorProject();if(!p)return;p.summary=p.summary||{mode:"advanced",basicNote:"",divisionCosts:{},extraRows:[]};
-  p.summary.extraRows.push({id:uid(),label:"",amount:"",notes:"",type:"cost"}); putProject(p); renderAdvancedExtraRows(p); updateAdvancedSummaryTotals(); updatePreview();
+  p.summary.extraRows.push({id:uid(),label:"",amount:"",type:"cost"}); putProject(p); renderAdvancedExtraRows(p); updateAdvancedSummaryTotals(); updatePreview();
   $$('.summary-extra-row .summary-extra-label').at(-1)?.focus();
 }
 function updateAdvancedSummaryTotals(){
-  let direct=0;$$('.summary-division-amount').forEach(el=>direct+=moneyNumber(el.value));
-  let running=direct;$$('.summary-extra-row').forEach(row=>{if($('.summary-extra-type',row)?.value!=="subtotal")running+=moneyNumber($('.summary-extra-amount',row)?.value);});
+  let direct=0;
+  $$('.summary-division-group').forEach(group=>{
+    const divisionAmountRaw=$('.summary-division-amount',group)?.value||"";
+    let subsectionTotal=0;$$('.summary-sub-amount',group).forEach(el=>subsectionTotal+=moneyNumber(el.value));
+    const divisionTotal=String(divisionAmountRaw).trim()?moneyNumber(divisionAmountRaw):subsectionTotal;
+    const totalEl=$('.summary-division-total',group);if(totalEl)totalEl.textContent=formatMoneyNumber(divisionTotal);
+    if($('.summary-division-visible',group)?.checked)direct+=divisionTotal;
+  });
+  let sectionTotal=0,additionalTotal=0;
+  $$('.summary-extra-row').forEach(row=>{
+    const type=$('.summary-extra-type',row)?.value||'cost',amt=$('.summary-extra-amount',row);
+    if(type==='subtotal'){
+      if(amt)amt.value=formatMoneyNumber(sectionTotal);
+      additionalTotal+=sectionTotal;sectionTotal=0;
+    }else sectionTotal+=moneyNumber(amt?.value||"");
+  });
+  additionalTotal+=sectionTotal;
   if($("#advancedDirectTotal"))$("#advancedDirectTotal").textContent=formatMoneyNumber(direct);
-  if($("#advancedGrandTotal"))$("#advancedGrandTotal").textContent=formatMoneyNumber(running);
+  if($("#advancedGrandTotal"))$("#advancedGrandTotal").textContent=formatMoneyNumber(direct+additionalTotal);
 }
 function refreshSummaryForDivisionChanges(){
-  const p=collectEditorProject(); if(!p)return; renderAdvancedDivisionRows(p); updateAdvancedSummaryTotals();
+  const p=collectEditorProject(); if(!p)return; renderBasicSummaryRows(p);renderAdvancedDivisionRows(p);updateBasicSummaryTotal();updateAdvancedSummaryTotals();
 }
 
 function populateEditor(p) {
@@ -968,39 +1062,78 @@ async function exportPdf(options={}) {
     fields.forEach(([x,w,label])=>{doc.line(x,lineY,x+w,lineY);doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(muted);doc.text(label,x,lineY+.20,{maxWidth:w});});
   }
 
-  function summaryDivisionRows(){
-    return CSI_DIVISIONS.map(([n,t])=>p.divisions[n]||{number:n,title:t,enabled:false}).filter(d=>d.enabled).map(d=>({kind:'cost',label:`${d.number} ${String(d.title||'').toUpperCase()}`,amount:p.summary?.divisionCosts?.[d.number]?.amount||'',notes:p.summary?.divisionCosts?.[d.number]?.notes||''}));
-  }
-  function summaryDirectTotal(){ return summaryDivisionRows().reduce((sum,r)=>sum+moneyNumber(r.amount),0); }
-  function advancedSummaryRows(){
-    const rows=summaryDivisionRows();
-    let running=rows.reduce((sum,r)=>sum+moneyNumber(r.amount),0);
-    rows.push({kind:'direct-total',label:'DIRECT COST TOTAL',amount:formatMoneyNumber(running),notes:''});
-    (p.summary?.extraRows||[]).forEach(r=>{
-      if(r.type==='subtotal') rows.push({kind:'subtotal',label:(r.label||'SUBTOTAL').toUpperCase(),amount:formatMoneyNumber(running),notes:r.notes||''});
-      else { running+=moneyNumber(r.amount); rows.push({kind:'cost',label:r.label||'',amount:r.amount||'',notes:r.notes||''}); }
+  function basicSummaryRows(){
+    const rows=[];
+    activeSummaryDivisions(p).forEach(d=>{
+      const saved=p.summary?.basicDivisions?.[d.number]||{};
+      const defaultLabel=`${d.number} - ${d.title}`;
+      rows.push({kind:'cost',label:Object.prototype.hasOwnProperty.call(saved,'label')?saved.label:defaultLabel,amount:saved.amount||''});
     });
-    rows.push({kind:'grand-total',label:'PROPOSAL SUMMARY TOTAL',amount:formatMoneyNumber(running),notes:''});
+    const overhead=p.summary?.basicOverhead||{};
+    if(overhead.enabled)rows.push({kind:'overhead',label:overhead.label||'Overhead',amount:overhead.amount||''});
+    const total=rows.reduce((sum,r)=>sum+moneyNumber(r.amount),0);
+    rows.push({kind:'grand-total',label:'BASIC SUMMARY TOTAL',amount:formatMoneyNumber(total)});
+    return rows;
+  }
+  function advancedSummaryRows(){
+    const rows=[];let directTotal=0;
+    activeSummaryDivisions(p).forEach(d=>{
+      const saved=p.summary?.divisionCosts?.[d.number]||{amount:'',hidden:false,subRows:[]};
+      if(saved.hidden)return;
+      const subs=(saved.subRows||[]).filter(r=>(r.label||'').trim()||(r.amount||'').trim());
+      const subsectionTotal=subs.reduce((sum,r)=>sum+moneyNumber(r.amount),0);
+      const divisionTotal=String(saved.amount||'').trim()?moneyNumber(saved.amount):subsectionTotal;
+      directTotal+=divisionTotal;
+      rows.push({kind:'division',label:`${d.number} - ${String(d.title||'').toUpperCase()}`,amount:formatMoneyNumber(divisionTotal)});
+      subs.forEach(r=>rows.push({kind:'subcost',label:r.label||'Subsection',amount:r.amount||''}));
+    });
+    rows.push({kind:'direct-total',label:'DIRECT COST TOTAL',amount:formatMoneyNumber(directTotal)});
+
+    let sectionTotal=0,additionalTotal=0;
+    (p.summary?.extraRows||[]).forEach(r=>{
+      if(r.type==='subtotal'){
+        rows.push({kind:'subtotal',label:(r.label||'SECTION SUBTOTAL').toUpperCase(),amount:formatMoneyNumber(sectionTotal)});
+        additionalTotal+=sectionTotal;sectionTotal=0;
+      }else{
+        sectionTotal+=moneyNumber(r.amount);
+        rows.push({kind:'cost',label:r.label||'',amount:r.amount||''});
+      }
+    });
+    additionalTotal+=sectionTotal;
+    rows.push({kind:'grand-total',label:'PROPOSAL SUMMARY TOTAL',amount:formatMoneyNumber(directTotal+additionalTotal)});
     return rows;
   }
   function summaryRowHeight(row){
-    doc.setFont('helvetica',row.kind==='cost'?'normal':'bold');doc.setFontSize(minPdfFont);
-    const desc=Math.max(1,doc.splitTextToSize(row.label||'',3.48).length);
-    const notes=Math.max(1,doc.splitTextToSize(row.notes||'',1.65).length);
-    return Math.max(.30,Math.max(desc,notes)*.205+.11);
+    const isBold=['division','direct-total','subtotal','grand-total'].includes(row.kind);
+    doc.setFont('helvetica',isBold?'bold':'normal');doc.setFontSize(minPdfFont);
+    const maxDesc=row.kind==='subcost'?contentW-1.72:contentW-1.48;
+    const desc=Math.max(1,doc.splitTextToSize(row.label||'',maxDesc).length);
+    return Math.max(.32,desc*.205+.12);
+  }
+  function splitSummaryRows(mode,rows,firstPageReduction=0){
+    const pages=[];let current=[],used=0,pageIndex=0;
+    rows.forEach(row=>{
+      const h=summaryRowHeight(row);
+      const maxH=8.55-(pageIndex===0?firstPageReduction:0);
+      if(current.length&&used+h>maxH){pages.push({mode,rows:current,cont:pageIndex>0});current=[];used=0;pageIndex++;}
+      current.push(row);used+=h;
+    });
+    if(current.length)pages.push({mode,rows:current,cont:pageIndex>0});
+    return pages;
   }
   function buildSummaryPages(){
     const mode=p.summary?.mode||'none'; if(mode==='none')return [];
-    if(mode==='basic')return [{mode:'basic',rows:(p.priceItems||[]).filter(i=>i.isBaseBid||(i.name||'').trim()||(i.price||'').trim())}];
-    const rows=advancedSummaryRows(), pages=[]; let current=[],used=0;
-    const maxH=8.65;
-    rows.forEach(row=>{const h=summaryRowHeight(row);if(current.length&&used+h>maxH){pages.push({mode:'advanced',rows:current,cont:pages.length>0});current=[];used=0;}current.push(row);used+=h;});
-    if(current.length)pages.push({mode:'advanced',rows:current,cont:pages.length>0});
-    return pages;
+    if(mode==='basic'){
+      let noteReduction=0;const note=(p.summary?.basicNote||'').trim();
+      if(note){doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);noteReduction=doc.splitTextToSize(note,contentW).length*.21+.16;}
+      return splitSummaryRows('basic',basicSummaryRows(),noteReduction);
+    }
+    return splitSummaryRows('advanced',advancedSummaryRows(),0);
   }
   function drawSummaryTitle(mode,cont=false){
     doc.setFont('helvetica','bold');doc.setFontSize(16);setText(text);
-    doc.text(mode==='advanced'?`ADVANCED PROPOSAL SUMMARY${cont?' (CONT.)':''}`:'BASIC PROPOSAL SUMMARY',contentX,.98,{maxWidth:contentW});
+    const title=mode==='advanced'?'ADVANCED PROPOSAL SUMMARY':'BASIC PROPOSAL SUMMARY';
+    doc.text(`${title}${cont?' (CONT.)':''}`,contentX,.98,{maxWidth:contentW});
     doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(muted);
     doc.text(p.projectName||'Untitled Project',contentX,1.19,{maxWidth:4.3});
     doc.text(fmtDate(p.proposalDate),pageW-right,1.19,{align:'right'});
@@ -1008,41 +1141,36 @@ async function exportPdf(options={}) {
   function drawSummaryTableHeader(y){
     setFill(orange);doc.rect(contentX,y,contentW,.30,'F');
     doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText([255,255,255]);
-    doc.text('DESCRIPTION',contentX+.08,y+.21);doc.text('TOTAL',contentX+4.02,y+.21);doc.text('NOTES',contentX+5.35,y+.21);
+    doc.text('DESCRIPTION',contentX+.08,y+.21);
+    doc.text('TOTAL',pageW-right-.10,y+.21,{align:'right'});
     return y+.30;
   }
+  function drawSummaryDataRow(row,y){
+    const h=summaryRowHeight(row);
+    if(row.kind==='direct-total'){setFill([122,125,127]);doc.rect(contentX,y,contentW,h,'F');setText([255,255,255]);}
+    else if(row.kind==='subtotal'){setFill(orange);doc.rect(contentX,y,contentW,h,'F');setText([255,255,255]);}
+    else if(row.kind==='grand-total'){setFill(charcoal);doc.rect(contentX,y,contentW,h,'F');setText([255,255,255]);}
+    else if(row.kind==='division'){setFill([238,239,240]);doc.rect(contentX,y,contentW,h,'F');setText(text);}
+    else {setText(text);doc.setDrawColor(226,228,230);doc.setLineWidth(.006);doc.line(contentX,y+h,contentX+contentW,y+h);}
+    const bold=['division','direct-total','subtotal','grand-total'].includes(row.kind);
+    doc.setFont('helvetica',bold?'bold':'normal');doc.setFontSize(minPdfFont);
+    const indent=row.kind==='subcost'?.28:.08;
+    const maxDesc=row.kind==='subcost'?contentW-1.72:contentW-1.48;
+    const desc=doc.splitTextToSize(row.label||'',maxDesc);
+    doc.text(desc,contentX+indent,y+.22,{lineHeightFactor:1.2});
+    doc.text(row.amount||'—',pageW-right-.10,y+.22,{align:'right',maxWidth:1.15});
+    return y+h;
+  }
   function drawBasicSummaryPage(pageData,pageNum,totalPages){
-    drawInteriorHeader(pageNum,totalPages);drawSummaryTitle('basic');let y=1.42;
+    drawInteriorHeader(pageNum,totalPages);drawSummaryTitle('basic',pageData.cont);let y=1.42;
     const note=(p.summary?.basicNote||'').trim();
-    if(note){doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);const lines=doc.splitTextToSize(note,contentW);doc.text(lines,contentX,y,{lineHeightFactor:1.25});y+=lines.length*.21+.16;}
+    if(note&&!pageData.cont){doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);const lines=doc.splitTextToSize(note,contentW);doc.text(lines,contentX,y,{lineHeightFactor:1.25});y+=lines.length*.21+.16;}
     y=drawSummaryTableHeader(y);
-    const items=pageData.rows||[];
-    if(!items.length){doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(muted);doc.text('No Proposed Pricing has been entered.',contentX+.08,y+.34);return;}
-    items.forEach(item=>{
-      const base=Boolean(item.isBaseBid),rowH=.42;
-      if(base){setFill([226,228,230]);doc.rect(contentX,y,contentW,rowH,'F');}
-      doc.setDrawColor(220,222,224);doc.setLineWidth(.006);doc.line(contentX,y+rowH,contentX+contentW,y+rowH);
-      doc.setFont('helvetica',base?'bold':'normal');doc.setFontSize(minPdfFont);setText(text);
-      doc.text(base?'BASE BID':((item.name||'').trim()||'ALTERNATE / ADD-ON'),contentX+.08,y+.27,{maxWidth:3.70});
-      doc.text((item.price||'').trim()||'—',contentX+5.18,y+.27,{align:'right',maxWidth:1.0});
-      doc.setFont('helvetica','normal');setText(muted);doc.text((item.description||'').trim(),contentX+5.35,y+.27,{maxWidth:1.55});
-      y+=rowH;
-    });
+    (pageData.rows||[]).forEach(row=>{y=drawSummaryDataRow(row,y);});
   }
   function drawAdvancedSummaryPage(pageData,pageNum,totalPages){
     drawInteriorHeader(pageNum,totalPages);drawSummaryTitle('advanced',pageData.cont);let y=1.42;y=drawSummaryTableHeader(y);
-    (pageData.rows||[]).forEach(row=>{
-      const h=summaryRowHeight(row);
-      if(row.kind==='direct-total'){setFill([122,125,127]);doc.rect(contentX,y,contentW,h,'F');setText([255,255,255]);}
-      else if(row.kind==='subtotal'){setFill(orange);doc.rect(contentX,y,contentW,h,'F');setText([255,255,255]);}
-      else if(row.kind==='grand-total'){setFill(charcoal);doc.rect(contentX,y,contentW,h,'F');setText([255,255,255]);}
-      else {setText(text);doc.setDrawColor(226,228,230);doc.setLineWidth(.006);doc.line(contentX,y+h,contentX+contentW,y+h);}
-      const bold=row.kind!=='cost';doc.setFont('helvetica',bold?'bold':'normal');doc.setFontSize(minPdfFont);
-      const desc=doc.splitTextToSize(row.label||'',3.48);doc.text(desc,contentX+.08,y+.22,{lineHeightFactor:1.2});
-      doc.text(row.amount||'—',contentX+5.18,y+.22,{align:'right',maxWidth:1.0});
-      doc.setFont('helvetica','normal');const notes=doc.splitTextToSize(row.notes||'',1.65);doc.text(notes,contentX+5.35,y+.22,{lineHeightFactor:1.2,maxWidth:1.65});
-      y+=h;
-    });
+    (pageData.rows||[]).forEach(row=>{y=drawSummaryDataRow(row,y);});
   }
 
   const layout=buildLayout();
@@ -1229,11 +1357,25 @@ $("#previewToggle").addEventListener("click",()=>togglePreview());$("#closePrevi
 $("#projectTitleInline").addEventListener("input",()=>{scheduleSave();updatePreview();});$("#addPriceItemBtn").addEventListener("click",addPriceItem);
 $("#summaryMode").addEventListener("change",()=>{const p=collectEditorProject();if(p)renderSummaryEditor(p);scheduleSave();updatePreview();});
 $("#addSummaryRowBtn").addEventListener("click",addAdvancedSummaryRow);
+$("#advancedDivisionRows").addEventListener("click",e=>{
+  const add=e.target.closest('.add-summary-subrow');
+  if(add){const group=add.closest('.summary-division-group');if(group)addAdvancedDivisionSubRow(group.dataset.summaryDivision);return;}
+  const remove=e.target.closest('.remove-summary-subrow');
+  if(remove){remove.closest('.summary-subrow')?.remove();updateAdvancedSummaryTotals();scheduleSave();updatePreview();}
+});
+$("#advancedDivisionRows").addEventListener("change",e=>{if(e.target.matches('.summary-division-visible')){updateAdvancedSummaryTotals();scheduleSave();updatePreview();}});
 $("#advancedExtraRows").addEventListener("click",e=>{const b=e.target.closest('.remove-summary-row');if(!b)return;b.closest('.summary-extra-row')?.remove();updateAdvancedSummaryTotals();scheduleSave();updatePreview();});
-$("#advancedExtraRows").addEventListener("change",e=>{if(e.target.matches('.summary-extra-type')){const row=e.target.closest('.summary-extra-row'),amt=$('.summary-extra-amount',row);amt.disabled=e.target.value==='subtotal';if(amt.disabled)amt.value='';updateAdvancedSummaryTotals();scheduleSave();updatePreview();}});
+$("#advancedExtraRows").addEventListener("change",e=>{if(e.target.matches('.summary-extra-type')){const row=e.target.closest('.summary-extra-row'),amt=$('.summary-extra-amount',row);amt.disabled=e.target.value==='subtotal';if(!amt.disabled)amt.value='';updateAdvancedSummaryTotals();scheduleSave();updatePreview();}});
+$("#basicOverheadEnabled").addEventListener("change",e=>{const on=e.target.checked;$("#basicOverheadLabel").disabled=!on;$("#basicOverheadAmount").disabled=!on;updateBasicSummaryTotal();scheduleSave();updatePreview();});
 $("#priceItems").addEventListener("click",e=>{const b=e.target.closest('.remove-price-item');if(!b)return;const row=b.closest('.price-item-row');row.remove();$("#emptyPriceItems").classList.toggle("hidden",$$('.price-item-row').length>0);scheduleSave();updatePreview();});
 $("#projectDisclaimerSelect").addEventListener("change",()=>{updateSelectedDisclaimerPreview();scheduleSave();updatePreview();});
-document.addEventListener("input",e=>{if(e.target.matches('[data-field],[data-company],.price-item-input,#basicSummaryNote,.summary-division-amount,.summary-division-notes,.summary-extra-label,.summary-extra-amount,.summary-extra-notes')){if(e.target.matches('.summary-division-amount,.summary-extra-amount'))updateAdvancedSummaryTotals();scheduleSave();updatePreview();}});
+document.addEventListener("input",e=>{
+  if(e.target.matches('[data-field],[data-company],.price-item-input,#basicSummaryNote,.basic-summary-label,.basic-summary-amount,#basicOverheadLabel,#basicOverheadAmount,.summary-division-amount,.summary-sub-label,.summary-sub-amount,.summary-extra-label,.summary-extra-amount')){
+    if(e.target.matches('.basic-summary-amount,#basicOverheadAmount'))updateBasicSummaryTotal();
+    if(e.target.matches('.summary-division-amount,.summary-sub-amount,.summary-extra-amount'))updateAdvancedSummaryTotals();
+    scheduleSave();updatePreview();
+  }
+});
 document.addEventListener("change",e=>{if(e.target.matches('[data-section-enabled],[data-company]')){scheduleSave();updatePreview();}});
 document.addEventListener('click',e=>{if(!e.target.closest('.project-card-actions'))$$('.project-menu').forEach(x=>x.classList.add('hidden'));});
 window.addEventListener('beforeunload',()=>{if(state.currentProjectId)saveEditorProject();});

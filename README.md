@@ -1,3 +1,14 @@
+# Koehn Scope Builder — V7.9
+
+## V7.9 summary-page refinements
+- Basic Summary now lists only the CSI divisions enabled in the proposal. Each Basic Summary description and amount is editable independently for that project.
+- Basic Summary includes an optional Overhead line with editable label and amount.
+- Advanced Summary divisions can be hidden from the summary without removing them from the proposal scope.
+- Advanced Summary supports any number of editable subsection breakout rows under each division. If a Division Amount is entered it controls that division total; if left blank, the division total is calculated from its subsection amounts.
+- Notes fields/columns were removed from both Basic and Advanced Summary pages.
+- Additional Summary lines now support Section Subtotals. Each subtotal calculates only the cost lines entered since the previous subtotal. The subtotal is then carried into the grand total once, without double counting its underlying lines.
+- Summary pages remain optional and continue to append after the proposal's existing final page. Locked cover/interior page design is unchanged.
+
 # Koehn Scope Builder — V7.5
 
 ## V7.5 proposal/editor changes
