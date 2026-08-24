@@ -171,6 +171,8 @@
           <div class="form-card form-grid two-col">
             <label>Project Name<input data-field="projectName" placeholder="Project name" /></label>
             <label>Project Number<input data-field="projectNumber" placeholder="Optional project / estimate number" /></label>
+            <label>Estimating Office<select data-field="estimatingOffice"><option value="fredonia">Fredonia</option><option value="tulsa">Tulsa</option></select></label>
+            <label class="office-project-note">Office Contact<span>Selected office address and phone are used on the proposal cover.</span></label>
             <label>Client / Owner<input data-field="clientName" placeholder="Client or owner" /></label>
             <label>Attention<input data-field="attention" placeholder="Contact person" /></label>
             <label class="full">Project Address<textarea data-field="projectAddress" rows="2" placeholder="Street, City, State ZIP"></textarea></label>
@@ -332,14 +334,12 @@
           <div class="section-heading">
             <div>
               <h2>Company Information</h2>
-              <p>The KoehnCS brand is preloaded from the uploaded letterhead, while the contact information remains editable.</p>
+              <p>The KoehnCS brand is preloaded from the uploaded letterhead. Estimating-office address and phone settings are managed under Admin → Offices.</p>
             </div>
           </div>
           <div class="form-card form-grid two-col">
             <label>Company Name<input data-company="companyName" /></label>
             <label>Website<input data-company="website" /></label>
-            <label class="full">Mailing Address<textarea data-company="address" rows="2"></textarea></label>
-            <label>Phone<input data-company="phone" /></label>
             <label>Fax<input data-company="fax" /></label>
             <label>Email<input data-company="email" placeholder="Optional" /></label>
             <label>Brand Orange<input data-company="orange" type="color" /></label>
@@ -373,6 +373,8 @@
       <label>Project Name<input id="newProjectName" required placeholder="Project name" /></label>
       <label>Client / Owner<input id="newClientName" placeholder="Client or owner" /></label>
       <label>Project Number<input id="newProjectNumber" placeholder="Optional" /></label>
+      <label>Estimating Office<select id="newProjectOffice" required><option value="fredonia">Fredonia</option><option value="tulsa">Tulsa</option></select></label>
+      <p id="newProjectOfficeNote" class="modal-helper">Office contact information will be used on the proposal cover.</p>
       <div class="modal-actions">
         <button class="btn btn-secondary" value="cancel" type="submit">Cancel</button>
         <button class="btn btn-primary" id="createProjectConfirm" value="default" type="submit">Create Project</button>
@@ -388,6 +390,7 @@
       </div>
       <div class="admin-tabs">
         <button class="admin-tab-btn active" data-admin-tab="disclaimers" type="button">Terms &amp; Conditions</button>
+        <button class="admin-tab-btn" data-admin-tab="offices" type="button">Offices</button>
         <button class="admin-tab-btn" data-admin-tab="users" type="button">User Roles</button>
         <button class="admin-tab-btn" data-admin-tab="backup" type="button">Data Backup</button>
       </div>
@@ -408,6 +411,24 @@
             </div>
           </div>
         </div>
+      </section>
+      <section id="adminOfficesTab" class="admin-tab-panel">
+        <div class="admin-section-head">
+          <div><h3>Estimating Offices</h3><p>Set the address and phone number used on proposal covers for projects estimated from each office.</p></div>
+        </div>
+        <div class="office-settings-grid">
+          <section class="office-settings-panel">
+            <span class="eyebrow">Fredonia Office</span>
+            <label>Address<textarea data-office-setting="fredonia.address" rows="4" placeholder="Office mailing / street address"></textarea></label>
+            <label>Phone<input data-office-setting="fredonia.phone" placeholder="Phone number" /></label>
+          </section>
+          <section class="office-settings-panel">
+            <span class="eyebrow">Tulsa Office</span>
+            <label>Address<textarea data-office-setting="tulsa.address" rows="4" placeholder="Office mailing / street address"></textarea></label>
+            <label>Phone<input data-office-setting="tulsa.phone" placeholder="Phone number" /></label>
+          </section>
+        </div>
+        <p class="admin-note">New projects save the selected office contact information with the proposal. Changing the Estimating Office on a project refreshes that project to the latest saved office information.</p>
       </section>
       <section id="adminUsersTab" class="admin-tab-panel">
         <div class="admin-section-head">

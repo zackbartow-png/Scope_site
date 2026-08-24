@@ -19,6 +19,18 @@ const DEFAULT_COMPANY = {
   orange: "#f36f21", charcoal: "#55575a"
 };
 
+const DEFAULT_OFFICES = {
+  fredonia: { id:"fredonia", name:"Fredonia", address:"PO Box 420\n1111 N 2nd\nFredonia, Kansas 66736", phone:"620.378.3002" },
+  tulsa: { id:"tulsa", name:"Tulsa", address:"", phone:"" }
+};
+function normalizeOfficeSettings(raw={}) {
+  const result={};
+  Object.entries(DEFAULT_OFFICES).forEach(([key,def])=>{
+    result[key]={...def,...(raw?.[key]||{}),id:key,name:def.name};
+  });
+  return result;
+}
+
 const ACKNOWLEDGMENT_TEXT = "By signing below, the client acknowledges the selections marked above and requests that Koehn Construction Services prepare and issue a formal contract reflecting those selections. This acknowledgment is not a contract, does not authorize construction work, and does not modify any existing agreement. Work will proceed only after execution of the applicable contract or other written authorization acceptable to Koehn Construction Services.";
 
 const DEFAULT_DISCLAIMERS = [
@@ -63,7 +75,7 @@ const SESSION_KEY = "koehncs.scopeBuilder.session";
 const BACKUP_VERSION = 1;
 
 function blankDataStore() {
-  return { schemaVersion: 1, updatedAt: nowIso(), users: {}, projects: {}, disclaimers: DEFAULT_DISCLAIMERS.map(x=>({...x})) };
+  return { schemaVersion: 1, updatedAt: nowIso(), users: {}, projects: {}, disclaimers: DEFAULT_DISCLAIMERS.map(x=>({...x})), officeSettings: normalizeOfficeSettings() };
 }
 function readDataStore() {
   try {
@@ -73,6 +85,7 @@ function readDataStore() {
       data.users = data.users || {};
       data.projects = data.projects || {};
       data.disclaimers = Array.isArray(data.disclaimers) && data.disclaimers.length ? data.disclaimers : DEFAULT_DISCLAIMERS.map(x=>({...x}));
+      data.officeSettings = normalizeOfficeSettings(data.officeSettings);
       return data;
     }
   } catch {}
@@ -141,6 +154,9 @@ function isAdmin() { return state.user?.role === "admin"; }
 function getDisclaimers() { return readDataStore().disclaimers.map(x=>({...x})); }
 function saveDisclaimers(items) { const data=readDataStore(); data.disclaimers=items.map(x=>({...x})); writeDataStore(data); }
 function getDisclaimer(id) { const all=getDisclaimers(); return all.find(d=>d.id===id) || all[0] || null; }
+function getOfficeSettings() { return normalizeOfficeSettings(readDataStore().officeSettings); }
+function saveOfficeSettings(settings) { const data=readDataStore(); data.officeSettings=normalizeOfficeSettings(settings); writeDataStore(data); }
+function getOfficeContact(key="fredonia") { const offices=getOfficeSettings(); return {...(offices[key]||offices.fredonia)}; }
 
 function normalizeProject(p, ownerUsername="") {
   // Backward-compatible project normalization. Existing projects become the
@@ -163,6 +179,9 @@ function normalizeProject(p, ownerUsername="") {
     p.divisions[n].number=n;
   });
   p.company = {...DEFAULT_COMPANY, ...(p.company||{})};
+  if(!["fredonia","tulsa"].includes(p.estimatingOffice)) p.estimatingOffice="fredonia";
+  const officeDefaults=getOfficeContact(p.estimatingOffice);
+  p.officeContact={...officeDefaults,...(p.officeContact||{}),id:p.estimatingOffice,name:officeDefaults.name};
   p.sectionEnabled = { clarifications:true, exclusions:true, alternates:true, clientSelections:true, ...(p.sectionEnabled||{}) };
   p.priceItems = Array.isArray(p.priceItems) ? p.priceItems.map(i=>({...i})) : [];
   let baseBid=p.priceItems.find(i=>i?.isBaseBid || String(i?.name||"").trim().toLowerCase()==="base bid");
@@ -250,13 +269,14 @@ function projectFamilies(projects) {
   }));
 }
 
-function makeProject(name="Untitled Project", client="", projectNumber="") {
+function makeProject(name="Untitled Project", client="", projectNumber="", estimatingOffice="fredonia") {
   const date = new Date();
   const dateValue = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
   const divisions = Object.fromEntries(CSI_DIVISIONS.map(([n,t]) => [n,{number:n,title:t,enabled:false,text:""}]));
   const id=uid();
+  const officeContact=getOfficeContact(estimatingOffice);
   return normalizeProject({
-    id, familyId:id, version:0, parentRevisionId:null, archived:false, locked:false, deletedByUser:false,
+    id, familyId:id, version:0, parentRevisionId:null, archived:false, locked:false, deletedByUser:false, estimatingOffice, officeContact,
     createdAt: nowIso(), updatedAt: nowIso(), projectName: name, projectNumber, clientName: client,
     attention: "", projectAddress: "", proposalDate: dateValue, preparedBy: "", documentTitle: "Proposal", introNote: "",
     clarifications: "", exclusions: "", alternates: "", priceItems: [{id:`base-bid-${id}`,name:"Base Bid",description:"",price:"",isBaseBid:true}], disclaimerId: getDisclaimers()[0]?.id || "",
@@ -316,7 +336,7 @@ function refreshRoleUi() {
   if (companyTabButton) companyTabButton.classList.toggle("hidden", !admin);
   const companyPanel = $("#companyTab");
   if (companyPanel) companyPanel.classList.toggle("role-hidden", !admin);
-  $$(`[data-company]`).forEach(el => el.disabled = !admin);
+  $$(`[data-company],[data-office-setting]`).forEach(el => el.disabled = !admin);
   if (!admin && companyTabButton?.classList.contains("active")) activateTab("info");
 }
 function enterDashboard() {
@@ -494,11 +514,17 @@ function restoreVersion(projectId,ownerUsername){
   if(!all[idx].deletedByUser)return toast("This version is not deleted.");
   const label=versionLabel(all[idx]); all[idx]=clearDeleted(all[idx]); saveProjectsForUser(ownerUsername,all); refreshDashboardNav(); renderProjects(); toast(`${label} restored to the user workspace.`);
 }
-function openNewProjectDialog() { $("#newProjectName").value=""; $("#newClientName").value=""; $("#newProjectNumber").value=""; $("#newProjectDialog").showModal(); setTimeout(()=>$("#newProjectName").focus(),100); }
+function openNewProjectDialog() {
+  $("#newProjectName").value=""; $("#newClientName").value=""; $("#newProjectNumber").value=""; $("#newProjectOffice").value="fredonia";
+  const offices=getOfficeSettings();
+  const tulsaConfigured=Boolean((offices.tulsa.address||"").trim()&&(offices.tulsa.phone||"").trim());
+  const note=$("#newProjectOfficeNote"); if(note)note.textContent=tulsaConfigured?"Office contact information will be used on the proposal cover.":"Tulsa office contact information can be configured by an Admin under Company Info.";
+  $("#newProjectDialog").showModal(); setTimeout(()=>$("#newProjectName").focus(),100);
+}
 function handleNewProject(e) {
   e.preventDefault(); if (e.submitter&&e.submitter.value==="cancel") { $("#newProjectDialog").close(); return; }
   const name=$("#newProjectName").value.trim(); if (!name) return;
-  const p=makeProject(name,$("#newClientName").value.trim(),$("#newProjectNumber").value.trim()); state.currentProjectOwner=state.user.username; putProject(p,state.user.username); $("#newProjectDialog").close(); openProject(p.id,state.user.username);
+  const p=makeProject(name,$("#newClientName").value.trim(),$("#newProjectNumber").value.trim(),$("#newProjectOffice").value||"fredonia"); state.currentProjectOwner=state.user.username; putProject(p,state.user.username); $("#newProjectDialog").close(); openProject(p.id,state.user.username);
 }
 function openProject(id, ownerUsername=state.user?.username) {
   state.currentProjectId=id; state.currentProjectOwner=ownerUsername||state.user?.username; const p=getCurrentProject(); if (!p) return enterDashboard();
@@ -738,14 +764,34 @@ function refreshSummaryForDivisionChanges(){
   const p=collectEditorProject(); if(!p)return; renderBasicSummaryRows(p);renderAdvancedDivisionRows(p);updateBasicSummaryTotal();updateAdvancedSummaryTotals();
 }
 
+function populateOfficeSettings(){
+  const offices=getOfficeSettings();
+  $$('[data-office-setting]').forEach(el=>{ const [key,field]=el.dataset.officeSetting.split('.'); el.value=offices[key]?.[field]??""; });
+}
+function collectAndSaveOfficeSettings(){
+  if(!isAdmin())return;
+  const offices=getOfficeSettings();
+  $$('[data-office-setting]').forEach(el=>{ const [key,field]=el.dataset.officeSetting.split('.'); if(offices[key])offices[key][field]=el.value; });
+  saveOfficeSettings(offices);
+  const current=getCurrentProject();
+  if(current && !current.locked && !current.deletedByUser){
+    const key=current.estimatingOffice||"fredonia";
+    current.officeContact={...(offices[key]||DEFAULT_OFFICES.fredonia)};
+    putProject(current,state.currentProjectOwner);
+  }
+}
 function populateEditor(p) {
   $$('[data-field]').forEach(el=>{ const k=el.dataset.field; el.value=p[k]??""; });
   $$('[data-company]').forEach(el=>{ const k=el.dataset.company;el.value=p.company?.[k]??DEFAULT_COMPANY[k]??""; });
   $$('[data-section-enabled]').forEach(el=>el.checked=p.sectionEnabled?.[el.dataset.sectionEnabled]!==false);
+  populateOfficeSettings();
 }
 function collectEditorProject() {
   const p=getCurrentProject(); if(!p)return null;
+  const previousOffice=p.estimatingOffice||"fredonia";
   $$('[data-field]').forEach(el=>p[el.dataset.field]=el.value);
+  if(!["fredonia","tulsa"].includes(p.estimatingOffice))p.estimatingOffice="fredonia";
+  if(p.estimatingOffice!==previousOffice || !p.officeContact) p.officeContact=getOfficeContact(p.estimatingOffice);
   p.projectName=$("#projectTitleInline").value.trim()||"Untitled Project";
   p.company=p.company||{...DEFAULT_COMPANY}; $$('[data-company]').forEach(el=>p.company[el.dataset.company]=el.value);
   p.sectionEnabled=p.sectionEnabled||{}; $$('[data-section-enabled]').forEach(el=>p.sectionEnabled[el.dataset.sectionEnabled]=el.checked);
@@ -878,7 +924,8 @@ async function exportPdf(options={}) {
 
     const label=[55,55,55];
     const value=text;
-    const livePhone=(p.company.phone||DEFAULT_COMPANY.phone)==='866.943.7751'?'620.378.3002':(p.company.phone||DEFAULT_COMPANY.phone);
+    const coverOffice={...getOfficeContact(p.estimatingOffice||"fredonia"),...(p.officeContact||{})};
+    const livePhone=coverOffice.phone||"";
 
     // PROJECT / DATE
     doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(label);
@@ -917,7 +964,7 @@ async function exportPdf(options={}) {
     }
 
     // Footer contact values. The approved cover uses phone only; fax is not shown here.
-    const addrRaw=(p.company.address||'').replace(/\s*·\s*/g,'\n').split(/\n/).map(s=>s.trim()).filter(Boolean);
+    const addrRaw=(coverOffice.address||'').replace(/\s*·\s*/g,'\n').split(/\n/).map(s=>s.trim()).filter(Boolean);
     doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(value);
     doc.text(addrRaw.slice(0,3),1.00,8.72,{lineHeightFactor:1.18,maxWidth:1.55});
     doc.text(livePhone,3.39,8.80,{maxWidth:1.05});
@@ -1241,7 +1288,7 @@ function handleVersionDeleteRestore(){
 }
 
 // Admin disclaimer library
-function openAdminDialog(){if(!isAdmin())return toast("Admin access required.");if(state.currentProjectId)saveEditorProject();renderAdminDisclaimers();renderAdminUsers();$("#adminDialog").showModal();}
+function openAdminDialog(){if(!isAdmin())return toast("Admin access required.");if(state.currentProjectId)saveEditorProject();renderAdminDisclaimers();renderAdminUsers();populateOfficeSettings();$("#adminDialog").showModal();}
 function closeAdminDialog(){$("#adminDialog").close();}
 function activateAdminTab(name){$$('.admin-tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===name));$$('.admin-tab-panel').forEach(p=>p.classList.remove('active'));$(`#admin${name[0].toUpperCase()+name.slice(1)}Tab`).classList.add('active');}
 function renderAdminDisclaimers(){const items=getDisclaimers(),list=$("#disclaimerList");list.innerHTML="";if(!state.adminDisclaimerId||!items.some(d=>d.id===state.adminDisclaimerId))state.adminDisclaimerId=items[0]?.id||null;items.forEach(d=>{const b=document.createElement('button');b.type='button';b.className=`disclaimer-list-item ${d.id===state.adminDisclaimerId?'active':''}`;b.dataset.disclaimerAdminId=d.id;b.innerHTML=`<strong>${esc(d.name)}</strong><span>${esc(d.text)}</span>`;list.appendChild(b);});$$('[data-disclaimer-admin-id]').forEach(b=>b.addEventListener('click',()=>{state.adminDisclaimerId=b.dataset.disclaimerAdminId;renderAdminDisclaimers();}));const d=items.find(x=>x.id===state.adminDisclaimerId);$("#disclaimerEditId").value=d?.id||"";$("#disclaimerEditName").value=d?.name||"";$("#disclaimerEditText").value=d?.text||"";$("#deleteDisclaimerBtn").disabled=items.length<=1||!d;}
@@ -1339,13 +1386,21 @@ async function restoreDataBackup(file) {
         schemaVersion:1, updatedAt:nowIso(),
         users:{...(incoming.users||{})},
         projects:{...(incoming.projects||{})},
-        disclaimers:Array.isArray(incoming.disclaimers)&&incoming.disclaimers.length?incoming.disclaimers:DEFAULT_DISCLAIMERS.map(x=>({...x}))
+        disclaimers:Array.isArray(incoming.disclaimers)&&incoming.disclaimers.length?incoming.disclaimers:DEFAULT_DISCLAIMERS.map(x=>({...x})),
+        officeSettings:normalizeOfficeSettings(incoming.officeSettings)
       };
     } else {
       merged=JSON.parse(JSON.stringify(current));
       Object.entries(incoming.users||{}).forEach(([key,u])=>{ if (!merged.users[key]) merged.users[key]=u; });
       Object.entries(incoming.projects||{}).forEach(([key,projects])=>{ merged.projects[key]=mergeProjectArrays(merged.projects[key]||[],Array.isArray(projects)?projects:[]); });
       merged.disclaimers=mergeDisclaimers(merged.disclaimers||[],incoming.disclaimers||[]);
+      if(incoming.officeSettings){
+        const currentOffices=normalizeOfficeSettings(merged.officeSettings), incomingOffices=normalizeOfficeSettings(incoming.officeSettings);
+        Object.keys(currentOffices).forEach(k=>{
+          ["address","phone"].forEach(field=>{ if((incomingOffices[k]?.[field]||"").trim()) currentOffices[k][field]=incomingOffices[k][field]; });
+        });
+        merged.officeSettings=currentOffices;
+      }
     }
     const users=Object.values(merged.users||{}).filter(Boolean);
     if (users.length && !users.some(u=>u.role==="admin")) {
@@ -1415,13 +1470,14 @@ $("#basicOverheadEnabled").addEventListener("change",e=>{const on=e.target.check
 $("#priceItems").addEventListener("click",e=>{const b=e.target.closest('.remove-price-item');if(!b)return;const row=b.closest('.price-item-row');row.remove();$("#emptyPriceItems").classList.toggle("hidden",$$('.price-item-row').length>0);scheduleSave();updatePreview();});
 $("#projectDisclaimerSelect").addEventListener("change",()=>{updateSelectedDisclaimerPreview();scheduleSave();updatePreview();});
 document.addEventListener("input",e=>{
-  if(e.target.matches('[data-field],[data-company],.price-item-input,#basicSummaryNote,.basic-summary-label,.basic-summary-amount,#basicOverheadLabel,#basicOverheadAmount,.summary-division-amount,.summary-sub-label,.summary-sub-amount,.summary-custom-label,.summary-custom-amount,.summary-extra-label,.summary-extra-amount')){
+  if(e.target.matches('[data-field],[data-company],[data-office-setting],.price-item-input,#basicSummaryNote,.basic-summary-label,.basic-summary-amount,#basicOverheadLabel,#basicOverheadAmount,.summary-division-amount,.summary-sub-label,.summary-sub-amount,.summary-custom-label,.summary-custom-amount,.summary-extra-label,.summary-extra-amount')){
     if(e.target.matches('.basic-summary-amount,#basicOverheadAmount'))updateBasicSummaryTotal();
     if(e.target.matches('.summary-division-amount,.summary-sub-amount,.summary-custom-amount,.summary-extra-amount'))updateAdvancedSummaryTotals();
+    if(e.target.matches('[data-office-setting]'))collectAndSaveOfficeSettings();
     scheduleSave();updatePreview();
   }
 });
-document.addEventListener("change",e=>{if(e.target.matches('[data-section-enabled],[data-company]')){scheduleSave();updatePreview();}});
+document.addEventListener("change",e=>{if(e.target.matches('[data-section-enabled],[data-company],[data-field],[data-office-setting]')){if(e.target.matches('[data-office-setting]'))collectAndSaveOfficeSettings();scheduleSave();updatePreview();}});
 document.addEventListener('click',e=>{if(!e.target.closest('.project-card-actions'))$$('.project-menu').forEach(x=>x.classList.add('hidden'));});
 window.addEventListener('beforeunload',()=>{if(state.currentProjectId)saveEditorProject();});
 

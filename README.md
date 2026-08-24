@@ -152,3 +152,11 @@ Passwords in this prototype are hashed in browser storage, but this local protot
 - Custom summary divisions have editable description and total amount and are included in Direct Cost Total / grand total.
 - Custom summary divisions affect only the Advanced Summary and do not create or modify scope divisions.
 - Existing Additional Costs Section Subtotal behavior remains unchanged: each subtotal sums only the cost lines since the previous subtotal and rolls into the grand total once.
+
+## V7.11 — Estimating Offices
+- New projects require an Estimating Office selection: Fredonia or Tulsa.
+- Existing projects default to Fredonia for backward compatibility.
+- Admin Settings now includes an Offices tab with separate address and phone fields for Fredonia and Tulsa.
+- The selected office is saved with each project and its address/phone drive the contact block on Page 1 of the PDF.
+- Changing a project's Estimating Office refreshes that project to the latest saved contact information for the selected office.
+- Office settings are included in full Admin backups and restored with workspace data.
