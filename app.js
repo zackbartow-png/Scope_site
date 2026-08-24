@@ -596,7 +596,7 @@ async function exportPdf() {
   try {
     [logoData,coverData]=await Promise.all([
       imageToDataUrl('assets/koehn-logo.png'),
-      imageToDataUrl('assets/cover-reference.png')
+      imageToDataUrl('assets/cover-reference-clean.png')
     ]);
   } catch {}
 
@@ -609,49 +609,47 @@ async function exportPdf() {
   function coverMask(x,y,w,h,color=[255,255,255]){doc.setFillColor(...color);doc.rect(x,y,w,h,'F');}
 
   function drawCover(){
-    // The user's locked cover is the exact visual base. Dynamic proposal data is
-    // masked and redrawn so the design stays fixed while project information changes.
+    // Use the locked cover as the visual base, but keep editable value areas
+    // visually transparent by redrawing them over a cleaned cover reference.
     if(coverData) doc.addImage(coverData,'PNG',0,0,pageW,pageH,undefined,'FAST');
     else { setFill([255,255,255]);doc.rect(0,0,pageW,pageH,'F'); }
 
     // Proposal number / revision inside charcoal title band.
-    coverMask(.48,3.63,2.55,.44,charcoal);
     doc.setFont('helvetica','normal');doc.setFontSize(15.5);setText([255,255,255]);
     doc.text(`${fmtProjectNo()}${rev?`  •  ${rev}`:''}`,.52,3.92);
 
-    // Project values. Keep the reference labels/icons intact.
-    coverMask(1.10,5.58,3.30,.50);
-    coverMask(5.28,5.58,2.45,.50);
-    coverMask(1.10,6.84,3.45,.52);
-    coverMask(5.28,6.84,2.40,.52);
-    coverMask(.56,8.15,3.50,.78);
+    // Cover field labels.
+    const labelColor=[58,58,58];
+    doc.setFont('helvetica','normal');doc.setFontSize(10.4);setText(labelColor);
+    doc.text('PROJECT',1.16,5.64);
+    doc.text('DATE',5.35,5.64);
+    doc.text('CLIENT',1.16,6.89);
+    doc.text('PREPARED BY',5.35,6.89);
+    doc.text('ATTN:',.60,8.15);
+
+    // Project values.
     doc.setFont('helvetica','bold');doc.setFontSize(15.0);setText(text);
     doc.text(p.projectName||'Untitled Project',1.16,5.93,{maxWidth:3.15});
     doc.text(fmtDate(p.proposalDate),5.35,5.93,{maxWidth:2.15});
     doc.text(p.clientName||'—',1.16,7.20,{maxWidth:3.35});
     doc.text(p.preparedBy||'—',5.35,7.20,{maxWidth:2.15});
     doc.setFontSize(12.2);
-    if((p.attention||'').trim())doc.text(p.attention.trim(),.60,8.45,{maxWidth:3.20});
+    if((p.attention||'').trim()) doc.text(p.attention.trim(),.60,8.45,{maxWidth:3.20});
     if((p.projectAddress||'').trim()){
       doc.setFont('helvetica','normal');doc.setFontSize(10.4);
       const addr=doc.splitTextToSize(p.projectAddress.trim().replace(/\n/g,', '),3.25);
       doc.text(addr,.60,8.72);
     }
 
-    // Revision is a true conditional field on the locked cover. Original/base
-    // proposals do not show the icon, label, dash, or any placeholder at all.
-    if(!rev){
-      coverMask(4.64,7.82,2.60,1.02);
-    }else{
-      coverMask(5.28,8.30,1.25,.34);
-      doc.setFont('helvetica','bold');doc.setFontSize(12.2);setText(text);doc.text(rev,5.34,8.52);
+    // Revision is conditional: only show when this is a versioned proposal.
+    if(rev){
+      doc.setFont('helvetica','normal');doc.setFontSize(10.4);setText(labelColor);
+      doc.text('REVISION',5.35,8.15);
+      doc.setFont('helvetica','bold');doc.setFontSize(12.2);setText(text);
+      doc.text(rev,5.34,8.52);
     }
 
-    // Company information is still driven by Admin settings while keeping the
-    // locked footer layout/icons from the reference cover.
-    coverMask(1.08,9.76,2.05,.64);
-    coverMask(3.88,9.76,1.88,.64);
-    coverMask(6.15,9.82,1.55,.45);
+    // Company information in locked footer positions.
     const addrRaw=(p.company.address||'').replace(/\s*·\s*/g,'\n').split(/\n/).map(s=>s.trim()).filter(Boolean);
     doc.setFont('helvetica','normal');doc.setFontSize(8.6);setText(text);
     doc.text(addrRaw.slice(0,3),1.11,9.95,{lineHeightFactor:1.22,maxWidth:1.95});
