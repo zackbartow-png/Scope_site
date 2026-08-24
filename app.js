@@ -34,7 +34,7 @@ const DEFAULT_DISCLAIMERS = [
   }
 ];
 
-const state = { user: null, currentProjectId: null, currentProjectOwner: null, authMode: "login", saveTimer: null, previewOpen: true, adminDisclaimerId: null, dashboardMode: "active", adminUserFilter: "all" };
+const state = { user: null, currentProjectId: null, currentProjectOwner: null, authMode: "login", saveTimer: null, previewOpen: true, previewRenderTimer: null, previewRenderToken: 0, adminDisclaimerId: null, dashboardMode: "active", adminUserFilter: "all" };
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 
@@ -572,29 +572,83 @@ function filterDivisionNav() { const q=$("#divisionSearch").value.trim().toLower
 
 function updatePreview() {
   const p=collectEditorProject();if(!p)return;
-  document.documentElement.style.setProperty('--orange',p.company.orange||DEFAULT_COMPANY.orange);document.documentElement.style.setProperty('--charcoal',p.company.charcoal||DEFAULT_COMPANY.charcoal);
-  $("#previewDocTitle").textContent=p.documentTitle||"Proposal";$("#previewProjectNo").textContent=`${p.projectNumber||"PROJECT"}${(p.version||0)>0?` · ${versionLabel(p)}`:""}`;$("#previewProjectName").textContent=p.projectName||"Untitled Project";$("#previewDate").textContent=fmtDate(p.proposalDate);$("#previewClient").textContent=p.clientName||"—";$("#previewPrepared").textContent=p.preparedBy||"—";
-  const body=$("#previewBody");body.innerHTML="";if(p.introNote.trim())body.insertAdjacentHTML('beforeend',`<div class="preview-intro">${esc(p.introNote)}</div>`);
-  const active=CSI_DIVISIONS.map(([n])=>p.divisions[n]).filter(d=>d?.enabled&&d.text.trim());active.slice(0,5).forEach(d=>body.insertAdjacentHTML('beforeend',`<section class="preview-section"><div class="preview-section-title">Division ${d.number} · ${esc(d.title)}</div><p>${esc(d.text)}</p></section>`));
-  if(active.length>5)body.insertAdjacentHTML('beforeend',`<div style="margin-top:7px;color:#999">+ ${active.length-5} more divisions on following pages</div>`);
-  const extra=[["Clarifications",p.clarifications,p.sectionEnabled.clarifications],["Exclusions",p.exclusions,p.sectionEnabled.exclusions],["Alternates",p.alternates,p.sectionEnabled.alternates]].filter(x=>x[2]&&x[1].trim());
-  extra.slice(0,1).forEach(([t,text])=>body.insertAdjacentHTML('beforeend',`<section class="preview-section"><div class="preview-section-title">${t}</div><p>${esc(text)}</p></section>`));
-  if(p.sectionEnabled.clientSelections&&p.priceItems.length){body.insertAdjacentHTML('beforeend',`<section class="preview-section"><div class="preview-section-title">Proposed Pricing</div>${p.priceItems.slice(0,2).map(i=>`<div class="preview-selection-row"><span class="preview-selection-box"></span><span>${esc(i.name||'Selection item')}</span><strong>${esc(i.price||'')}</strong></div>`).join('')}</section>`);}
-  const d=getDisclaimer(p.disclaimerId); if(d)body.insertAdjacentHTML('beforeend',`<div class="preview-disclaimer"><strong>Terms &amp; Conditions — ${esc(d.name)}</strong> · ${esc(d.text.slice(0,135))}${d.text.length>135?'…':''}</div>`);
-  $("#previewFooterContact").innerHTML=`${esc(p.company.address||'').replace(/\n/g,'<br>')}<br><strong>P</strong> ${esc(p.company.phone||'')} ${p.company.fax?` · <strong>F</strong> ${esc(p.company.fax)}`:''}<br><strong>${esc(p.company.website||'')}</strong>`;
+  document.documentElement.style.setProperty('--orange',p.company.orange||DEFAULT_COMPANY.orange);
+  document.documentElement.style.setProperty('--charcoal',p.company.charcoal||DEFAULT_COMPANY.charcoal);
+  schedulePdfPreview();
 }
-function togglePreview(open) { state.previewOpen=open??!state.previewOpen;$("#previewPane").classList.toggle("closed",!state.previewOpen);if(window.innerWidth>1180)$("#previewPane").classList.toggle("hidden",!state.previewOpen);$("#previewToggle").textContent=state.previewOpen?"Hide Preview":"PDF Preview"; }
+function togglePreview(open) {
+  state.previewOpen=open??!state.previewOpen;
+  $("#previewPane").classList.toggle("closed",!state.previewOpen);
+  if(window.innerWidth>1180)$("#previewPane").classList.toggle("hidden",!state.previewOpen);
+  $("#previewToggle").textContent=state.previewOpen?"Hide Preview":"PDF Preview";
+  if(state.previewOpen)schedulePdfPreview(40);
+}
+function schedulePdfPreview(delay=500){
+  clearTimeout(state.previewRenderTimer);
+  if(!state.previewOpen||!state.currentProjectId)return;
+  state.previewRenderTimer=setTimeout(renderLivePdfPreview,delay);
+}
+async function renderLivePdfPreview(){
+  if(!state.previewOpen||!state.currentProjectId)return;
+  const scroller=$("#pdfPreviewScroll"), pagesWrap=$("#pdfPreviewPages"), status=$("#pdfPreviewStatus");
+  if(!scroller||!pagesWrap)return;
+  const token=++state.previewRenderToken;
+  const maxScroll=Math.max(1,scroller.scrollHeight-scroller.clientHeight);
+  const scrollRatio=scroller.scrollTop/maxScroll;
+  if(status){status.textContent="Updating live PDF…";status.classList.remove("hidden");}
+  try{
+    const doc=await exportPdf({preview:true});
+    if(!doc||token!==state.previewRenderToken)return;
+    const buffer=doc.output('arraybuffer');
+    if(!window.pdfjsLib)throw new Error('PDF preview renderer did not load.');
+    if(window.pdfjsLib.GlobalWorkerOptions)window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await window.pdfjsLib.getDocument({data:buffer}).promise;
+    if(token!==state.previewRenderToken)return;
+    const available=Math.max(260,Math.min(520,scroller.clientWidth-28));
+    const dpr=Math.min(2,window.devicePixelRatio||1);
+    const fragment=document.createDocumentFragment();
+    for(let i=1;i<=pdf.numPages;i++){
+      if(token!==state.previewRenderToken)return;
+      const page=await pdf.getPage(i);
+      const base=page.getViewport({scale:1});
+      const cssScale=available/base.width;
+      const renderViewport=page.getViewport({scale:cssScale*dpr});
+      const canvas=document.createElement('canvas');
+      canvas.className='pdf-preview-canvas';
+      canvas.width=Math.ceil(renderViewport.width);canvas.height=Math.ceil(renderViewport.height);
+      canvas.style.width=`${Math.round(base.width*cssScale)}px`;
+      canvas.style.height=`${Math.round(base.height*cssScale)}px`;
+      canvas.setAttribute('aria-label',`Proposal preview page ${i} of ${pdf.numPages}`);
+      const sheet=document.createElement('div');sheet.className='pdf-preview-sheet';
+      const pageTag=document.createElement('div');pageTag.className='pdf-preview-page-tag';pageTag.textContent=`Page ${i} of ${pdf.numPages}`;
+      sheet.append(canvas,pageTag);fragment.appendChild(sheet);
+      await page.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport:renderViewport}).promise;
+    }
+    if(token!==state.previewRenderToken)return;
+    pagesWrap.replaceChildren(fragment);
+    if(status)status.classList.add('hidden');
+    requestAnimationFrame(()=>{
+      const newMax=Math.max(0,scroller.scrollHeight-scroller.clientHeight);
+      scroller.scrollTop=Math.min(newMax,newMax*scrollRatio);
+    });
+  }catch(err){
+    console.error(err);
+    if(token!==state.previewRenderToken)return;
+    if(status){status.textContent="Live preview unavailable. Export PDF still uses the locked template.";status.classList.remove("hidden");}
+  }
+}
 async function imageToDataUrl(src) { const img=new Image();img.crossOrigin="anonymous";return new Promise((resolve,reject)=>{img.onload=()=>{const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);resolve(c.toDataURL('image/png'));};img.onerror=reject;img.src=src;}); }
 function parseScopeLines(text) { return String(text||"").split(/\r?\n/).map(s=>s.trim()).filter(Boolean).map(s=>{const cleaned=s.replace(/^[-•▪◦*]\s*/,"");return{bullet:cleaned!==s||/^\d+[.)]\s/.test(s),text:cleaned};}); }
 function hexToRgb(hex) { const h=hex.replace('#','');const n=parseInt(h.length===3?h.split('').map(c=>c+c).join(''):h,16);return[(n>>16)&255,(n>>8)&255,n&255]; }
 
-async function exportPdf() {
-  saveEditorProject();
-  const p=getCurrentProject();
+async function exportPdf(options={}) {
+  const previewOnly=Boolean(options&&options.preview===true);
+  if(!previewOnly)saveEditorProject();
+  const p=previewOnly?collectEditorProject():getCurrentProject();
   if(!p)return;
   if(!window.jspdf)return toast("PDF library did not load. Check your internet connection and try again.");
 
-  setSaveStatus("Building PDF…");
+  if(!previewOnly)setSaveStatus("Building PDF…");
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:"in",format:"letter",orientation:"portrait",compress:true});
   const pageW=8.5,pageH=11;
@@ -724,9 +778,17 @@ async function exportPdf() {
     const descLines=(item.description||'').trim()?doc.splitTextToSize(item.description.trim(),4.15).length:0;
     return Math.max(.27,nameLines*.215 + descLines*.205 + .08);
   }
-  function selectionHeight(items){
-    return .82 + items.reduce((sum,item)=>sum+selectionItemHeight(item),0);
+  function selectionMetrics(items){
+    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);
+    const note='Base Bid is shown first. Mark any alternates or add-ons you would like included in the contract request.';
+    const noteLines=doc.splitTextToSize(note,contentW-.84);
+    const noteLeading=.205;
+    const noteY=.56;
+    const itemsY=noteY+(noteLines.length*noteLeading)+.20;
+    const h=itemsY+items.reduce((sum,item)=>sum+selectionItemHeight(item),0)+.18;
+    return {h:Math.max(1.15,h),noteLines,itemsY,noteLeading};
   }
+  function selectionHeight(items){ return selectionMetrics(items).h; }
 
   function buildLayout(){
     const pages=[];let current=[],y=topY;
@@ -781,12 +843,11 @@ async function exportPdf() {
   }
   function drawSelections(y){
     const items=p.priceItems.filter(i=>(i.name||'').trim()||(i.price||'').trim());
-    const h=selectionHeight(items);drawCardBase(y,h);
+    const metrics=selectionMetrics(items),h=metrics.h;drawCardBase(y,h);
     doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText(text);doc.text('PROPOSED PRICING',contentX+.42,y+.28);
     doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(muted);
-    const noteLines=doc.splitTextToSize('Base Bid is shown first. Mark any alternates or add-ons you would like included in the contract request.',contentW-.84);
-    doc.text(noteLines,contentX+.42,y+.51,{lineHeightFactor:1.2});
-    let cy=y+.78;
+    doc.text(metrics.noteLines,contentX+.42,y+.56,{lineHeightFactor:metrics.noteLeading/minPdfFont*72});
+    let cy=y+metrics.itemsY;
     items.forEach(item=>{
       doc.setDrawColor(70,73,76);doc.setLineWidth(.01);doc.rect(contentX+.43,cy-.12,.14,.14);
       doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText(text);
@@ -837,6 +898,7 @@ async function exportPdf() {
     entries.forEach(entry=>{if(entry.type==='division')y=drawDivisionCard(entry,y);else if(entry.type==='simple')y=drawSimpleCard(entry,y);else if(entry.type==='selections')y=drawSelections(y);else if(entry.type==='closing')drawClosing(y);});
   });
 
+  if(previewOnly)return doc;
   const safe=(p.projectName||'Scope').replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'');
   const versionSuffix=rev?`_${rev}`:'';
   doc.save(`${safe||'Scope'}_Proposal${versionSuffix}.pdf`);

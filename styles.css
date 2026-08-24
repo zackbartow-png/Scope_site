@@ -342,3 +342,12 @@ textarea { resize: vertical; line-height: 1.5; }
 .base-bid-row { background: #f7f7f7; }
 .base-bid-row .price-name { font-weight: 800; color: #3f4347; background: #f1f2f3; }
 .base-bid-lock { display: grid; place-items: center; min-width: 32px; height: 28px; border-radius: 7px; background: #eceeef; color: #73777a; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+
+/* Live PDF preview: renders the exact export template page-by-page. */
+.pdf-preview-scroll { flex: 1; min-height: 0; overflow: auto; padding: 16px 12px 28px; background: #dfe2e4; overscroll-behavior: contain; }
+.pdf-preview-pages { display: grid; gap: 18px; justify-items: center; }
+.pdf-preview-sheet { position: relative; background: #fff; box-shadow: 0 7px 20px rgba(0,0,0,.16); line-height: 0; }
+.pdf-preview-canvas { display: block; max-width: 100%; height: auto; background: #fff; }
+.pdf-preview-page-tag { position: absolute; right: 8px; bottom: -16px; font-size: 9px; line-height: 1; color: #777; }
+.pdf-preview-status { margin: 4px auto 14px; width: fit-content; max-width: calc(100% - 16px); padding: 7px 10px; border-radius: 8px; background: rgba(255,255,255,.88); color: #666; font-size: 10px; line-height: 1.35; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+.pdf-preview-status.hidden { display: none; }

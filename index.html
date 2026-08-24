@@ -293,23 +293,9 @@
           </div>
           <button id="closePreviewBtn" class="icon-btn">×</button>
         </div>
-        <div class="paper-wrap">
-          <div id="paperPreview" class="paper-preview">
-            <div class="paper-header">
-              <img src="assets/koehn-logo.png" alt="" />
-              <div class="paper-title"><span id="previewDocTitle">Proposal</span><small id="previewProjectNo">PROJECT</small></div>
-            </div>
-            <div class="paper-rule"></div>
-            <div class="paper-project-grid">
-              <div><span>Project</span><strong id="previewProjectName">Untitled Project</strong></div>
-              <div><span>Date</span><strong id="previewDate">—</strong></div>
-              <div><span>Client</span><strong id="previewClient">—</strong></div>
-              <div><span>Prepared By</span><strong id="previewPrepared">—</strong></div>
-            </div>
-            <div id="previewBody" class="paper-body"></div>
-            <div class="paper-footer-contact" id="previewFooterContact"></div>
-            <img src="assets/triangle-band.png" class="paper-band" alt="" />
-          </div>
+        <div id="pdfPreviewScroll" class="pdf-preview-scroll">
+          <div id="pdfPreviewStatus" class="pdf-preview-status">Building live PDF preview…</div>
+          <div id="pdfPreviewPages" class="pdf-preview-pages"></div>
         </div>
       </aside>
     </main>
@@ -387,6 +373,7 @@
   <input id="backupFileInput" type="file" accept=".ksb,.json,application/json" hidden />
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
