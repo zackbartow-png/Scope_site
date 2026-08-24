@@ -124,3 +124,12 @@ Passwords in this prototype are hashed in browser storage, but this local protot
 - Editor workspace, CSI navigation, and PDF preview each scroll independently.
 - Mouse-wheel/touchpad scrolling is no longer trapped by the preview pane at its scroll limits.
 - No PDF design, pagination, proposal content, or persistence changes were made in this update.
+
+## V7.8 – Optional Proposal Summary
+- Added a new Proposal Summary editor tab.
+- Summary modes are No Summary, Basic Summary, and Advanced Summary.
+- Summary pages append after the existing final proposal page; locked cover/scope/closing pages are unchanged.
+- Basic Summary automatically recaps the current Proposed Pricing Base Bid and alternate/add-on lines, with an optional summary note.
+- Advanced Summary lists enabled CSI divisions with editable amount and notes fields, calculates Direct Cost Total, and supports additional cost/subtotal lines for fees, permits, bonds, allowances, contingency, etc.
+- Advanced PDF styling is modeled on the uploaded cost-model summary concept: Description / Total / Notes columns, emphasized direct-cost, subtotal, and final-total bands, adapted to Koehn orange/charcoal branding.
+- Summary pages use the existing 12 pt PDF minimum and appear in the live scrolling PDF preview.

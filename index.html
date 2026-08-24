@@ -157,6 +157,7 @@
           <button class="tab-btn" data-tab="scope">Scope by Division</button>
           <button class="tab-btn" data-tab="closeout">Clarifications & Alternates</button>
           <button class="tab-btn" data-tab="approval">Pricing & Approval</button>
+          <button class="tab-btn" data-tab="summary">Proposal Summary</button>
           <button class="tab-btn" data-tab="company">Company Info</button>
         </div>
 
@@ -261,6 +262,60 @@
               <div><span>Client / Authorized Representative</span></div>
               <div><span>Signature</span></div>
               <div><span>Date</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="summaryTab" class="tab-panel">
+          <div class="section-heading split-heading">
+            <div>
+              <h2>Proposal Summary</h2>
+              <p>Optionally append a summary after the current final proposal page. Basic uses Proposed Pricing. Advanced provides a division-by-division cost model.</p>
+            </div>
+            <label>Summary Type
+              <select id="summaryMode" class="select-control summary-mode-select">
+                <option value="none">No Summary</option>
+                <option value="basic">Basic Summary</option>
+                <option value="advanced">Advanced Summary</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="summaryNoneState" class="form-card summary-empty-card">
+            <h3>No summary page selected</h3>
+            <p>The proposal will end with the existing Terms &amp; Conditions / Request to Proceed page.</p>
+          </div>
+
+          <div id="basicSummaryEditor" class="summary-editor-block hidden">
+            <div class="form-card">
+              <div class="approval-card-head">
+                <div><h3>Basic Summary</h3><p>Automatically summarizes the Base Bid and any alternates/add-ons from Proposed Pricing.</p></div>
+              </div>
+              <label>Optional Summary Note
+                <textarea id="basicSummaryNote" rows="4" placeholder="Optional note displayed above the pricing recap."></textarea>
+              </label>
+              <div id="basicSummaryPricingPreview" class="summary-pricing-preview"></div>
+            </div>
+          </div>
+
+          <div id="advancedSummaryEditor" class="summary-editor-block hidden">
+            <div class="form-card">
+              <div class="approval-card-head">
+                <div><h3>Advanced Cost Summary</h3><p>Enter the client-facing amount and optional notes for each included CSI division. The Direct Cost Total is calculated automatically.</p></div>
+              </div>
+              <div class="summary-table-head"><span>Description</span><span>Total</span><span>Notes</span></div>
+              <div id="advancedDivisionRows" class="advanced-summary-rows"></div>
+              <div class="summary-total-preview"><span>Direct Cost Total</span><strong id="advancedDirectTotal">$0.00</strong></div>
+            </div>
+
+            <div class="form-card">
+              <div class="approval-card-head">
+                <div><h3>Additional Cost / Subtotal Lines</h3><p>Add fees, permits, bonds, allowances, contingency, or subtotal breaks below the division costs.</p></div>
+                <button id="addSummaryRowBtn" class="btn btn-secondary" type="button">+ Add Summary Line</button>
+              </div>
+              <div class="summary-extra-head"><span>Description</span><span>Amount</span><span>Notes</span><span>Row Type</span><span></span></div>
+              <div id="advancedExtraRows" class="advanced-summary-rows"></div>
+              <div class="summary-grand-total-preview"><span>Proposal Summary Total</span><strong id="advancedGrandTotal">$0.00</strong></div>
             </div>
           </div>
         </div>
