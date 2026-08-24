@@ -147,6 +147,7 @@ function normalizeProject(p, ownerUsername="") {
   p.deletedByUser = Boolean(p.deletedByUser);
   p.deletedAt = p.deletedAt || null;
   p.deletedBy = p.deletedBy || null;
+  p.deletedScope = p.deletedScope || null;
   p.ownerUsername = p.ownerUsername || ownerUsername || "";
   p.divisions = p.divisions || Object.fromEntries(CSI_DIVISIONS.map(([n,t]) => [n,{number:n,title:t,enabled:false,text:""}]));
   CSI_DIVISIONS.forEach(([n,t]) => { if (!p.divisions[n]) p.divisions[n] = {number:n,title:t,enabled:false,text:""}; });
@@ -285,11 +286,12 @@ function enterDashboard() {
   refreshRoleUi(); refreshDashboardNav(); renderProjects();
 }
 function setDashboardMode(mode){
-  if(mode==="admin"&&!isAdmin())mode="active";
+  if((mode==="admin"||mode==="deleted")&&!isAdmin())mode="active";
   state.dashboardMode=mode;
   $$('.project-nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.projectView===mode));
-  $("#dashboardSectionTitle").textContent=mode==="archived"?"Archived Proposals":mode==="admin"?"All User Proposals":"Active Proposals";
-  $("#adminUserFilter").classList.toggle("hidden",mode!=="admin"||!isAdmin());
+  const title=mode==="archived"?"Archived Proposals":mode==="admin"?"All User Proposals":mode==="deleted"?"Deleted Items":"Active Proposals";
+  $("#dashboardSectionTitle").textContent=title;
+  $("#adminUserFilter").classList.toggle("hidden",!(mode==="admin"||mode==="deleted")||!isAdmin());
   renderProjects();
 }
 function refreshDashboardNav(){
@@ -298,10 +300,16 @@ function refreshDashboardNav(){
   $("#activeProjectCount").textContent=families.filter(f=>!f.versions.every(v=>v.archived)).length;
   $("#archivedProjectCount").textContent=families.filter(f=>f.versions.every(v=>v.archived)).length;
   $("#adminAllProjectsBtn").classList.toggle("hidden",!isAdmin());
-  if(!isAdmin()&&state.dashboardMode==="admin")state.dashboardMode="active";
+  $("#adminDeletedProjectsBtn").classList.toggle("hidden",!isAdmin());
+  if(isAdmin()){
+    const deletedCount=getAllUsers().reduce((n,u)=>n+getProjectsForUser(u.username,{includeDeleted:true}).filter(p=>p.deletedByUser).length,0);
+    $("#adminDeletedProjectCount").textContent=deletedCount;
+  }
+  if(!isAdmin()&&(state.dashboardMode==="admin"||state.dashboardMode==="deleted"))state.dashboardMode="active";
   $$('.project-nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.projectView===state.dashboardMode));
-  $("#dashboardSectionTitle").textContent=state.dashboardMode==="archived"?"Archived Proposals":state.dashboardMode==="admin"?"All User Proposals":"Active Proposals";
-  $("#adminUserFilter").classList.toggle("hidden",state.dashboardMode!=="admin"||!isAdmin());
+  const title=state.dashboardMode==="archived"?"Archived Proposals":state.dashboardMode==="admin"?"All User Proposals":state.dashboardMode==="deleted"?"Deleted Items":"Active Proposals";
+  $("#dashboardSectionTitle").textContent=title;
+  $("#adminUserFilter").classList.toggle("hidden",!(state.dashboardMode==="admin"||state.dashboardMode==="deleted")||!isAdmin());
   if(isAdmin()){
     const sel=$("#adminUserFilter"), current=sel.value||state.adminUserFilter||"all";
     sel.innerHTML='<option value="all">All users</option>'+getAllUsers().map(u=>`<option value="${esc(u.username)}">${esc(u.username)}</option>`).join('');
@@ -312,10 +320,11 @@ function refreshDashboardNav(){
 function renderProjects() {
   const q=$("#projectSearch").value.trim().toLowerCase(), sort=$("#projectSort").value;
   let entries=[];
-  if(state.dashboardMode==="admin"&&isAdmin()){
+  if((state.dashboardMode==="admin"||state.dashboardMode==="deleted")&&isAdmin()){
     const filter=$("#adminUserFilter").value||"all"; state.adminUserFilter=filter;
     const users=filter==="all"?getAllUsers():getAllUsers().filter(u=>u.username===filter);
     users.forEach(u=>getProjectsForUser(u.username,{includeDeleted:true}).forEach(p=>entries.push({owner:u.username,p})));
+    if(state.dashboardMode==="deleted")entries=entries.filter(({p})=>p.deletedByUser);
   }else{
     getProjectsForUser(state.user.username,{includeDeleted:false}).forEach(p=>entries.push({owner:state.user.username,p}));
   }
@@ -328,21 +337,24 @@ function renderProjects() {
   families.sort((a,b)=> sort==="name"?(a.latest.projectName||"").localeCompare(b.latest.projectName||""):sort==="client"?(a.latest.clientName||"").localeCompare(b.latest.clientName||""):new Date(b.latest.updatedAt)-new Date(a.latest.updatedAt));
   const grid=$("#projectsGrid"); grid.innerHTML="";
   const noProjects=!families.length;
-  $("#emptyProjects").classList.toggle("hidden",!noProjects||q.length>0||state.dashboardMode==="admin");
+  $("#emptyProjects").classList.toggle("hidden",!noProjects||q.length>0||state.dashboardMode==="admin"||state.dashboardMode==="deleted");
   if(noProjects){
-    const msg=q?"No matching projects":state.dashboardMode==="archived"?"No archived proposals":state.dashboardMode==="admin"?"No user proposals found":"";
-    if(msg)grid.innerHTML=`<div class="empty-state compact-empty" style="grid-column:1/-1"><h3>${msg}</h3><p>${q?'Try a different project, client, or project number.':state.dashboardMode==='archived'?'Archived project families will appear here.':'User proposals will appear here as they are created.'}</p></div>`;
+    const msg=q?"No matching projects":state.dashboardMode==="archived"?"No archived proposals":state.dashboardMode==="admin"?"No user proposals found":state.dashboardMode==="deleted"?"Recycle bin is empty":"";
+    if(msg)grid.innerHTML=`<div class="empty-state compact-empty" style="grid-column:1/-1"><h3>${msg}</h3><p>${q?'Try a different project, client, or project number.':state.dashboardMode==='archived'?'Archived project families will appear here.':state.dashboardMode==='deleted'?'Deleted projects and revisions are retained here for Admin recovery.':'User proposals will appear here as they are created.'}</p></div>`;
   }
   families.forEach(f=>{
     const p=f.latest, used=Object.values(p.divisions||{}).filter(d=>d.enabled&&d.text.trim()).length;
     const familyArchived=f.versions.every(v=>v.archived);
-    const visibleVersions=state.dashboardMode==="admin"?f.versions:f.versions.filter(v=>!v.deletedByUser);
-    const status=[]; if(familyArchived)status.push('Archived'); if(p.locked)status.push('Locked'); if(p.deletedByUser)status.push('Removed by user');
-    const card=document.createElement("article"); card.className=`project-card ${familyArchived?'archived-card':''}`;
+    const familyDeleted=f.versions.every(v=>v.deletedByUser);
+    const visibleVersions=(state.dashboardMode==="admin"||state.dashboardMode==="deleted")?f.versions:f.versions.filter(v=>!v.deletedByUser);
+    const status=[]; if(familyArchived)status.push('Archived'); if(p.locked)status.push('Locked'); if(familyDeleted)status.push(f.versions.every(v=>v.deletedScope==='project')?'Deleted project':'All versions deleted'); else if(f.versions.some(v=>v.deletedByUser))status.push('Deleted revision retained');
+    if(p.deletedByUser){status.push(`Deleted by ${p.deletedBy||'Unknown'}`);status.push(`Deleted ${fmtTime(p.deletedAt)}`);}
+    const card=document.createElement("article"); card.className=`project-card ${familyArchived?'archived-card':''} ${familyDeleted?'deleted-card':''}`;
+    const adminRecovery=(state.dashboardMode==="deleted"&&isAdmin());
     card.innerHTML=`
       <div class="project-card-head">
         <div>
-          <div class="project-card-kicker">${state.dashboardMode==='admin'?`<span class="owner-pill">${esc(f.owner)}</span>`:''}<span class="project-number">${esc(p.projectNumber||"No project number")}</span></div>
+          <div class="project-card-kicker">${(state.dashboardMode==='admin'||state.dashboardMode==='deleted')?`<span class="owner-pill">${esc(f.owner)}</span>`:''}<span class="project-number">${esc(p.projectNumber||"No project number")}</span></div>
           <h3>${esc(p.projectName||"Untitled Project")}</h3>
           <div class="project-client">${esc(p.clientName||"No client entered")}</div>
         </div>
@@ -350,13 +362,15 @@ function renderProjects() {
           <button class="project-open" data-open-project="${p.id}" data-owner="${esc(f.owner)}">Open →</button>
           <button class="project-menu-btn" data-project-menu="${p.id}" data-owner="${esc(f.owner)}" aria-label="Project options">⋮</button>
           <div class="project-menu hidden" data-menu-panel="${p.id}">
-            <button type="button" data-revise-project="${p.id}" data-owner="${esc(f.owner)}">Revise</button>
-            <button type="button" data-archive-family="${f.familyId}" data-owner="${esc(f.owner)}">${familyArchived?'Unarchive':'Archive'}</button>
-            <button type="button" data-lock-project="${p.id}" data-owner="${esc(f.owner)}">${p.locked?'Unlock':'Lock'}</button>
+            ${adminRecovery?`<button type="button" data-restore-family="${f.familyId}" data-owner="${esc(f.owner)}">Restore Project</button>`:`
+              <button type="button" data-revise-project="${p.id}" data-owner="${esc(f.owner)}">Revise</button>
+              <button type="button" data-archive-family="${f.familyId}" data-owner="${esc(f.owner)}">${familyArchived?'Unarchive':'Archive'}</button>
+              <button type="button" data-lock-project="${p.id}" data-owner="${esc(f.owner)}">${p.locked?'Unlock':'Lock'}</button>
+              <button type="button" class="menu-danger" data-delete-family="${f.familyId}" data-owner="${esc(f.owner)}">Delete Project</button>`}
           </div>
         </div>
       </div>
-      <div class="project-version-row">${visibleVersions.map(v=>`<button class="version-chip ${v.id===p.id?'current':''} ${v.locked?'locked':''} ${v.deletedByUser?'removed':''}" data-open-project="${v.id}" data-owner="${esc(f.owner)}">${versionLabel(v)}${v.locked?' · Locked':''}${v.deletedByUser?' · Removed':''}</button>`).join('')}</div>
+      <div class="project-version-row">${visibleVersions.map(v=>`<span class="version-chip-wrap"><button class="version-chip ${v.id===p.id?'current':''} ${v.locked?'locked':''} ${v.deletedByUser?'removed':''}" data-open-project="${v.id}" data-owner="${esc(f.owner)}">${versionLabel(v)}${v.locked?' · Locked':''}${v.deletedByUser?' · Deleted':''}</button>${adminRecovery&&v.deletedByUser?`<button class="version-restore-btn" type="button" data-restore-version="${v.id}" data-owner="${esc(f.owner)}" title="Restore ${versionLabel(v)}">↺</button>`:''}</span>`).join('')}</div>
       ${status.length?`<div class="project-status-row">${status.map(s=>`<span>${esc(s)}</span>`).join('')}</div>`:''}
       <div class="project-meta"><span>${used} divisions used · ${p.priceItems.length} priced items</span><span>Updated ${esc(fmtTime(p.updatedAt))}</span></div>`;
     grid.appendChild(card);
@@ -366,6 +380,9 @@ function renderProjects() {
   $$('[data-revise-project]').forEach(b=>b.addEventListener('click',()=>reviseProject(b.dataset.reviseProject,b.dataset.owner)));
   $$('[data-archive-family]').forEach(b=>b.addEventListener('click',()=>toggleFamilyArchive(b.dataset.archiveFamily,b.dataset.owner)));
   $$('[data-lock-project]').forEach(b=>b.addEventListener('click',()=>toggleProjectLock(b.dataset.lockProject,b.dataset.owner)));
+  $$('[data-delete-family]').forEach(b=>b.addEventListener('click',()=>softDeleteFamily(b.dataset.deleteFamily,b.dataset.owner)));
+  $$('[data-restore-family]').forEach(b=>b.addEventListener('click',()=>restoreFamily(b.dataset.restoreFamily,b.dataset.owner)));
+  $$('[data-restore-version]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();restoreVersion(b.dataset.restoreVersion,b.dataset.owner);}));
 }
 function reviseProject(projectId, ownerUsername){
   const source=getProjectsForUser(ownerUsername,{includeDeleted:true}).find(p=>p.id===projectId); if(!source)return;
@@ -375,7 +392,7 @@ function reviseProject(projectId, ownerUsername){
   const nextVersion=Math.max(0,...family.map(v=>Number(v.version||0)))+1;
   const revised=JSON.parse(JSON.stringify(sourceLatest));
   revised.id=uid(); revised.familyId=sourceLatest.familyId||sourceLatest.id; revised.version=nextVersion; revised.parentRevisionId=sourceLatest.id;
-  revised.createdAt=nowIso(); revised.updatedAt=nowIso(); revised.locked=false; revised.archived=false; revised.deletedByUser=false; revised.deletedAt=null; revised.deletedBy=null;
+  revised.createdAt=nowIso(); revised.updatedAt=nowIso(); revised.locked=false; revised.archived=false; revised.deletedByUser=false; revised.deletedAt=null; revised.deletedBy=null; revised.deletedScope=null;
   revised.ownerUsername=ownerUsername;
   // Creating a revision brings the family back to Active.
   const all=getProjectsForUser(ownerUsername,{includeDeleted:true}).map(p=>p.familyId===revised.familyId?{...p,archived:false}:p);
@@ -395,6 +412,48 @@ function toggleProjectLock(projectId,ownerUsername){
   all[idx].locked=!all[idx].locked; all[idx].updatedAt=nowIso(); saveProjectsForUser(ownerUsername,all);
   renderProjects(); toast(all[idx].locked?`${versionLabel(all[idx])} locked.`:`${versionLabel(all[idx])} unlocked.`);
 }
+
+function markDeleted(p,scope="version"){
+  return {...p,deletedByUser:true,deletedAt:nowIso(),deletedBy:state.user?.username||"Unknown",deletedScope:scope,updatedAt:nowIso()};
+}
+function clearDeleted(p){
+  return {...p,deletedByUser:false,deletedAt:null,deletedBy:null,deletedScope:null,updatedAt:nowIso()};
+}
+function softDeleteFamily(familyId,ownerUsername){
+  if(ownerKey(ownerUsername)!==ownerKey(state.user?.username)&&!isAdmin())return toast("You can only delete your own projects.");
+  const all=getProjectsForUser(ownerUsername,{includeDeleted:true}), family=all.filter(p=>p.familyId===familyId&&!p.deletedByUser);
+  if(!family.length)return toast("This project is already deleted.");
+  const name=family[0]?.projectName||"this project";
+  if(!confirm(`Delete the entire project “${name}” and all of its revisions from the user workspace?
+
+Nothing will be permanently erased. Admin will retain every version in Deleted Items.`))return;
+  const next=all.map(p=>p.familyId===familyId?markDeleted(p,"project"):p); saveProjectsForUser(ownerUsername,next);
+  refreshDashboardNav(); renderProjects(); toast("Project deleted from user workspace. Admin recovery copy retained.");
+}
+function softDeleteVersion(projectId,ownerUsername){
+  if(ownerKey(ownerUsername)!==ownerKey(state.user?.username)&&!isAdmin())return toast("You can only delete your own proposal versions.");
+  const all=getProjectsForUser(ownerUsername,{includeDeleted:true}), idx=all.findIndex(p=>p.id===projectId); if(idx<0)return;
+  const p=all[idx]; if(p.deletedByUser)return toast("This version is already deleted.");
+  if(!confirm(`Delete ${versionLabel(p)} of “${p.projectName}” from the user workspace?
+
+Nothing will be permanently erased. Admin will retain this version in Deleted Items.`))return;
+  all[idx]=markDeleted(p,"version"); saveProjectsForUser(ownerUsername,all); refreshDashboardNav();
+  if(state.currentProjectId===projectId)enterDashboard(); else renderProjects();
+  toast(`${versionLabel(p)} deleted. Admin recovery copy retained.`);
+}
+function restoreFamily(familyId,ownerUsername){
+  if(!isAdmin())return toast("Admin access required.");
+  const all=getProjectsForUser(ownerUsername,{includeDeleted:true}); let changed=false;
+  const next=all.map(p=>{if(p.familyId===familyId&&p.deletedByUser){changed=true;return clearDeleted(p);}return p;});
+  if(!changed)return toast("No deleted versions found for this project.");
+  saveProjectsForUser(ownerUsername,next); refreshDashboardNav(); renderProjects(); toast("Project restored to the user workspace.");
+}
+function restoreVersion(projectId,ownerUsername){
+  if(!isAdmin())return toast("Admin access required.");
+  const all=getProjectsForUser(ownerUsername,{includeDeleted:true}), idx=all.findIndex(p=>p.id===projectId); if(idx<0)return;
+  if(!all[idx].deletedByUser)return toast("This version is not deleted.");
+  const label=versionLabel(all[idx]); all[idx]=clearDeleted(all[idx]); saveProjectsForUser(ownerUsername,all); refreshDashboardNav(); renderProjects(); toast(`${label} restored to the user workspace.`);
+}
 function openNewProjectDialog() { $("#newProjectName").value=""; $("#newClientName").value=""; $("#newProjectNumber").value=""; $("#newProjectDialog").showModal(); setTimeout(()=>$("#newProjectName").focus(),100); }
 function handleNewProject(e) {
   e.preventDefault(); if (e.submitter&&e.submitter.value==="cancel") { $("#newProjectDialog").close(); return; }
@@ -412,8 +471,9 @@ function openProject(id, ownerUsername=state.user?.username) {
 }
 
 function applyProjectLockUi(p){
-  const locked=Boolean(p.locked), otherOwner=ownerKey(state.currentProjectOwner)!==ownerKey(state.user?.username);
+  const deleted=Boolean(p.deletedByUser), locked=Boolean(p.locked)||deleted, otherOwner=ownerKey(state.currentProjectOwner)!==ownerKey(state.user?.username);
   $("#projectLockBadge").classList.toggle("hidden",!locked);
+  $("#projectLockBadge").textContent=deleted?"Deleted · Admin Recovery Copy":"Locked · Read Only";
   $("#editorView").classList.toggle("project-locked",locked);
   $$('#editorView .editor-workspace input, #editorView .editor-workspace textarea, #editorView .editor-workspace select').forEach(el=>{
     const companyEmployee=el.hasAttribute('data-company')&&!isAdmin();
@@ -421,8 +481,12 @@ function applyProjectLockUi(p){
   });
   $("#addPriceItemBtn").disabled=locked;
   $$('.remove-price-item').forEach(b=>b.disabled=locked);
-  $("#deleteProjectBtn").classList.toggle("hidden",otherOwner);
-  $("#deleteProjectBtn").textContent="Delete from My Projects";
+  const deleteBtn=$("#deleteProjectBtn");
+  if(deleted&&isAdmin()){
+    deleteBtn.classList.remove("hidden"); deleteBtn.textContent="Restore This Version"; deleteBtn.dataset.action="restore";
+  }else{
+    deleteBtn.classList.toggle("hidden",otherOwner&&!isAdmin()); deleteBtn.textContent="Delete This Version"; deleteBtn.dataset.action="delete";
+  }
 }
 
 function renderDivisionUI(p) {
@@ -485,7 +549,7 @@ function collectEditorProject() {
   $$('.division-card').forEach(card=>{ const n=card.dataset.division; p.divisions[n]=p.divisions[n]||{number:n,title:CSI_DIVISIONS.find(x=>x[0]===n)[1]};p.divisions[n].enabled=$('.division-enabled',card).checked;p.divisions[n].text=$('.division-text',card).value; });
   return p;
 }
-function saveEditorProject() { const current=getCurrentProject();if(!current)return;if(current.locked){setSaveStatus("Locked · read only");return;}const p=collectEditorProject();if(!p)return;putProject(p,state.currentProjectOwner);$("#sidebarProjectName").textContent=p.projectName; }
+function saveEditorProject() { const current=getCurrentProject();if(!current)return;if(current.locked||current.deletedByUser){setSaveStatus(current.deletedByUser?"Deleted · recovery copy":"Locked · read only");return;}const p=collectEditorProject();if(!p)return;putProject(p,state.currentProjectOwner);$("#sidebarProjectName").textContent=p.projectName; }
 function activateTab(name) {
   if (name === "company" && !isAdmin()) name = "info";
   $$('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
@@ -539,7 +603,12 @@ async function exportPdf() {
   addFooter();const safe=(p.projectName||'Scope').replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'');const versionSuffix=(p.version||0)>0?`_${versionLabel(p)}`:'';doc.save(`${safe||'Scope'}_${(p.documentTitle||'Proposal').replace(/[^a-z0-9]+/gi,'_')}${versionSuffix}.pdf`);setSaveStatus("All changes saved");toast("PDF exported.");
 }
 
-function deleteCurrentProject(){const p=getCurrentProject();if(!p)return;const owner=state.currentProjectOwner||state.user.username;if(ownerKey(owner)!==ownerKey(state.user.username))return toast("Admin records cannot be removed from another user’s workspace.");if(!confirm(`Remove ${versionLabel(p)} of “${p.projectName}” from your projects? Admin will retain access to this proposal.`))return;p.deletedByUser=true;p.deletedAt=nowIso();p.deletedBy=state.user.username;putProject(p,owner);enterDashboard();toast("Removed from your projects. Admin copy retained.");}
+function handleVersionDeleteRestore(){
+  const p=getCurrentProject(); if(!p)return;
+  const owner=state.currentProjectOwner||state.user.username;
+  if(p.deletedByUser){ if(isAdmin())restoreVersion(p.id,owner); return; }
+  softDeleteVersion(p.id,owner);
+}
 
 // Admin disclaimer library
 function openAdminDialog(){if(!isAdmin())return toast("Admin access required.");if(state.currentProjectId)saveEditorProject();renderAdminDisclaimers();renderAdminUsers();$("#adminDialog").showModal();}
@@ -692,7 +761,7 @@ $("#adminPanelBtn").addEventListener("click",openAdminDialog);$("#adminPopoverBt
 $("#closeAdminDialog").addEventListener("click",closeAdminDialog);$("#newDisclaimerBtn").addEventListener("click",newDisclaimer);$("#saveDisclaimerBtn").addEventListener("click",saveDisclaimerFromAdmin);$("#deleteDisclaimerBtn").addEventListener("click",deleteDisclaimerFromAdmin);$$('.admin-tab-btn').forEach(b=>b.addEventListener('click',()=>activateAdminTab(b.dataset.adminTab)));
 $("#adminDownloadBackupBtn").addEventListener("click",downloadDataBackup);$("#adminRestoreBackupBtn").addEventListener("click",triggerRestoreBackup);
 $("#newProjectBtn").addEventListener("click",openNewProjectDialog);$("#emptyNewProjectBtn").addEventListener("click",openNewProjectDialog);$("#newProjectForm").addEventListener("submit",handleNewProject);$("#projectSearch").addEventListener("input",renderProjects);$("#projectSort").addEventListener("change",renderProjects);$$('.project-nav-btn').forEach(b=>b.addEventListener('click',()=>setDashboardMode(b.dataset.projectView)));$("#adminUserFilter").addEventListener("change",()=>{state.adminUserFilter=$("#adminUserFilter").value;renderProjects();});
-$("#backToDashboard").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#sidebarBack").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#exportPdfBtn").addEventListener("click",exportPdf);$("#deleteProjectBtn").addEventListener("click",deleteCurrentProject);
+$("#backToDashboard").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#sidebarBack").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#exportPdfBtn").addEventListener("click",exportPdf);$("#deleteProjectBtn").addEventListener("click",handleVersionDeleteRestore);
 $("#divisionSearch").addEventListener("input",filterDivisionNav);$("#expandAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.add('open')));$("#collapseAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.remove('open')));
 $("#previewToggle").addEventListener("click",()=>togglePreview());$("#closePreviewBtn").addEventListener("click",()=>togglePreview(false));$$('.tab-btn').forEach(b=>b.addEventListener('click',()=>activateTab(b.dataset.tab)));
 $("#projectTitleInline").addEventListener("input",()=>{scheduleSave();updatePreview();});$("#addPriceItemBtn").addEventListener("click",addPriceItem);

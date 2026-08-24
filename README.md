@@ -52,3 +52,13 @@ Passwords in this prototype are hashed in browser storage, but this local protot
 - Archive moves the full project family to the Archived library without deleting it.
 - Employee deletion is a soft removal: it disappears from that employee's project list, while Admin users retain the underlying proposal and can see its Removed by user status in All User Proposals.
 - In this local prototype, admin visibility applies within the same saved workspace. The hosted production version should enforce the same model in the shared server database so retention works across computers and browsers.
+
+
+## V6 deletion safety / recovery
+- Users can delete an entire project family from the project card menu or delete only the currently opened version.
+- Delete is always a soft delete. No project or revision is physically removed from the datastore.
+- Employees no longer see deleted items in Active or Archived views.
+- Admin users have a dedicated **Deleted Items** recovery view across all users.
+- Deletion records retain the deleting username, deletion timestamp, and whether the action applied to a version or the project family.
+- Admin can restore an entire deleted project family or an individual deleted revision.
+- Deleted records remain included in Admin workspace backups, preserving recovery even when moving prototype builds.

@@ -304,6 +304,8 @@ textarea { resize: vertical; line-height: 1.5; }
 .project-menu { position:absolute; top:36px; right:0; z-index:20; width:145px; border:1px solid #dfe2e5; background:#fff; border-radius:10px; box-shadow:0 12px 28px rgba(30,32,34,.16); padding:6px; }
 .project-menu button { width:100%; border:0; background:transparent; text-align:left; padding:9px 10px; border-radius:7px; font-weight:650; font-size:12px; color:#46494d; cursor:pointer; }
 .project-menu button:hover { background:#f5f5f5; color:var(--orange-dark); }
+.project-menu .menu-danger { color:#a83f37; }
+.project-menu .menu-danger:hover { background:#fff1ef; color:#8e2f28; }
 .project-card-kicker { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
 .owner-pill { display:inline-flex; align-items:center; border-radius:999px; background:#56585b; color:#fff; padding:3px 7px; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
 .project-version-row { display:flex; flex-wrap:wrap; gap:7px; margin:17px 0 4px; padding-top:13px; border-top:1px solid #eceeef; }
@@ -311,11 +313,16 @@ textarea { resize: vertical; line-height: 1.5; }
 .version-chip:hover { border-color:#bbbfc3; }
 .version-chip.current { background:#fff1e7; border-color:#f6b388; color:#bd5012; }
 .version-chip.locked { padding-left:9px; }
-.version-chip.removed { opacity:.58; border-style:dashed; }
+.version-chip.removed { opacity:.62; border-style:dashed; }
+.version-chip-wrap { display:inline-flex; align-items:center; gap:3px; }
+.version-restore-btn { width:23px; height:23px; border:1px solid #d8dcdf; border-radius:999px; background:#fff; color:#606469; font-size:13px; line-height:1; cursor:pointer; }
+.version-restore-btn:hover { border-color:#f2a16f; color:var(--orange-dark); background:#fff7f1; }
 .project-status-row { display:flex; gap:6px; flex-wrap:wrap; margin-top:9px; }
 .project-status-row span { border-radius:999px; background:#f1f2f3; padding:4px 7px; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.035em; color:#73777b; }
 .project-card.archived-card::before { background:#9b9ea1; }
 .project-card.archived-card { background:#fbfbfb; }
+.project-card.deleted-card::before { background:#a54b43; }
+.project-card.deleted-card { background:#fffafa; }
 .editor-project-badges { display:flex; align-items:center; flex-wrap:wrap; gap:7px; margin-top:7px; }
 .project-version-badge,.project-lock-badge,.project-owner-badge { display:inline-flex; align-items:center; border-radius:999px; padding:5px 9px; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; }
 .project-version-badge { background:#fff0e5; color:#bd5012; }

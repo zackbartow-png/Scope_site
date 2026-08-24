@@ -91,7 +91,8 @@
           <button class="project-nav-btn active" data-project-view="active" type="button"><span>Active Proposals</span><strong id="activeProjectCount">0</strong></button>
           <button class="project-nav-btn" data-project-view="archived" type="button"><span>Archived</span><strong id="archivedProjectCount">0</strong></button>
           <button id="adminAllProjectsBtn" class="project-nav-btn admin-project-nav hidden" data-project-view="admin" type="button"><span>All User Proposals</span><strong>Admin</strong></button>
-          <p class="library-nav-note">Archived proposals remain saved and can be restored at any time.</p>
+          <button id="adminDeletedProjectsBtn" class="project-nav-btn admin-project-nav hidden" data-project-view="deleted" type="button"><span>Deleted Items</span><strong id="adminDeletedProjectCount">0</strong></button>
+          <p class="library-nav-note">Archived proposals remain saved. Deleted projects and revisions are never permanently erased and remain recoverable by Admin.</p>
         </aside>
         <section class="dashboard-projects-panel">
           <div class="dashboard-panel-head">
@@ -135,7 +136,7 @@
         </div>
         <nav id="divisionNav" class="division-nav"></nav>
         <div class="sidebar-footer">
-          <button id="deleteProjectBtn" class="danger-link">Delete from My Projects</button>
+          <button id="deleteProjectBtn" class="danger-link">Delete This Version</button>
         </div>
       </aside>
 
