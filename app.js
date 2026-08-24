@@ -150,10 +150,18 @@ function normalizeProject(p, ownerUsername="") {
   p.deletedScope = p.deletedScope || null;
   p.ownerUsername = p.ownerUsername || ownerUsername || "";
   p.divisions = p.divisions || Object.fromEntries(CSI_DIVISIONS.map(([n,t]) => [n,{number:n,title:t,enabled:false,text:""}]));
-  CSI_DIVISIONS.forEach(([n,t]) => { if (!p.divisions[n]) p.divisions[n] = {number:n,title:t,enabled:false,text:""}; });
+  CSI_DIVISIONS.forEach(([n,t]) => {
+    if (!p.divisions[n]) p.divisions[n] = {number:n,title:t,enabled:false,text:""};
+    if (!String(p.divisions[n].title||"").trim()) p.divisions[n].title=t;
+    p.divisions[n].number=n;
+  });
   p.company = {...DEFAULT_COMPANY, ...(p.company||{})};
   p.sectionEnabled = { clarifications:true, exclusions:true, alternates:true, clientSelections:true, ...(p.sectionEnabled||{}) };
-  p.priceItems = Array.isArray(p.priceItems) ? p.priceItems : [];
+  p.priceItems = Array.isArray(p.priceItems) ? p.priceItems.map(i=>({...i})) : [];
+  let baseBid=p.priceItems.find(i=>i?.isBaseBid || String(i?.name||"").trim().toLowerCase()==="base bid");
+  if(!baseBid){ baseBid={id:`base-bid-${p.familyId||p.id||uid()}`,name:"Base Bid",description:"",price:"",isBaseBid:true}; p.priceItems.unshift(baseBid); }
+  baseBid.isBaseBid=true; baseBid.name="Base Bid";
+  p.priceItems=[baseBid,...p.priceItems.filter(i=>i!==baseBid).map(i=>({...i,isBaseBid:false}))];
   p.disclaimerId = p.disclaimerId || getDisclaimers()[0]?.id || "";
   return p;
 }
@@ -220,7 +228,7 @@ function makeProject(name="Untitled Project", client="", projectNumber="") {
     id, familyId:id, version:0, parentRevisionId:null, archived:false, locked:false, deletedByUser:false,
     createdAt: nowIso(), updatedAt: nowIso(), projectName: name, projectNumber, clientName: client,
     attention: "", projectAddress: "", proposalDate: dateValue, preparedBy: "", documentTitle: "Proposal", introNote: "",
-    clarifications: "", exclusions: "", alternates: "", priceItems: [], disclaimerId: getDisclaimers()[0]?.id || "",
+    clarifications: "", exclusions: "", alternates: "", priceItems: [{id:`base-bid-${id}`,name:"Base Bid",description:"",price:"",isBaseBid:true}], disclaimerId: getDisclaimers()[0]?.id || "",
     sectionEnabled: { clarifications:true, exclusions:true, alternates:true, clientSelections:true }, divisions, company: {...DEFAULT_COMPANY}
   }, state.user?.username || "");
 }
@@ -372,7 +380,7 @@ function renderProjects() {
       </div>
       <div class="project-version-row">${visibleVersions.map(v=>`<span class="version-chip-wrap"><button class="version-chip ${v.id===p.id?'current':''} ${v.locked?'locked':''} ${v.deletedByUser?'removed':''}" data-open-project="${v.id}" data-owner="${esc(f.owner)}">${versionLabel(v)}${v.locked?' · Locked':''}${v.deletedByUser?' · Deleted':''}</button>${adminRecovery&&v.deletedByUser?`<button class="version-restore-btn" type="button" data-restore-version="${v.id}" data-owner="${esc(f.owner)}" title="Restore ${versionLabel(v)}">↺</button>`:''}</span>`).join('')}</div>
       ${status.length?`<div class="project-status-row">${status.map(s=>`<span>${esc(s)}</span>`).join('')}</div>`:''}
-      <div class="project-meta"><span>${used} divisions used · ${p.priceItems.length} priced items</span><span>Updated ${esc(fmtTime(p.updatedAt))}</span></div>`;
+      <div class="project-meta"><span>${used} divisions used · ${p.priceItems.filter(i=>i.isBaseBid?(i.price||'').trim():((i.name||'').trim()||(i.price||'').trim()||(i.description||'').trim())).length} pricing lines entered</span><span>Updated ${esc(fmtTime(p.updatedAt))}</span></div>`;
     grid.appendChild(card);
   });
   $$('[data-open-project]').forEach(b=>b.addEventListener('click',()=>openProject(b.dataset.openProject,b.dataset.owner)));
@@ -493,13 +501,15 @@ function renderDivisionUI(p) {
   const cards=$("#divisionCards"), nav=$("#divisionNav"); cards.innerHTML=""; nav.innerHTML="";
   CSI_DIVISIONS.forEach(([n,t])=>{
     const d=p.divisions[n]||{number:n,title:t,enabled:false,text:""};
+    const title=String(d.title||t).trim()||t;
     const card=document.createElement("article"); card.className=`division-card ${d.enabled?'enabled':''}`; card.dataset.division=n;
-    card.innerHTML=`<div class="division-card-header"><div class="div-badge">${n}</div><div><div class="div-title">Division ${n} – ${esc(t)}</div><div class="div-sub">${d.text.trim()?`${d.text.trim().split(/\n/).length} scope lines entered`:'No scope entered'}</div></div><label class="switch-label"><input type="checkbox" class="division-enabled" ${d.enabled?'checked':''}><span class="switch"></span>Include</label><button class="division-expand" aria-label="Expand division">⌄</button></div><div class="division-body"><textarea class="division-text" placeholder="Paste or type Division ${n} scope here…">${esc(d.text)}</textarea><div class="paste-helper"><span>Tip: one line per scope item works best in PDF output.</span><span>Auto-saved</span></div></div>`;
+    card.innerHTML=`<div class="division-card-header"><div class="div-badge">${n}</div><div class="division-title-wrap"><div class="div-title-row"><span class="div-title-prefix">Division ${n} –</span><input class="division-title-input" value="${esc(title)}" aria-label="Division ${n} name" title="Edit division name only"></div><div class="div-sub">${d.text.trim()?`${d.text.trim().split(/\n/).length} scope lines entered`:'No scope entered'}</div></div><label class="switch-label"><input type="checkbox" class="division-enabled" ${d.enabled?'checked':''}><span class="switch"></span>Include</label><button class="division-expand" aria-label="Expand division">⌄</button></div><div class="division-body"><textarea class="division-text" placeholder="Paste or type Division ${n} scope here…">${esc(d.text)}</textarea><div class="paste-helper"><span>Tip: each manual new line becomes a separate PDF bullet.</span><span>Auto-saved</span></div></div>`;
     cards.appendChild(card);
-    const navBtn=document.createElement("button"); navBtn.className="division-nav-item"; navBtn.dataset.navDivision=n; navBtn.innerHTML=`<span class="division-nav-number">${n}</span><span>${esc(t)}</span><span class="division-nav-dot ${d.text.trim()?'used':''}"></span>`; nav.appendChild(navBtn);
+    const navBtn=document.createElement("button"); navBtn.className="division-nav-item"; navBtn.dataset.navDivision=n; navBtn.innerHTML=`<span class="division-nav-number">${n}</span><span class="division-nav-title">${esc(title)}</span><span class="division-nav-dot ${d.text.trim()?'used':''}"></span>`; nav.appendChild(navBtn);
   });
-  $$(".division-card-header",cards).forEach(h=>h.addEventListener("click",e=>{ if(e.target.closest(".switch-label"))return; h.closest(".division-card").classList.toggle("open"); }));
+  $$(".division-card-header",cards).forEach(h=>h.addEventListener("click",e=>{ if(e.target.closest(".switch-label")||e.target.closest(".division-title-input"))return; h.closest(".division-card").classList.toggle("open"); }));
   $$(".division-enabled",cards).forEach(cb=>cb.addEventListener("change",e=>{ const card=e.target.closest(".division-card"); card.classList.toggle("enabled",e.target.checked); if(e.target.checked)card.classList.add("open"); scheduleSave();updatePreview(); }));
+  $$(".division-title-input",cards).forEach(input=>input.addEventListener("input",e=>{ const card=e.target.closest(".division-card"),n=card.dataset.division,def=CSI_DIVISIONS.find(x=>x[0]===n)?.[1]||""; const title=e.target.value||def; const navTitle=$(`[data-nav-division="${n}"] .division-nav-title`); if(navTitle)navTitle.textContent=title; scheduleSave();updatePreview(); }));
   $$(".division-text",cards).forEach(ta=>ta.addEventListener("input",e=>{ const card=e.target.closest(".division-card"); $(".div-sub",card).textContent=e.target.value.trim()?`${e.target.value.trim().split(/\n/).length} scope lines entered`:"No scope entered"; $(`[data-nav-division="${card.dataset.division}"] .division-nav-dot`).classList.toggle("used",!!e.target.value.trim()); scheduleSave();updatePreview(); }));
   $$('[data-nav-division]').forEach(btn=>btn.addEventListener('click',()=>{ activateTab("scope"); const card=$(`[data-division="${btn.dataset.navDivision}"]`);card.classList.add('open');card.scrollIntoView({behavior:'smooth',block:'center'}); }));
   filterDivisionNav();
@@ -508,30 +518,31 @@ function renderDivisionUI(p) {
 function renderPriceItems(p) {
   const wrap=$("#priceItems"); wrap.innerHTML="";
   p.priceItems.forEach((item,index)=>{
-    const row=document.createElement("div"); row.className="price-item-row"; row.dataset.priceId=item.id;
-    row.innerHTML=`<div class="row-check-preview" title="Printed client selection box"></div><input class="price-item-input price-name" value="${esc(item.name||'')}" placeholder="Item / option name"><input class="price-item-input price-description" value="${esc(item.description||'')}" placeholder="Short description (optional)"><input class="price-item-input price-value" value="${esc(item.price||'')}" placeholder="$0.00"><button class="remove-price-item" type="button" title="Remove item">×</button>`;
+    const isBase=Boolean(item.isBaseBid);
+    const row=document.createElement("div"); row.className=`price-item-row ${isBase?'base-bid-row':''}`; row.dataset.priceId=item.id; row.dataset.baseBid=isBase?'true':'false';
+    row.innerHTML=`<div class="row-check-preview" title="Printed pricing selection box"></div><input class="price-item-input price-name" value="${esc(isBase?'Base Bid':(item.name||''))}" placeholder="Alternate / add-on name" ${isBase?'readonly':''}><input class="price-item-input price-description" value="${esc(item.description||'')}" placeholder="Description (optional)"><input class="price-item-input price-value" value="${esc(item.price||'')}" placeholder="$0.00">${isBase?'<span class="base-bid-lock" title="Base Bid is always included in Proposed Pricing">Base</span>':'<button class="remove-price-item" type="button" title="Remove line">×</button>'}`;
     wrap.appendChild(row);
   });
-  $("#emptyPriceItems").classList.toggle("hidden",p.priceItems.length>0);
+  $("#emptyPriceItems").classList.add("hidden");
 }
 function addPriceItem() {
   const p=collectEditorProject(); if(!p)return;
-  p.priceItems.push({id:uid(),name:"",description:"",price:""}); putProject(p); renderPriceItems(p); updatePreview();
-  const last=$$('.price-name').at(-1); if(last)last.focus();
+  p.priceItems.push({id:uid(),name:"",description:"",price:"",isBaseBid:false}); putProject(p); renderPriceItems(p); updatePreview();
+  const last=$$('.price-item-row:not(.base-bid-row) .price-name').at(-1); if(last)last.focus();
 }
 function collectPriceItems() {
-  return $$('.price-item-row').map(row=>({id:row.dataset.priceId,name:$('.price-name',row).value,description:$('.price-description',row).value,price:$('.price-value',row).value}));
+  return $$('.price-item-row').map(row=>({id:row.dataset.priceId,name:row.dataset.baseBid==='true'?"Base Bid":$('.price-name',row).value,description:$('.price-description',row).value,price:$('.price-value',row).value,isBaseBid:row.dataset.baseBid==='true'}));
 }
 
 function renderDisclaimerSelect(p) {
   const select=$("#projectDisclaimerSelect"), items=getDisclaimers(); select.innerHTML="";
   items.forEach(d=>{ const o=document.createElement("option");o.value=d.id;o.textContent=d.name;select.appendChild(o); });
-  if (!items.length) { const o=document.createElement("option");o.value="";o.textContent="No disclaimer available — contact an Admin";select.appendChild(o); }
+  if (!items.length) { const o=document.createElement("option");o.value="";o.textContent="No Terms & Conditions available — contact an Admin";select.appendChild(o); }
   select.value=items.some(d=>d.id===p.disclaimerId)?p.disclaimerId:(items[0]?.id||"");
 }
 function updateSelectedDisclaimerPreview() {
   const d=getDisclaimer($("#projectDisclaimerSelect").value);
-  $("#selectedDisclaimerPreview").textContent=d?.text||"No approved disclaimer is currently available.";
+  $("#selectedDisclaimerPreview").textContent=d?.text||"No approved Terms & Conditions are currently available.";
 }
 
 function populateEditor(p) {
@@ -546,7 +557,7 @@ function collectEditorProject() {
   p.company=p.company||{...DEFAULT_COMPANY}; $$('[data-company]').forEach(el=>p.company[el.dataset.company]=el.value);
   p.sectionEnabled=p.sectionEnabled||{}; $$('[data-section-enabled]').forEach(el=>p.sectionEnabled[el.dataset.sectionEnabled]=el.checked);
   p.priceItems=collectPriceItems();
-  $$('.division-card').forEach(card=>{ const n=card.dataset.division; p.divisions[n]=p.divisions[n]||{number:n,title:CSI_DIVISIONS.find(x=>x[0]===n)[1]};p.divisions[n].enabled=$('.division-enabled',card).checked;p.divisions[n].text=$('.division-text',card).value; });
+  $$('.division-card').forEach(card=>{ const n=card.dataset.division,def=CSI_DIVISIONS.find(x=>x[0]===n)[1]; p.divisions[n]=p.divisions[n]||{number:n,title:def}; p.divisions[n].number=n; p.divisions[n].title=$('.division-title-input',card).value.trim()||def; p.divisions[n].enabled=$('.division-enabled',card).checked;p.divisions[n].text=$('.division-text',card).value; });
   return p;
 }
 function saveEditorProject() { const current=getCurrentProject();if(!current)return;if(current.locked||current.deletedByUser){setSaveStatus(current.deletedByUser?"Deleted · recovery copy":"Locked · read only");return;}const p=collectEditorProject();if(!p)return;putProject(p,state.currentProjectOwner);$("#sidebarProjectName").textContent=p.projectName; }
@@ -568,8 +579,8 @@ function updatePreview() {
   if(active.length>5)body.insertAdjacentHTML('beforeend',`<div style="margin-top:7px;color:#999">+ ${active.length-5} more divisions on following pages</div>`);
   const extra=[["Clarifications",p.clarifications,p.sectionEnabled.clarifications],["Exclusions",p.exclusions,p.sectionEnabled.exclusions],["Alternates",p.alternates,p.sectionEnabled.alternates]].filter(x=>x[2]&&x[1].trim());
   extra.slice(0,1).forEach(([t,text])=>body.insertAdjacentHTML('beforeend',`<section class="preview-section"><div class="preview-section-title">${t}</div><p>${esc(text)}</p></section>`));
-  if(p.sectionEnabled.clientSelections&&p.priceItems.length){body.insertAdjacentHTML('beforeend',`<section class="preview-section"><div class="preview-section-title">Client Selections</div>${p.priceItems.slice(0,2).map(i=>`<div class="preview-selection-row"><span class="preview-selection-box"></span><span>${esc(i.name||'Selection item')}</span><strong>${esc(i.price||'')}</strong></div>`).join('')}</section>`);}
-  const d=getDisclaimer(p.disclaimerId); if(d)body.insertAdjacentHTML('beforeend',`<div class="preview-disclaimer"><strong>${esc(d.name)}</strong> · ${esc(d.text.slice(0,135))}${d.text.length>135?'…':''}</div>`);
+  if(p.sectionEnabled.clientSelections&&p.priceItems.length){body.insertAdjacentHTML('beforeend',`<section class="preview-section"><div class="preview-section-title">Proposed Pricing</div>${p.priceItems.slice(0,2).map(i=>`<div class="preview-selection-row"><span class="preview-selection-box"></span><span>${esc(i.name||'Selection item')}</span><strong>${esc(i.price||'')}</strong></div>`).join('')}</section>`);}
+  const d=getDisclaimer(p.disclaimerId); if(d)body.insertAdjacentHTML('beforeend',`<div class="preview-disclaimer"><strong>Terms &amp; Conditions — ${esc(d.name)}</strong> · ${esc(d.text.slice(0,135))}${d.text.length>135?'…':''}</div>`);
   $("#previewFooterContact").innerHTML=`${esc(p.company.address||'').replace(/\n/g,'<br>')}<br><strong>P</strong> ${esc(p.company.phone||'')} ${p.company.fax?` · <strong>F</strong> ${esc(p.company.fax)}`:''}<br><strong>${esc(p.company.website||'')}</strong>`;
 }
 function togglePreview(open) { state.previewOpen=open??!state.previewOpen;$("#previewPane").classList.toggle("closed",!state.previewOpen);if(window.innerWidth>1180)$("#previewPane").classList.toggle("hidden",!state.previewOpen);$("#previewToggle").textContent=state.previewOpen?"Hide Preview":"PDF Preview"; }
@@ -755,8 +766,8 @@ async function exportPdf() {
   function drawDivisionCard(entry,y){
     const h=cardHeight(entry.items,{fontSize:bodyFont,leading:bodyLeading});drawCardBase(y,h);
     const hy=y+.28;
-    doc.setFont('helvetica','bold');doc.setFontSize(12.0);setText(orange);const leftText=`${entry.number} -`;doc.text(leftText,contentX+.42,hy);
-    const lw=doc.getTextWidth(leftText);setText(text);doc.text(`DIVISION ${entry.number} - ${String(entry.title).toUpperCase()}${entry.cont?' (CONT.)':''}`,contentX+.47+lw,hy);
+    doc.setFont('helvetica','bold');doc.setFontSize(12.0);setText(text);
+    doc.text(`DIVISION ${entry.number} - ${String(entry.title).toUpperCase()}${entry.cont?' (CONT.)':''}`,contentX+.42,hy,{maxWidth:contentW-.68});
     let cy=y+.58;doc.setFont('helvetica','normal');doc.setFontSize(bodyFont);
     for(const item of entry.items){const lines=wrapItem(item);const bullet=typeof item==='string'?true:item.bullet!==false;setText(text);if(bullet){setFill(orange);doc.circle(contentX+.39,cy-.025,.022,'F');setText(text);doc.text(lines,contentX+.58,cy,{lineHeightFactor:bodyLeading/bodyFont*72});}else{doc.text(lines,contentX+.42,cy,{lineHeightFactor:bodyLeading/bodyFont*72});}cy+=lines.length*bodyLeading+.055;}
     return y+h+cardGap;
@@ -771,9 +782,9 @@ async function exportPdf() {
   function drawSelections(y){
     const items=p.priceItems.filter(i=>(i.name||'').trim()||(i.price||'').trim());
     const h=selectionHeight(items);drawCardBase(y,h);
-    doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText(text);doc.text('CLIENT SELECTIONS',contentX+.42,y+.28);
+    doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText(text);doc.text('PROPOSED PRICING',contentX+.42,y+.28);
     doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(muted);
-    const noteLines=doc.splitTextToSize('Mark the box for each item you would like included in the contract request.',contentW-.84);
+    const noteLines=doc.splitTextToSize('Base Bid is shown first. Mark any alternates or add-ons you would like included in the contract request.',contentW-.84);
     doc.text(noteLines,contentX+.42,y+.51,{lineHeightFactor:1.2});
     let cy=y+.78;
     items.forEach(item=>{
@@ -800,7 +811,7 @@ async function exportPdf() {
       const h=Math.max(1.18,.58+lines.length*bodyLeading+.18);
       drawCardBase(y,h);
       doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText(text);
-      doc.text(`LEGAL DISCLAIMER - ${String(disclaimer.name).toUpperCase()}`,contentX+.42,y+.28,{maxWidth:contentW-.60});
+      doc.text(`TERMS AND CONDITIONS - ${String(disclaimer.name).toUpperCase()}`,contentX+.42,y+.28,{maxWidth:contentW-.60});
       doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);
       doc.text(lines,contentX+.42,y+.55,{lineHeightFactor:bodyLeading/minPdfFont*72});
       y+=h+cardGap;
@@ -845,8 +856,8 @@ function closeAdminDialog(){$("#adminDialog").close();}
 function activateAdminTab(name){$$('.admin-tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===name));$$('.admin-tab-panel').forEach(p=>p.classList.remove('active'));$(`#admin${name[0].toUpperCase()+name.slice(1)}Tab`).classList.add('active');}
 function renderAdminDisclaimers(){const items=getDisclaimers(),list=$("#disclaimerList");list.innerHTML="";if(!state.adminDisclaimerId||!items.some(d=>d.id===state.adminDisclaimerId))state.adminDisclaimerId=items[0]?.id||null;items.forEach(d=>{const b=document.createElement('button');b.type='button';b.className=`disclaimer-list-item ${d.id===state.adminDisclaimerId?'active':''}`;b.dataset.disclaimerAdminId=d.id;b.innerHTML=`<strong>${esc(d.name)}</strong><span>${esc(d.text)}</span>`;list.appendChild(b);});$$('[data-disclaimer-admin-id]').forEach(b=>b.addEventListener('click',()=>{state.adminDisclaimerId=b.dataset.disclaimerAdminId;renderAdminDisclaimers();}));const d=items.find(x=>x.id===state.adminDisclaimerId);$("#disclaimerEditId").value=d?.id||"";$("#disclaimerEditName").value=d?.name||"";$("#disclaimerEditText").value=d?.text||"";$("#deleteDisclaimerBtn").disabled=items.length<=1||!d;}
 function newDisclaimer(){state.adminDisclaimerId=null;$("#disclaimerEditId").value="";$("#disclaimerEditName").value="";$("#disclaimerEditText").value="";$$('.disclaimer-list-item').forEach(x=>x.classList.remove('active'));$("#deleteDisclaimerBtn").disabled=true;$("#disclaimerEditName").focus();}
-function saveDisclaimerFromAdmin(){if(!isAdmin())return;const name=$("#disclaimerEditName").value.trim(),textValue=$("#disclaimerEditText").value.trim();if(!name||!textValue)return toast("Enter both a disclaimer name and disclaimer text.");let items=getDisclaimers(),id=$("#disclaimerEditId").value||uid(),idx=items.findIndex(d=>d.id===id);const item={id,name,text:textValue};if(idx>=0)items[idx]=item;else items.push(item);saveDisclaimers(items);state.adminDisclaimerId=id;renderAdminDisclaimers();refreshProjectDisclaimerAfterAdmin();toast("Disclaimer saved.");}
-function deleteDisclaimerFromAdmin(){if(!isAdmin())return;let items=getDisclaimers();if(items.length<=1)return toast("Keep at least one disclaimer in the library.");const id=$("#disclaimerEditId").value;if(!id)return;const d=items.find(x=>x.id===id);if(!confirm(`Delete disclaimer “${d?.name||'this disclaimer'}”?`))return;items=items.filter(x=>x.id!==id);saveDisclaimers(items);state.adminDisclaimerId=items[0]?.id||null;renderAdminDisclaimers();refreshProjectDisclaimerAfterAdmin();toast("Disclaimer deleted.");}
+function saveDisclaimerFromAdmin(){if(!isAdmin())return;const name=$("#disclaimerEditName").value.trim(),textValue=$("#disclaimerEditText").value.trim();if(!name||!textValue)return toast("Enter both a Terms & Conditions name and text.");let items=getDisclaimers(),id=$("#disclaimerEditId").value||uid(),idx=items.findIndex(d=>d.id===id);const item={id,name,text:textValue};if(idx>=0)items[idx]=item;else items.push(item);saveDisclaimers(items);state.adminDisclaimerId=id;renderAdminDisclaimers();refreshProjectDisclaimerAfterAdmin();toast("Terms & Conditions saved.");}
+function deleteDisclaimerFromAdmin(){if(!isAdmin())return;let items=getDisclaimers();if(items.length<=1)return toast("Keep at least one Terms & Conditions version in the library.");const id=$("#disclaimerEditId").value;if(!id)return;const d=items.find(x=>x.id===id);if(!confirm(`Delete Terms & Conditions “${d?.name||'this disclaimer'}”?`))return;items=items.filter(x=>x.id!==id);saveDisclaimers(items);state.adminDisclaimerId=items[0]?.id||null;renderAdminDisclaimers();refreshProjectDisclaimerAfterAdmin();toast("Terms & Conditions deleted.");}
 function refreshProjectDisclaimerAfterAdmin(){if(!state.currentProjectId)return;const p=getCurrentProject();if(!p)return;const all=getDisclaimers();if(!all.some(d=>d.id===p.disclaimerId))p.disclaimerId=all[0]?.id||"";putProject(p);renderDisclaimerSelect(p);$("#projectDisclaimerSelect").value=p.disclaimerId;updateSelectedDisclaimerPreview();updatePreview();}
 function renderAdminUsers(){const wrap=$("#adminUsersList");wrap.innerHTML="";getAllUsers().forEach(u=>{u=normalizeUser(u);const row=document.createElement('div');row.className='admin-user-row';row.innerHTML=`<div><strong>${esc(u.username)}${u.username.toLowerCase()===state.user.username.toLowerCase()?' · You':''}</strong><span>Created ${esc(fmtTime(u.createdAt))}</span></div><select class="admin-role-select" data-role-user="${esc(u.username)}"><option value="employee" ${u.role==='employee'?'selected':''}>Employee</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select>`;wrap.appendChild(row);});$$('.admin-role-select').forEach(sel=>sel.addEventListener('change',()=>changeUserRole(sel.dataset.roleUser,sel.value,sel)));}
 function changeUserRole(username,role,selectEl){if(!isAdmin())return;const stored=getUserRecord(username);if(!stored)return;const record=normalizeUser(stored);const admins=getAllUsers().filter(u=>normalizeUser(u).role==='admin');if(record.role==='admin'&&role==='employee'&&admins.length<=1){selectEl.value='admin';return toast("At least one Admin account is required.");}record.role=role;saveUserRecord(record);if(username.toLowerCase()===state.user.username.toLowerCase()){state.user=record;refreshRoleUi();if(!isAdmin()){closeAdminDialog();toast("Your role is now Employee.");return;}}renderAdminUsers();toast(`${username} is now ${role === 'admin' ? 'an Admin' : 'an Employee'}.`);}

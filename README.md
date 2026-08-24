@@ -1,4 +1,13 @@
-# Koehn Scope Builder — V7.4
+# Koehn Scope Builder — V7.5
+
+## V7.5 proposal/editor changes
+- CSI division names are editable per project. Division numbers remain fixed; each division defaults to the standard name already provided in the app. Existing saved custom/default titles are preserved.
+- PDF division cards no longer repeat the division number in orange. The locked orange corner triangle remains, while the heading is black: `DIVISION 01 - GENERAL REQUIREMENTS`.
+- User-facing **Legal Disclaimer** wording has been renamed to **Terms & Conditions** throughout the project approval area, Admin library, preview, and PDF. The internal saved-data keys remain backward compatible.
+- Terms & Conditions print immediately above the **Request to Proceed to Contract** acknowledgment/signature section.
+- **Client Selections** has been renamed **Proposed Pricing**. Every project now always contains a fixed **Base Bid** pricing row, followed by user-added blank Alternate / Add-On rows.
+- Existing price selections are preserved and migrate below the new Base Bid row. The Base Bid row cannot be removed.
+- The locked Page 1 cover and Pages 2+ visual design, 12 pt PDF minimum, manual-line-break bullet rules, pagination/continuation rules, revision/archive/soft-delete safety, and Admin retention are unchanged.
 
 Page 1 PDF cover updated to the approved compact cover layout. Pages 2 through the final page remain unchanged from V7.3.
 
@@ -26,8 +35,8 @@ Open `index.html` in a modern browser.
 - Project/client/company information
 - CSI division scope editor
 - Clarifications, exclusions and alternates
-- Admin-controlled legal disclaimer library
-- Client selectable price items
+- Admin-controlled Terms & Conditions library
+- Proposed Pricing with permanent Base Bid plus alternate/add-on lines
 - Request-to-proceed-to-contract acknowledgment and signature/date area
 - US Letter portrait PDF export
 - KoehnCS orange/charcoal/triangle branding
@@ -45,7 +54,7 @@ Downloaded prototype files/sandbox links may use different browser origins or fi
 ### Before opening a different prototype build
 1. Sign in to the current build.
 2. Open the user menu and choose **Download Data Backup**.
-3. Admin accounts export the complete workspace: users, roles, projects, disclaimers, company info and project data.
+3. Admin accounts export the complete workspace: users, roles, projects, Terms & Conditions, company info and project data.
 4. In the new build, choose **Restore Scope Builder Backup** from the login screen.
 5. Select the `.ksb` file. Existing projects are merged rather than blindly replaced. When duplicate project IDs exist, the most recently updated copy is retained.
 
