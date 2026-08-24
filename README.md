@@ -118,3 +118,9 @@ Passwords in this prototype are hashed in browser storage, but this local protot
 - Preview attempts to preserve the user's relative scroll position when it refreshes.
 - Proposed Pricing spacing now calculates the instruction-note height before placing the Base Bid row, preventing overlap/crowding.
 - No locked cover/interior design changes were made in this update.
+
+## V7.7 scrolling fix
+- Restores reliable vertical scrolling in the proposal editor after the live PDF preview update.
+- Editor workspace, CSI navigation, and PDF preview each scroll independently.
+- Mouse-wheel/touchpad scrolling is no longer trapped by the preview pane at its scroll limits.
+- No PDF design, pagination, proposal content, or persistence changes were made in this update.
