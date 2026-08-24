@@ -455,3 +455,16 @@ body { min-height: 100%; overflow-y: auto; }
 .office-settings-panel label { margin: 0; }
 .modal-helper { margin: -4px 0 2px; color: var(--muted); font-size: 12px; line-height: 1.4; }
 @media (max-width: 760px) { .office-settings-grid { grid-template-columns: 1fr; } }
+
+/* Division rich-text controls */
+.division-format-toolbar { display: flex; align-items: center; gap: 5px; margin: 0 0 7px; }
+.scope-format-btn { width: 30px; height: 28px; border: 1px solid #d7dade; border-radius: 6px; background: #f8f9f9; color: #42464a; display: inline-grid; place-items: center; font-size: 12px; cursor: pointer; }
+.scope-format-btn:hover { border-color: #bfc3c7; background: #fff; }
+.scope-format-btn:focus-visible { outline: 2px solid var(--orange); outline-offset: 1px; }
+.scope-format-btn:disabled { opacity: .45; cursor: not-allowed; }
+.format-u { text-decoration: underline; text-underline-offset: 2px; font-weight: 700; }
+.rich-division-editor { min-height: 180px; width: 100%; border: 1px solid #d8dbde; border-radius: 8px; background: #fff; padding: 11px 12px; font-family: inherit; font-size: 12px; line-height: 1.45; color: #272a2d; outline: none; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rich-division-editor:focus { border-color: #aeb3b7; box-shadow: 0 0 0 2px rgba(243,111,33,.10); }
+.rich-division-editor:empty::before { content: attr(data-placeholder); color: #9da1a5; pointer-events: none; }
+.rich-division-editor div { min-height: 1.45em; }
+.project-locked .rich-division-editor { background: #f5f6f6; color: #70757a; }

@@ -160,3 +160,12 @@ Passwords in this prototype are hashed in browser storage, but this local protot
 - The selected office is saved with each project and its address/phone drive the contact block on Page 1 of the PDF.
 - Changing a project's Estimating Office refreshes that project to the latest saved contact information for the selected office.
 - Office settings are included in full Admin backups and restored with workspace data.
+
+## V7.12 — Division text formatting
+- Added simple Bold, Italic, and Underline controls to every CSI division scope editor.
+- Ctrl+B, Ctrl+I, and Ctrl+U work inside division scope fields.
+- Formatting is stored per project/division and preserved by backups/revisions.
+- Existing plain-text division scopes automatically migrate into the rich-text editor.
+- Pasted scope content is inserted as plain text so outside Word/web formatting does not pollute the proposal style.
+- Bold/Italic/Underline formatting is carried into the live PDF preview and exported PDF.
+- Manual line-break bullet behavior and the 12 pt PDF minimum remain unchanged.
