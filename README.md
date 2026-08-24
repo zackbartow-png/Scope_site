@@ -144,3 +144,11 @@ Passwords in this prototype are hashed in browser storage, but this local protot
 - Advanced Summary lists enabled CSI divisions with editable amount and notes fields, calculates Direct Cost Total, and supports additional cost/subtotal lines for fees, permits, bonds, allowances, contingency, etc.
 - Advanced PDF styling is modeled on the uploaded cost-model summary concept: Description / Total / Notes columns, emphasized direct-cost, subtotal, and final-total bands, adapted to Koehn orange/charcoal branding.
 - Summary pages use the existing 12 pt PDF minimum and appear in the live scrolling PDF preview.
+
+## V7.10 Advanced Summary refinements
+- If an Advanced Summary CSI Division Amount is blank, the division total cell remains blank on the PDF.
+- Subsection amounts under a blank division still roll into Direct Cost Total and Proposal Summary Total.
+- Added custom blank summary divisions that can be inserted at the top or immediately after any enabled CSI division.
+- Custom summary divisions have editable description and total amount and are included in Direct Cost Total / grand total.
+- Custom summary divisions affect only the Advanced Summary and do not create or modify scope divisions.
+- Existing Additional Costs Section Subtotal behavior remains unchanged: each subtotal sums only the cost lines since the previous subtotal and rolls into the grand total once.
