@@ -1084,21 +1084,35 @@ async function exportPdf(options={}) {
     const livePhone=coverOffice.phone||"";
     const website=p.company.website||DEFAULT_COMPANY.website||"";
 
-    // Exact locations correspond to the Marketing-provided fillable areas.
-    const yScale=coverPageH/11.333333;
-    const fields={
-      // All three Marketing cover options use the same field grid. Y coordinates
-      // scale with the exact supplied cover height so Civil/Concrete remain US Letter.
-      project:{x1:1.10,x2:3.42,cy:5.88*yScale},
-      date:{x1:4.02,x2:5.82,cy:5.88*yScale},
-      client:{x1:1.10,x2:3.42,cy:7.03*yScale},
-      prepared:{x1:4.02,x2:5.82,cy:7.03*yScale},
-      attn:{x1:1.10,x2:3.42,cy:8.17*yScale},
-      revision:{x1:4.02,x2:5.82,cy:8.17*yScale},
-      address:{x1:1.08,x2:5.78,cy:9.18*yScale},
-      phone:{x1:1.10,x2:3.42,cy:10.12*yScale},
-      website:{x1:4.02,x2:5.82,cy:10.12*yScale}
+    // Exact fill locations from each Marketing master. The Standard cover is
+    // 8.5 x 11.333 in, while Civil and Concrete are true 8.5 x 11 in covers.
+    // Civil/Concrete therefore use their own field-row coordinates rather than
+    // a proportional scale of the Standard cover.
+    const standardFields={
+      project:{x1:1.10,x2:3.42,cy:5.88},
+      date:{x1:4.02,x2:5.82,cy:5.88},
+      client:{x1:1.10,x2:3.42,cy:7.03},
+      prepared:{x1:4.02,x2:5.82,cy:7.03},
+      attn:{x1:1.10,x2:3.42,cy:8.17},
+      revision:{x1:4.02,x2:5.82,cy:8.17},
+      // Keep the office address close to Marketing's address icon/label instead
+      // of centering it across the full-width address rule.
+      address:{x1:1.02,x2:3.58,cy:9.18},
+      phone:{x1:1.10,x2:3.42,cy:10.12},
+      website:{x1:4.02,x2:5.82,cy:10.12}
     };
+    const divisionFields={
+      project:{x1:1.08,x2:3.35,cy:5.48},
+      date:{x1:3.93,x2:5.72,cy:5.48},
+      client:{x1:1.08,x2:3.35,cy:6.67},
+      prepared:{x1:3.93,x2:5.72,cy:6.67},
+      attn:{x1:1.08,x2:3.35,cy:7.95},
+      revision:{x1:3.93,x2:5.72,cy:7.95},
+      address:{x1:1.00,x2:3.55,cy:8.99},
+      phone:{x1:1.08,x2:3.35,cy:9.79},
+      website:{x1:3.93,x2:5.72,cy:9.79}
+    };
+    const fields=proposalType==='standard'?standardFields:divisionFields;
     const drawCentered=(value,box,{bold=true,fontSize=12.0,maxLines=2}={})=>{
       const textValue=String(value||"").trim();if(!textValue)return;
       doc.setFont('helvetica',bold?'bold':'normal');doc.setFontSize(Math.max(minPdfFont,fontSize));setText(text);
@@ -1311,7 +1325,7 @@ async function exportPdf(options={}) {
       doc.text(currencyText(item.price),pageW-right-.16,cy,{align:'right'});
       cy+=Math.max(.30,nameLines.length*.215+.09);
       if(isBase&&metrics.hasAlternates){
-        doc.setDrawColor(185,189,192);doc.setLineWidth(.012);doc.line(contentX+.42,cy-.10,pageW-right-.12,cy-.10);cy+=.10;
+        doc.setDrawColor(185,189,192);doc.setLineWidth(.012);doc.line(contentX+.42,cy-.16,pageW-right-.12,cy-.16);cy+=.10;
       }
     });
     return y+h+cardGap;
@@ -1654,7 +1668,7 @@ $("#userMenuBtn").addEventListener("click",()=>$("#userMenuPopover").classList.t
 $("#adminPanelBtn").addEventListener("click",openAdminDialog);$("#adminPopoverBtn").addEventListener("click",()=>{$("#userMenuPopover").classList.add('hidden');openAdminDialog();});
 $("#closeAdminDialog").addEventListener("click",closeAdminDialog);$("#newDisclaimerBtn").addEventListener("click",newDisclaimer);$("#saveDisclaimerBtn").addEventListener("click",saveDisclaimerFromAdmin);$("#deleteDisclaimerBtn").addEventListener("click",deleteDisclaimerFromAdmin);$$('.admin-tab-btn').forEach(b=>b.addEventListener('click',()=>activateAdminTab(b.dataset.adminTab)));
 $("#adminDownloadBackupBtn").addEventListener("click",downloadDataBackup);$("#adminRestoreBackupBtn").addEventListener("click",triggerRestoreBackup);
-$("#newProjectBtn").addEventListener("click",openNewProjectDialog);$("#emptyNewProjectBtn").addEventListener("click",openNewProjectDialog);$("#newProjectForm").addEventListener("submit",handleNewProject);$("#projectSearch").addEventListener("input",renderProjects);$("#projectSort").addEventListener("change",renderProjects);$$('.project-nav-btn').forEach(b=>b.addEventListener('click',()=>setDashboardMode(b.dataset.projectView)));$("#adminUserFilter").addEventListener("change",()=>{state.adminUserFilter=$("#adminUserFilter").value;renderProjects();});
+$("#newProjectBtn").addEventListener("click",openNewProjectDialog);$("#emptyNewProjectBtn").addEventListener("click",openNewProjectDialog);$("#newProjectForm").addEventListener("submit",handleNewProject);$("#closeNewProjectDialog")?.addEventListener("click",()=>$("#newProjectDialog").close());$("#cancelNewProjectDialog")?.addEventListener("click",()=>$("#newProjectDialog").close());$("#newProjectDialog")?.addEventListener("click",e=>{if(e.target===$("#newProjectDialog"))$("#newProjectDialog").close();});$("#projectSearch").addEventListener("input",renderProjects);$("#projectSort").addEventListener("change",renderProjects);$$('.project-nav-btn').forEach(b=>b.addEventListener('click',()=>setDashboardMode(b.dataset.projectView)));$("#adminUserFilter").addEventListener("change",()=>{state.adminUserFilter=$("#adminUserFilter").value;renderProjects();});
 $("#backToDashboard").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#sidebarBack").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#exportPdfBtn").addEventListener("click",exportPdf);$("#deleteProjectBtn").addEventListener("click",handleVersionDeleteRestore);
 $("#divisionSearch").addEventListener("input",filterDivisionNav);$("#expandAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.add('open')));$("#collapseAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.remove('open')));
 $("#previewToggle").addEventListener("click",()=>togglePreview());$("#closePreviewBtn").addEventListener("click",()=>togglePreview(false));$$('.tab-btn').forEach(b=>b.addEventListener('click',()=>activateTab(b.dataset.tab)));

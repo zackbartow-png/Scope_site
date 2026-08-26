@@ -372,7 +372,7 @@
     <form method="dialog" id="newProjectForm" class="modal-card">
       <div class="modal-header">
         <div><span class="eyebrow">New scope</span><h2>Create Project</h2></div>
-        <button class="icon-btn" value="cancel" type="submit">×</button>
+        <button class="icon-btn" id="closeNewProjectDialog" type="button" aria-label="Close Create Project">×</button>
       </div>
       <label>Project Name<input id="newProjectName" required placeholder="Project name" /></label>
       <label>Client / Owner<input id="newClientName" placeholder="Client or owner" /></label>
@@ -381,7 +381,7 @@
       <label>Estimating Office<select id="newProjectOffice" required><option value="fredonia">Fredonia</option><option value="tulsa">Tulsa</option></select></label>
       <p id="newProjectOfficeNote" class="modal-helper">Office contact information will be used on the proposal cover.</p>
       <div class="modal-actions">
-        <button class="btn btn-secondary" value="cancel" type="submit">Cancel</button>
+        <button class="btn btn-secondary" id="cancelNewProjectDialog" type="button">Cancel</button>
         <button class="btn btn-primary" id="createProjectConfirm" value="default" type="submit">Create Project</button>
       </div>
     </form>

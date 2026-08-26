@@ -481,7 +481,7 @@ body { min-height: 100%; overflow-y: auto; }
 .price-item-row { position: relative; grid-template-columns: 30px minmax(0,2.35fr) .72fr 34px; }
 .price-item-row.base-bid-row { grid-template-columns: minmax(0,2.35fr) .72fr 52px; }
 .price-item-row.base-bid-row.has-alternates { margin-bottom: 13px; }
-.price-item-row.base-bid-row.has-alternates::after { content:""; position:absolute; left:0; right:0; bottom:-4px; height:1px; background:#bfc3c7; }
+.price-item-row.base-bid-row.has-alternates::after { content:""; position:absolute; left:0; right:0; bottom:2px; height:1px; background:#bfc3c7; }
 .price-item-row .price-name { min-width: 0; }
 @media (max-width: 850px) {
   .price-item-row, .price-item-row.base-bid-row { grid-template-columns: 1fr; }
