@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Koehn Scope Builder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <section id="authView" class="auth-view">
+    <div class="auth-brand-panel">
+      <img src="assets/koehn-logo.png" class="auth-logo" alt="Koehn Construction Services" />
+      <div class="auth-copy">
+        <span class="eyebrow">Internal estimating tool</span>
+        <h1>Build polished scopes without fighting Word formatting.</h1>
+        <p>Write by CSI division, save project progress, and export a professional US Letter PDF based on the KoehnCS visual identity.</p>
+      </div>
+      <img src="assets/triangle-band.png" class="auth-band" alt="" />
+    </div>
+    <div class="auth-form-panel">
+      <div class="auth-card">
+        <div class="prototype-badge">Prototype · local account storage</div>
+        <h2 id="authTitle">Sign in</h2>
+        <p id="authSubtitle">Continue working on saved scope packages.</p>
+        <form id="authForm">
+          <label>Username
+            <input id="authUsername" autocomplete="username" required placeholder="Enter username" />
+          </label>
+          <label>Password
+            <input id="authPassword" type="password" autocomplete="current-password" required placeholder="Enter password" />
+          </label>
+          <button class="btn btn-primary btn-full" type="submit" id="authSubmit">Sign in</button>
+        </form>
+        <button class="text-btn" id="toggleAuthMode" type="button">Create an account</button>
+        <div class="auth-backup-row">
+          <span>Opening a newer prototype build?</span>
+          <button class="text-btn" id="restoreBackupAuthBtn" type="button">Restore Scope Builder Backup</button>
+        </div>
+        <p class="auth-note">Projects are stored in a versioned local workspace. Before moving to a different prototype file/build, download a backup and restore it here. The production hosted version will use permanent server storage.</p>
+      </div>
+    </div>
+  </section>
+
+  <div id="appView" class="app-shell hidden">
+    <header class="topbar">
+      <div class="topbar-brand">
+        <img src="assets/koehn-logo.png" alt="Koehn Construction Services" />
+        <div class="brand-divider"></div>
+        <div>
+          <div class="app-name">Scope Builder</div>
+          <div class="app-subtitle">Proposal & Scope Workspace</div>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span id="saveStatus" class="save-status">All changes saved</span>
+        <button id="backToDashboard" class="btn btn-ghost hidden">Projects</button>
+        <button id="exportPdfBtn" class="btn btn-primary hidden">Export PDF</button>
+        <button id="adminPanelBtn" class="btn btn-secondary hidden">Admin</button>
+        <div class="user-menu">
+          <button id="userMenuBtn" class="avatar-btn"><span id="avatarInitial">Z</span></button>
+          <div id="userMenuPopover" class="user-popover hidden">
+            <div class="user-popover-name" id="userDisplayName">User</div>
+            <div class="user-role-badge" id="userRoleBadge">Employee</div>
+            <button id="adminPopoverBtn" class="popover-btn hidden">Admin Settings</button>
+            <button id="downloadBackupBtn" class="popover-btn">Download Data Backup</button>
+            <button id="restoreBackupBtn" class="popover-btn">Restore Data Backup</button>
+            <button id="logoutBtn" class="popover-btn">Sign out</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main id="dashboardView" class="dashboard-view">
+      <section class="dashboard-hero">
+        <div>
+          <span class="eyebrow">Scope workspace</span>
+          <h1>Project Scopes</h1>
+          <p>Create, revise, and export client-ready scope documents while keeping every project organized by CSI division.</p>
+        </div>
+        <button id="newProjectBtn" class="btn btn-primary btn-lg">+ New Scope Project</button>
+      </section>
+
+      <div class="dashboard-layout">
+        <aside class="project-library-nav">
+          <div class="library-nav-title">Proposal Library</div>
+          <button class="project-nav-btn active" data-project-view="active" type="button"><span>Active Proposals</span><strong id="activeProjectCount">0</strong></button>
+          <button class="project-nav-btn" data-project-view="archived" type="button"><span>Archived</span><strong id="archivedProjectCount">0</strong></button>
+          <button id="adminAllProjectsBtn" class="project-nav-btn admin-project-nav hidden" data-project-view="admin" type="button"><span>All User Proposals</span><strong>Admin</strong></button>
+          <button id="adminDeletedProjectsBtn" class="project-nav-btn admin-project-nav hidden" data-project-view="deleted" type="button"><span>Deleted Items</span><strong id="adminDeletedProjectCount">0</strong></button>
+          <p class="library-nav-note">Archived proposals remain saved. Deleted projects and revisions are never permanently erased and remain recoverable by Admin.</p>
+        </aside>
+        <section class="dashboard-projects-panel">
+          <div class="dashboard-panel-head">
+            <div><span class="eyebrow">Proposal library</span><h2 id="dashboardSectionTitle">Active Proposals</h2></div>
+            <select id="adminUserFilter" class="select-control hidden" aria-label="Filter proposals by user"><option value="all">All users</option></select>
+          </div>
+          <section class="dashboard-toolbar">
+            <div class="search-box">
+              <span>⌕</span>
+              <input id="projectSearch" placeholder="Search projects, clients, or project numbers" />
+            </div>
+            <select id="projectSort" class="select-control">
+              <option value="updated">Recently updated</option>
+              <option value="name">Project name</option>
+              <option value="client">Client</option>
+            </select>
+          </section>
+
+          <section id="projectsGrid" class="projects-grid"></section>
+          <section id="emptyProjects" class="empty-state hidden">
+            <div class="empty-icon">△</div>
+            <h3>No scope projects yet</h3>
+            <p>Create your first project and start pasting scope language into CSI divisions.</p>
+            <button class="btn btn-primary" id="emptyNewProjectBtn">Create First Project</button>
+          </section>
+        </section>
+      </div>
+    </main>
+
+    <main id="editorView" class="editor-view hidden">
+      <aside class="division-sidebar">
+        <div class="sidebar-project">
+          <button id="sidebarBack" class="icon-btn" title="Back to projects">←</button>
+          <div>
+            <div class="sidebar-label">Current Project</div>
+            <div id="sidebarProjectName" class="sidebar-project-name">Untitled Project</div>
+          </div>
+        </div>
+        <div class="sidebar-search">
+          <input id="divisionSearch" placeholder="Find division" />
+        </div>
+        <nav id="divisionNav" class="division-nav"></nav>
+        <div class="sidebar-footer">
+          <button id="deleteProjectBtn" class="danger-link">Delete This Version</button>
+        </div>
+      </aside>
+
+      <section class="editor-workspace">
+        <div class="editor-header">
+          <div>
+            <span class="eyebrow">Document editor</span>
+            <input id="projectTitleInline" class="inline-title" value="Untitled Project" />
+            <div class="editor-project-badges"><span id="projectVersionBadge" class="project-version-badge">Original</span><span id="projectLockBadge" class="project-lock-badge hidden">Locked · Read Only</span><span id="projectOwnerBadge" class="project-owner-badge hidden"></span></div>
+          </div>
+          <div class="editor-header-actions">
+            <button id="previewToggle" class="btn btn-secondary">PDF Preview</button>
+          </div>
+        </div>
+
+        <div class="workspace-tabs">
+          <button class="tab-btn active" data-tab="info">Project Info</button>
+          <button class="tab-btn" data-tab="scope">Scope by Division</button>
+          <button class="tab-btn" data-tab="closeout">Clarifications & Alternates</button>
+          <button class="tab-btn" data-tab="approval">Pricing & Approval</button>
+          <button class="tab-btn" data-tab="summary">Proposal Summary</button>
+          <button class="tab-btn" data-tab="company">Company Info</button>
+        </div>
+
+        <div id="infoTab" class="tab-panel active">
+          <div class="section-heading">
+            <div>
+              <h2>Project & Client Information</h2>
+              <p>These fields populate the cover/header information on the PDF.</p>
+            </div>
+          </div>
+          <div class="form-card form-grid two-col">
+            <label>Project Name<input data-field="projectName" placeholder="Project name" /></label>
+            <label>Project Number<input data-field="projectNumber" placeholder="Optional project / estimate number" /></label>
+            <label>Estimating Office<select data-field="estimatingOffice"><option value="fredonia">Fredonia</option><option value="tulsa">Tulsa</option></select></label>
+            <label class="office-project-note">Office Contact<span>Selected office address and phone are used on the proposal cover.</span></label>
+            <label>Client / Owner<input data-field="clientName" placeholder="Client or owner" /></label>
+            <label>Attention<input data-field="attention" placeholder="Contact person" /></label>
+            <label class="full">Project Address<textarea data-field="projectAddress" rows="2" placeholder="Street, City, State ZIP"></textarea></label>
+            <label>Proposal Date<input data-field="proposalDate" type="date" /></label>
+            <label>Prepared By<input data-field="preparedBy" placeholder="Estimator / PM" /></label>
+            <label>Document Title<input data-field="documentTitle" placeholder="Proposal" /></label>
+            <label class="full">Intro / Proposal Note<textarea data-field="introNote" rows="5" placeholder="Optional introductory paragraph shown before the scope divisions."></textarea></label>
+          </div>
+        </div>
+
+        <div id="scopeTab" class="tab-panel">
+          <div class="section-heading split-heading">
+            <div>
+              <h2>CSI Scope Divisions</h2>
+              <p>Enable only the divisions you want in the finished PDF. Paste plain text or bulleted scope directly into each box.</p>
+            </div>
+            <div class="scope-actions">
+              <button id="expandAllBtn" class="btn btn-secondary">Expand All</button>
+              <button id="collapseAllBtn" class="btn btn-secondary">Collapse All</button>
+            </div>
+          </div>
+          <div id="divisionCards" class="division-cards"></div>
+        </div>
+
+        <div id="closeoutTab" class="tab-panel">
+          <div class="section-heading">
+            <div>
+              <h2>Clarifications, Exclusions & Alternates</h2>
+              <p>Keep proposal qualifications separate from the trade scope while still presenting them in the same professional document.</p>
+            </div>
+          </div>
+          <div class="stacked-cards">
+            <div class="text-section-card">
+              <div class="text-card-header"><div><span class="section-number">C</span><h3>Clarifications</h3></div><label class="switch-label"><input type="checkbox" data-section-enabled="clarifications" checked><span class="switch"></span>Include</label></div>
+              <div class="division-format-toolbar closeout-format-toolbar" role="toolbar" aria-label="Clarifications text formatting"><button type="button" class="scope-format-btn" data-format="bold" title="Bold (Ctrl+B)" aria-label="Bold"><strong>B</strong></button><button type="button" class="scope-format-btn" data-format="italic" title="Italic (Ctrl+I)" aria-label="Italic"><em>I</em></button><button type="button" class="scope-format-btn" data-format="underline" title="Underline (Ctrl+U)" aria-label="Underline"><span class="format-u">U</span></button></div>
+              <div class="rich-closeout-editor" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" data-closeout-field="clarifications" data-placeholder="Enter one clarification per line or paste a bullet list."></div>
+            </div>
+            <div class="text-section-card">
+              <div class="text-card-header"><div><span class="section-number">E</span><h3>Exclusions</h3></div><label class="switch-label"><input type="checkbox" data-section-enabled="exclusions" checked><span class="switch"></span>Include</label></div>
+              <div class="division-format-toolbar closeout-format-toolbar" role="toolbar" aria-label="Exclusions text formatting"><button type="button" class="scope-format-btn" data-format="bold" title="Bold (Ctrl+B)" aria-label="Bold"><strong>B</strong></button><button type="button" class="scope-format-btn" data-format="italic" title="Italic (Ctrl+I)" aria-label="Italic"><em>I</em></button><button type="button" class="scope-format-btn" data-format="underline" title="Underline (Ctrl+U)" aria-label="Underline"><span class="format-u">U</span></button></div>
+              <div class="rich-closeout-editor" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" data-closeout-field="exclusions" data-placeholder="Enter project exclusions."></div>
+            </div>
+            <div class="text-section-card">
+              <div class="text-card-header"><div><span class="section-number">A</span><h3>Alternates</h3></div><label class="switch-label"><input type="checkbox" data-section-enabled="alternates" checked><span class="switch"></span>Include</label></div>
+              <div class="division-format-toolbar closeout-format-toolbar" role="toolbar" aria-label="Alternates text formatting"><button type="button" class="scope-format-btn" data-format="bold" title="Bold (Ctrl+B)" aria-label="Bold"><strong>B</strong></button><button type="button" class="scope-format-btn" data-format="italic" title="Italic (Ctrl+I)" aria-label="Italic"><em>I</em></button><button type="button" class="scope-format-btn" data-format="underline" title="Underline (Ctrl+U)" aria-label="Underline"><span class="format-u">U</span></button></div>
+              <div class="rich-closeout-editor" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" data-closeout-field="alternates" data-placeholder="Example: Alternate 01 – 10' x 70' bridge: Add $20,123.00"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="approvalTab" class="tab-panel">
+          <div class="section-heading split-heading">
+            <div>
+              <h2>Proposed Pricing & Acknowledgment</h2>
+              <p>Enter the Base Bid and add blank pricing lines for alternates or add-ons. The signature requests preparation of a formal contract; it is not the contract itself.</p>
+            </div>
+            <label class="switch-label"><input type="checkbox" data-section-enabled="clientSelections" checked><span class="switch"></span>Include Pricing</label>
+          </div>
+
+          <div class="form-card approval-card">
+            <div class="approval-card-head">
+              <div>
+                <h3>Proposed Pricing</h3>
+                <p>Base Bid is always included as the first line. Add blank lines below it for alternates and add-ons as needed.</p>
+              </div>
+              <button id="addPriceItemBtn" class="btn btn-secondary" type="button">+ Add Alternate / Add-On</button>
+            </div>
+            <div class="price-item-head"><span></span><span>Pricing Line</span><span>Price</span><span></span></div>
+            <div id="priceItems" class="price-items"></div>
+            <div id="emptyPriceItems" class="inline-empty hidden"></div>
+          </div>
+
+          <div class="form-card disclaimer-selector-card">
+            <div class="approval-card-head">
+              <div>
+                <h3>Terms &amp; Conditions</h3>
+                <p>Select the approved Terms &amp; Conditions that apply to this proposal. Only Admin users can create or change this wording.</p>
+              </div>
+              <span id="disclaimerAdminOnlyBadge" class="admin-only-badge">Admin controlled</span>
+            </div>
+            <label>Terms &amp; Conditions Version
+              <select id="projectDisclaimerSelect" data-field="disclaimerId"></select>
+            </label>
+            <div id="selectedDisclaimerPreview" class="disclaimer-readonly"></div>
+          </div>
+
+          <div class="form-card acknowledgement-card">
+            <span class="eyebrow">Printed at end of proposal</span>
+            <h3>Request to Proceed to Contract</h3>
+            <p>By signing below, the client acknowledges the selections marked above and requests that Koehn Construction Services prepare and issue a formal contract reflecting those selections. This acknowledgment is not a contract, does not authorize construction work, and does not modify any existing agreement. Work will proceed only after execution of the applicable contract or other written authorization acceptable to Koehn Construction Services.</p>
+            <div class="signature-demo">
+              <div><span>Client / Authorized Representative</span></div>
+              <div><span>Signature</span></div>
+              <div><span>Date</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="summaryTab" class="tab-panel">
+          <div class="section-heading split-heading">
+            <div>
+              <h2>Proposal Summary</h2>
+              <p>Optionally append a summary after the current final proposal page. Basic summarizes the CSI divisions used; Advanced supports division-level breakouts, hidden divisions, and section subtotals.</p>
+            </div>
+            <label>Summary Type
+              <select id="summaryMode" class="select-control summary-mode-select">
+                <option value="none">No Summary</option>
+                <option value="basic">Basic Summary</option>
+                <option value="advanced">Advanced Summary</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="summaryNoneState" class="form-card summary-empty-card">
+            <h3>No summary page selected</h3>
+            <p>The proposal will end with the existing Terms &amp; Conditions / Request to Proceed page.</p>
+          </div>
+
+          <div id="basicSummaryEditor" class="summary-editor-block hidden">
+            <div class="form-card">
+              <div class="approval-card-head">
+                <div><h3>Basic Summary</h3><p>Uses only the CSI divisions included in this proposal. The description and amount for every summary line are editable.</p></div>
+              </div>
+              <label>Optional Summary Note
+                <textarea id="basicSummaryNote" rows="4" placeholder="Optional note displayed above the summary table."></textarea>
+              </label>
+              <div class="basic-summary-head"><span>Description</span><span>Amount</span></div>
+              <div id="basicSummaryDivisionRows" class="basic-summary-division-rows"></div>
+              <div class="basic-overhead-row">
+                <label class="switch-label"><input id="basicOverheadEnabled" type="checkbox"><span class="switch"></span>Include Overhead Line</label>
+                <input id="basicOverheadLabel" placeholder="Overhead">
+                <input id="basicOverheadAmount" placeholder="$0.00">
+              </div>
+              <div class="summary-total-preview"><span>Basic Summary Total</span><strong id="basicSummaryTotal">$0.00</strong></div>
+            </div>
+          </div>
+
+          <div id="advancedSummaryEditor" class="summary-editor-block hidden">
+            <div class="form-card">
+              <div class="approval-card-head">
+                <div><h3>Advanced Cost Summary</h3><p>Break each included CSI division into optional subsections. Leave a division amount blank to show only its subsection costs while still including them in the total. Custom blank divisions can be inserted between CSI divisions.</p></div>
+                <button id="addTopCustomDivisionBtn" class="btn btn-secondary" type="button">+ Custom Division at Top</button>
+              </div>
+              <div class="summary-table-head advanced-division-head"><span>Show</span><span>Division</span><span>Division Amount</span><span>Total</span><span></span></div>
+              <div id="advancedDivisionRows" class="advanced-summary-rows"></div>
+              <div class="summary-total-preview"><span>Direct Cost Total</span><strong id="advancedDirectTotal">$0.00</strong></div>
+            </div>
+
+            <div class="form-card">
+              <div class="approval-card-head">
+                <div><h3>Additional Costs &amp; Section Subtotals</h3><p>Add fees, permits, bonds, allowances, contingency, or other costs. A Section Subtotal calculates only the cost lines since the previous subtotal; that subtotal is then carried into the grand total without double counting.</p></div>
+                <button id="addSummaryRowBtn" class="btn btn-secondary" type="button">+ Add Summary Line</button>
+              </div>
+              <div class="summary-extra-head"><span>Description</span><span>Amount</span><span>Row Type</span><span></span></div>
+              <div id="advancedExtraRows" class="advanced-summary-rows"></div>
+              <div class="summary-grand-total-preview"><span>Proposal Summary Total</span><strong id="advancedGrandTotal">$0.00</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="companyTab" class="tab-panel">
+          <div class="section-heading">
+            <div>
+              <h2>Company Information</h2>
+              <p>The KoehnCS brand is preloaded from the uploaded letterhead. Estimating-office address and phone settings are managed under Admin → Offices.</p>
+            </div>
+          </div>
+          <div class="form-card form-grid two-col">
+            <label>Company Name<input data-company="companyName" /></label>
+            <label>Website<input data-company="website" /></label>
+            <label>Fax<input data-company="fax" /></label>
+            <label>Email<input data-company="email" placeholder="Optional" /></label>
+            <label>Brand Orange<input data-company="orange" type="color" /></label>
+            <label>Brand Charcoal<input data-company="charcoal" type="color" /></label>
+          </div>
+        </div>
+      </section>
+
+      <aside id="previewPane" class="preview-pane">
+        <div class="preview-toolbar">
+          <div>
+            <strong>PDF Preview</strong>
+            <span>US Letter · Portrait</span>
+          </div>
+          <button id="closePreviewBtn" class="icon-btn">×</button>
+        </div>
+        <div id="pdfPreviewScroll" class="pdf-preview-scroll">
+          <div id="pdfPreviewStatus" class="pdf-preview-status">Building live PDF preview…</div>
+          <div id="pdfPreviewPages" class="pdf-preview-pages"></div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <dialog id="newProjectDialog" class="modal">
+    <form method="dialog" id="newProjectForm" class="modal-card">
+      <div class="modal-header">
+        <div><span class="eyebrow">New scope</span><h2>Create Project</h2></div>
+        <button class="icon-btn" value="cancel" type="submit">×</button>
+      </div>
+      <label>Project Name<input id="newProjectName" required placeholder="Project name" /></label>
+      <label>Client / Owner<input id="newClientName" placeholder="Client or owner" /></label>
+      <label>Project Number<input id="newProjectNumber" placeholder="Optional" /></label>
+      <label>Estimating Office<select id="newProjectOffice" required><option value="fredonia">Fredonia</option><option value="tulsa">Tulsa</option></select></label>
+      <p id="newProjectOfficeNote" class="modal-helper">Office contact information will be used on the proposal cover.</p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" value="cancel" type="submit">Cancel</button>
+        <button class="btn btn-primary" id="createProjectConfirm" value="default" type="submit">Create Project</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="adminDialog" class="modal admin-modal">
+    <div class="modal-card admin-modal-card">
+      <div class="modal-header">
+        <div><span class="eyebrow">Admin only</span><h2>Admin Settings</h2></div>
+        <button id="closeAdminDialog" class="icon-btn" type="button">×</button>
+      </div>
+      <div class="admin-tabs">
+        <button class="admin-tab-btn active" data-admin-tab="disclaimers" type="button">Terms &amp; Conditions</button>
+        <button class="admin-tab-btn" data-admin-tab="offices" type="button">Offices</button>
+        <button class="admin-tab-btn" data-admin-tab="users" type="button">User Roles</button>
+        <button class="admin-tab-btn" data-admin-tab="backup" type="button">Data Backup</button>
+      </div>
+      <section id="adminDisclaimersTab" class="admin-tab-panel active">
+        <div class="admin-section-head">
+          <div><h3>Proposal Terms &amp; Conditions Library</h3><p>Save multiple approved versions and select the applicable one on each project.</p></div>
+          <button id="newDisclaimerBtn" class="btn btn-secondary" type="button">+ New Terms</button>
+        </div>
+        <div class="admin-disclaimer-layout">
+          <div id="disclaimerList" class="disclaimer-list"></div>
+          <div class="disclaimer-editor">
+            <input id="disclaimerEditId" type="hidden" />
+            <label>Terms &amp; Conditions Name<input id="disclaimerEditName" placeholder="Example: Standard Proposal" /></label>
+            <label>Terms &amp; Conditions Text<textarea id="disclaimerEditText" rows="12" placeholder="Paste the approved Terms &amp; Conditions here."></textarea></label>
+            <div class="modal-actions">
+              <button id="deleteDisclaimerBtn" class="btn btn-danger" type="button">Delete</button>
+              <button id="saveDisclaimerBtn" class="btn btn-primary" type="button">Save Terms</button>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section id="adminOfficesTab" class="admin-tab-panel">
+        <div class="admin-section-head">
+          <div><h3>Estimating Offices</h3><p>Set the address and phone number used on proposal covers for projects estimated from each office.</p></div>
+        </div>
+        <div class="office-settings-grid">
+          <section class="office-settings-panel">
+            <span class="eyebrow">Fredonia Office</span>
+            <label>Address<textarea data-office-setting="fredonia.address" rows="4" placeholder="Office mailing / street address"></textarea></label>
+            <label>Phone<input data-office-setting="fredonia.phone" placeholder="Phone number" /></label>
+          </section>
+          <section class="office-settings-panel">
+            <span class="eyebrow">Tulsa Office</span>
+            <label>Address<textarea data-office-setting="tulsa.address" rows="4" placeholder="Office mailing / street address"></textarea></label>
+            <label>Phone<input data-office-setting="tulsa.phone" placeholder="Phone number" /></label>
+          </section>
+        </div>
+        <p class="admin-note">New projects save the selected office contact information with the proposal. Changing the Estimating Office on a project refreshes that project to the latest saved office information.</p>
+      </section>
+      <section id="adminUsersTab" class="admin-tab-panel">
+        <div class="admin-section-head">
+          <div><h3>User Access Levels</h3><p>Admins can manage Terms &amp; Conditions wording and user roles. Employees can create projects, select approved Terms &amp; Conditions, and export proposals.</p></div>
+        </div>
+        <div id="adminUsersList" class="admin-users-list"></div>
+        <p class="admin-note">Roles are included in the full Admin workspace backup. The production version will move authentication and permissions to the server/database.</p>
+      </section>
+      <section id="adminBackupTab" class="admin-tab-panel">
+        <div class="admin-section-head">
+          <div><h3>Workspace Backup & Migration</h3><p>Use this whenever you are moving to a new prototype build. Admin backups contain all users, projects, company information, proposed pricing, and Terms &amp; Conditions versions.</p></div>
+        </div>
+        <div class="backup-card">
+          <div><strong>Full Workspace Backup</strong><span>Creates one portable .ksb file containing the complete Scope Builder workspace.</span></div>
+          <button id="adminDownloadBackupBtn" class="btn btn-primary" type="button">Download Full Backup</button>
+        </div>
+        <div class="backup-card">
+          <div><strong>Restore / Merge Backup</strong><span>Imports projects from an earlier build without deleting newer projects already in this build.</span></div>
+          <button id="adminRestoreBackupBtn" class="btn btn-secondary" type="button">Restore Backup</button>
+        </div>
+        <p class="admin-note"><strong>Important:</strong> local browser storage cannot automatically cross from one downloaded prototype file/sandbox location to another. This backup file is the safe migration path until the app is hosted on its permanent URL with a database.</p>
+      </section>
+    </div>
+  </dialog>
+
+  <input id="backupFileInput" type="file" accept=".ksb,.json,application/json" hidden />
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
