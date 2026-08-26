@@ -463,7 +463,8 @@ function renderProjects() {
     const visibleVersions=(state.dashboardMode==="admin"||state.dashboardMode==="deleted")?f.versions:f.versions.filter(v=>!v.deletedByUser);
     const status=[]; if(familyArchived)status.push('Archived'); if(p.locked)status.push('Locked'); if(f.versions.some(v=>v.accepted))status.push('Accepted'); if(familyDeleted)status.push(f.versions.every(v=>v.deletedScope==='project')?'Deleted project':'All versions deleted'); else if(f.versions.some(v=>v.deletedByUser))status.push('Deleted revision retained');
     if(p.deletedByUser){status.push(`Deleted by ${p.deletedBy||'Unknown'}`);status.push(`Deleted ${fmtTime(p.deletedAt)}`);}
-    const card=document.createElement("article"); card.className=`project-card ${familyArchived?'archived-card':''} ${familyDeleted?'deleted-card':''}`;
+    const familyAccepted=f.versions.some(v=>v.accepted);
+    const card=document.createElement("article"); card.className=`project-card ${familyArchived?'archived-card':''} ${familyDeleted?'deleted-card':''} ${familyAccepted?'accepted-card':''}`;
     const adminRecovery=(state.dashboardMode==="deleted"&&isAdmin());
     card.innerHTML=`
       <div class="project-card-head">
@@ -486,7 +487,7 @@ function renderProjects() {
         </div>
       </div>
       <div class="project-version-row">${visibleVersions.map(v=>`<span class="version-chip-wrap"><button class="version-chip ${v.id===p.id?'current':''} ${v.locked?'locked':''} ${v.deletedByUser?'removed':''}" data-open-project="${v.id}" data-owner="${esc(f.owner)}">${versionLabel(v)}${v.locked?' · Locked':''}${v.deletedByUser?' · Deleted':''}</button>${adminRecovery&&v.deletedByUser?`<button class="version-restore-btn" type="button" data-restore-version="${v.id}" data-owner="${esc(f.owner)}" title="Restore ${versionLabel(v)}">↺</button>`:''}</span>`).join('')}</div>
-      ${status.length?`<div class="project-status-row">${status.map(s=>`<span>${esc(s)}</span>`).join('')}</div>`:''}
+      ${status.length?`<div class="project-status-row">${status.map(s=>`<span class="${s==='Accepted'?'accepted-status':''}">${esc(s)}</span>`).join('')}</div>`:''}
       <div class="project-meta"><span>${used} divisions used · ${p.priceItems.filter(i=>i.isBaseBid?(i.price||'').trim():((i.name||'').trim()||(i.price||'').trim()||(i.description||'').trim())).length} pricing lines entered</span><span>Updated ${esc(fmtTime(p.updatedAt))}</span></div>`;
     grid.appendChild(card);
   });

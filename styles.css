@@ -507,3 +507,9 @@ body { min-height: 100%; overflow-y: auto; }
 .project-status-row span:first-child {}
 .project-status-row span { white-space:nowrap; }
 @media (max-width:700px){ .kickoff-view{padding:28px 18px 60px}.kickoff-card{padding:24px}.kickoff-meta-grid{grid-template-columns:1fr}.kickoff-topbar{align-items:flex-start;flex-direction:column-reverse} }
+
+/* Accepted project state — status styling only; Koehn brand orange remains unchanged elsewhere. */
+.project-card.accepted-card::before { background:#4f8f5b; }
+.project-card.accepted-card .project-number,
+.project-card.accepted-card .project-open { color:#3d7a49; }
+.project-status-row .accepted-status { background:#edf7ef; border:1px solid #c9e5cf; color:#3d7a49; }
