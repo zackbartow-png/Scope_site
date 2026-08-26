@@ -161,7 +161,7 @@ Passwords in this prototype are hashed in browser storage, but this local protot
 - Changing a project's Estimating Office refreshes that project to the latest saved contact information for the selected office.
 - Office settings are included in full Admin backups and restored with workspace data.
 
-## V7.12 — Division text formatting
+## V7.13 — Division text formatting
 - Added simple Bold, Italic, and Underline controls to every CSI division scope editor.
 - Ctrl+B, Ctrl+I, and Ctrl+U work inside division scope fields.
 - Formatting is stored per project/division and preserved by backups/revisions.
@@ -169,3 +169,14 @@ Passwords in this prototype are hashed in browser storage, but this local protot
 - Pasted scope content is inserted as plain text so outside Word/web formatting does not pollute the proposal style.
 - Bold/Italic/Underline formatting is carried into the live PDF preview and exported PDF.
 - Manual line-break bullet behavior and the 12 pt PDF minimum remain unchanged.
+
+
+## V7.13 - Marketing Proposal Templates
+
+- Page 1 export uses the Marketing-provided `Koehn Proposal.pdf` as the fixed branding master.
+- Pages 2+ use the Marketing-provided `Koehn Blank Proposal Sheet.pdf` as the fixed branding master.
+- The original PDFs are included unchanged under `assets/marketing/source/`.
+- Website/export background derivatives only suppress the light-blue fill guides so live values render on a transparent/white field area.
+- Original/base proposals omit the Revision icon, label, and value. V1+ proposals show the Marketing revision icon/label and the current revision value.
+- Page numbering preserves the previous Scope Builder `PAGE X OF Y` lower-right style with orange underline.
+- All existing project storage, revision history, summaries, rich text, office selection, and 12 pt PDF minimum remain in place.

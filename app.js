@@ -1028,15 +1028,15 @@ async function exportPdf(options={}) {
   const pageW=8.5,pageH=11;
   const orange=hexToRgb(p.company.orange||DEFAULT_COMPANY.orange);
   const charcoal=[36,43,49], text=[17,17,17], muted=[107,111,114], bg=[250,250,249], pale=[244,244,243], shadow=[228,228,226];
-  const sidebarW=.81, contentX=1.20, right=.36, contentW=pageW-contentX-right;
-  const topY=1.08, bottomLimit=.54, cardGap=.14;
+  const contentX=.58, right=.48, contentW=pageW-contentX-right;
+  const topY=1.20, bottomLimit=.72, cardGap=.14;
   const bodyFont=12.0, bodyLeading=.215, minPdfFont=12.0;
-  let logoData=null, coverDataRevision=null, coverDataOriginal=null;
+  let coverDataRevision=null, coverDataOriginal=null, interiorData=null;
   try {
-    [logoData,coverDataRevision,coverDataOriginal]=await Promise.all([
-      imageToDataUrl('assets/koehn-logo.png'),
-      imageToDataUrl('assets/cover-base-revision-v2.png'),
-      imageToDataUrl('assets/cover-base-original-v2.png')
+    [coverDataRevision,coverDataOriginal,interiorData]=await Promise.all([
+      imageToDataUrl('assets/marketing/marketing-cover-revision.png'),
+      imageToDataUrl('assets/marketing/marketing-cover-original.png'),
+      imageToDataUrl('assets/marketing/marketing-blank.png')
     ]);
   } catch {}
 
@@ -1049,80 +1049,69 @@ async function exportPdf(options={}) {
   function coverMask(x,y,w,h,color=[255,255,255]){doc.setFillColor(...color);doc.rect(x,y,w,h,'F');}
 
   function drawCover(){
-    // Page 1 only: approved compact cover layout. Pages 2+ remain unchanged.
-    // The master images contain the fixed artwork/icons/lines and no project-specific values.
+    // Marketing-approved cover artwork is used as an immutable background master.
+    // The app only overlays live values in the designated form locations.
+    // Original proposals use the master with the Revision icon/label suppressed.
     const coverData=rev?coverDataRevision:coverDataOriginal;
     if(coverData) doc.addImage(coverData,'PNG',0,0,pageW,pageH,undefined,'FAST');
-    else { setFill([241,241,241]);doc.rect(0,0,pageW,pageH,'F'); }
+    else { setFill([255,255,255]);doc.rect(0,0,pageW,pageH,'F'); }
 
-    const label=[55,55,55];
-    const value=text;
     const coverOffice={...getOfficeContact(p.estimatingOffice||"fredonia"),...(p.officeContact||{})};
     const livePhone=coverOffice.phone||"";
+    const website=p.company.website||DEFAULT_COMPANY.website||"";
 
-    // PROJECT / DATE
-    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(label);
-    doc.text('PROJECT',1.16,4.13);
-    doc.text('DATE',4.32,4.13);
-    doc.setFont('helvetica','bold');doc.setFontSize(13.5);setText(value);
-    doc.text(p.projectName||'Untitled Project',1.16,4.42,{maxWidth:2.65});
-    doc.text(fmtDate(p.proposalDate),4.32,4.42,{maxWidth:1.75});
+    // Exact locations correspond to the Marketing-provided fillable areas.
+    const fields={
+      project:{x1:1.195,x2:3.271,cy:4.838},
+      date:{x1:4.316,x2:5.894,cy:4.838},
+      client:{x1:1.195,x2:3.271,cy:5.869},
+      prepared:{x1:4.316,x2:5.894,cy:5.869},
+      attn:{x1:1.195,x2:3.271,cy:6.893},
+      revision:{x1:4.316,x2:5.894,cy:6.893},
+      address:{x1:.938,x2:2.515,cy:8.372},
+      phone:{x1:2.806,x2:4.383,cy:8.293},
+      website:{x1:4.673,x2:6.250,cy:8.293}
+    };
+    const drawCentered=(value,box,{bold=true,fontSize=12.0,maxLines=2}={})=>{
+      const textValue=String(value||"").trim();if(!textValue)return;
+      doc.setFont('helvetica',bold?'bold':'normal');doc.setFontSize(Math.max(minPdfFont,fontSize));setText(text);
+      const width=Math.max(.25,box.x2-box.x1-.08);
+      let lines=doc.splitTextToSize(textValue,width);
+      if(lines.length>maxLines)lines=lines.slice(0,maxLines);
+      const leading=.185;
+      const startY=box.cy-((lines.length-1)*leading)/2+.055;
+      doc.text(lines,(box.x1+box.x2)/2,startY,{align:'center',lineHeightFactor:leading/(Math.max(minPdfFont,fontSize)/72)});
+    };
 
-    // CLIENT / PREPARED BY
-    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(label);
-    doc.text('CLIENT',1.16,5.52);
-    doc.text('PREPARED BY',4.32,5.52);
-    doc.setFont('helvetica','bold');doc.setFontSize(13.0);setText(value);
-    const clientLines=doc.splitTextToSize(p.clientName||'—',2.65);
-    doc.text(clientLines,1.16,5.80,{lineHeightFactor:1.15});
-    doc.text(p.preparedBy||'—',4.32,5.80,{maxWidth:1.75});
-
-    // ATTN / ADDRESS
-    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(label);
-    doc.text('ATTN:',1.16,6.83);
-    doc.setFont('helvetica','bold');doc.setFontSize(12.5);setText(value);
-    if((p.attention||'').trim()) doc.text(p.attention.trim(),1.16,7.10,{maxWidth:2.65});
-    if((p.projectAddress||'').trim()){
-      doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);
-      const addr=doc.splitTextToSize(p.projectAddress.trim().replace(/\n/g,', '),2.85);
-      doc.text(addr,1.16,7.37,{lineHeightFactor:1.16});
-    }
-
-    // REVISION is omitted entirely on Original proposals.
-    if(rev){
-      doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(label);
-      doc.text('REVISION',4.32,6.83);
-      doc.setFont('helvetica','bold');doc.setFontSize(12.5);setText(value);
-      doc.text(rev,4.32,7.10);
-    }
-
-    // Footer contact values. The approved cover uses phone only; fax is not shown here.
-    const addrRaw=(coverOffice.address||'').replace(/\s*·\s*/g,'\n').split(/\n/).map(s=>s.trim()).filter(Boolean);
-    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(value);
-    doc.text(addrRaw.slice(0,3),1.00,8.72,{lineHeightFactor:1.18,maxWidth:1.55});
-    doc.text(livePhone,3.39,8.80,{maxWidth:1.05});
-    doc.text(p.company.website||DEFAULT_COMPANY.website,5.12,8.80,{maxWidth:1.10});
+    drawCentered(p.projectName||'Untitled Project',fields.project,{fontSize:12.5,maxLines:2});
+    drawCentered(fmtDate(p.proposalDate),fields.date,{fontSize:12.0,maxLines:1});
+    drawCentered(p.clientName||'—',fields.client,{fontSize:12.0,maxLines:2});
+    drawCentered(p.preparedBy||'—',fields.prepared,{fontSize:12.0,maxLines:2});
+    drawCentered((p.attention||'').trim(),fields.attn,{fontSize:12.0,maxLines:2});
+    if(rev)drawCentered(rev,fields.revision,{fontSize:12.0,maxLines:1});
+    drawCentered((coverOffice.address||'').replace(/\n/g,', '),fields.address,{bold:false,fontSize:12.0,maxLines:3});
+    drawCentered(livePhone,fields.phone,{bold:false,fontSize:12.0,maxLines:1});
+    drawCentered(website,fields.website,{bold:false,fontSize:12.0,maxLines:1});
   }
 
   function drawBackground(){
-    setFill(bg);doc.rect(0,0,pageW,pageH,'F');
-    setFill(pale);
-    const tris=[[[6.50,1.05],[8.50,1.05],[8.50,3.05]],[[7.05,3.45],[8.50,3.45],[8.50,4.90]],[[6.10,8.95],[7.40,8.95],[6.75,7.75]],[[7.05,9.75],[8.20,9.75],[7.62,8.72]],[[5.20,10.98],[6.45,10.98],[5.82,9.93]]];
-    tris.forEach(pts=>{doc.triangle(pts[0][0],pts[0][1],pts[1][0],pts[1][1],pts[2][0],pts[2][1],'F');});
-    setFill(charcoal);doc.rect(0,0,sidebarW,pageH,'F');
-    setFill(orange);
-    doc.triangle(.16,.90,.61,.53,.61,1.66,'F');
-    doc.triangle(0,pageH,sidebarW,pageH,sidebarW,pageH-.92,'F');
+    // Pages 2+ use Marketing's blank proposal sheet exactly as supplied.
+    if(interiorData)doc.addImage(interiorData,'PNG',0,0,pageW,pageH,undefined,'FAST');
+    else {setFill([255,255,255]);doc.rect(0,0,pageW,pageH,'F');}
   }
 
   function drawInteriorHeader(pageNum,totalPages){
     drawBackground();
-    if(logoData)doc.addImage(logoData,'PNG',contentX,.28,1.53,.31,undefined,'FAST');
-    doc.setFont('helvetica','bold');doc.setFontSize(12.5);setText(text);doc.text('PROPOSAL',pageW-right,.31,{align:'right'});
+    // Keep the compact proposal identifier used in prior exports while leaving
+    // Marketing's fixed logo/artwork untouched.
+    doc.setFont('helvetica','bold');doc.setFontSize(12.5);setText(text);doc.text('PROPOSAL',pageW-right,.34,{align:'right'});
     doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);
-    doc.text(`${fmtProjectNo()}${rev?`  •  ${rev}`:''}`,pageW-right,.48,{align:'right'});
-    doc.setDrawColor(125,129,132);doc.setLineWidth(.007);doc.line(contentX,.64,pageW-right,.64);
-    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);doc.text(`PAGE ${pageNum} OF ${totalPages}`,pageW-right,10.66,{align:'right'});
+    doc.text(`${fmtProjectNo()}${rev?`  •  ${rev}`:''}`,pageW-right,.56,{align:'right'});
+    doc.setDrawColor(125,129,132);doc.setLineWidth(.007);doc.line(contentX,.82,pageW-right,.82);
+
+    // Preserve the original Scope Builder page-numbering scheme.
+    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);
+    doc.text(`PAGE ${pageNum} OF ${totalPages}`,pageW-right,10.66,{align:'right'});
     doc.setDrawColor(...orange);doc.setLineWidth(.022);doc.line(pageW-right-.45,10.73,pageW-right,10.73);
   }
 
