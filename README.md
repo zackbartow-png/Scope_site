@@ -1,4 +1,4 @@
-# Koehn Scope Builder V7.14
+# Koehn Scope Builder V7.15
 
 # Koehn Scope Builder — V7.9
 
@@ -184,9 +184,16 @@ Passwords in this prototype are hashed in browser storage, but this local protot
 - All existing project storage, revision history, summaries, rich text, office selection, and 12 pt PDF minimum remain in place.
 
 
-## V7.14 Marketing icon fidelity fix
+## V7.15 Marketing icon fidelity fix
 - Cover icons are taken pixel-for-pixel from the Marketing-provided Koehn Proposal PDF render.
 - Only the pale blue form-guide pixels are removed in derived runtime cover assets.
 - Original uploaded Marketing PDFs remain unchanged in assets/marketing/source.
 - Original proposals suppress the entire Revision area; revised proposals retain the exact Marketing revision icon and label.
 - Pages 2+ and prior page numbering/export behavior are unchanged.
+
+
+## V7.15 - Revised Marketing Interior Master
+- Pages 2 through the final page now use the user-supplied `Koehn Blank Proposal rev.pdf` as the exact fixed visual master.
+- The source PDF is preserved unchanged in `assets/marketing/source/`.
+- Website-generated content and the existing Scope Builder page-numbering overlay are the only additions.
+- No artwork, branding, logo placement, geometry, or colors from the uploaded sheet are modified.
