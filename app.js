@@ -1024,11 +1024,13 @@ async function exportPdf(options={}) {
 
   if(!previewOnly)setSaveStatus("Building PDF…");
   const {jsPDF}=window.jspdf;
-  const doc=new jsPDF({unit:"in",format:"letter",orientation:"portrait",compress:true});
-  const pageW=8.5,pageH=11;
+  const pageW=8.5,pageH=11,coverPageH=11.333333;
+  // Marketing's new cover master is 8.5 x 11.333 in. Keep Page 1 at the
+  // exact supplied aspect ratio; Pages 2+ remain US Letter.
+  const doc=new jsPDF({unit:"in",format:[pageW,coverPageH],orientation:"portrait",compress:true});
   const orange=hexToRgb(p.company.orange||DEFAULT_COMPANY.orange);
   const charcoal=[36,43,49], text=[17,17,17], muted=[107,111,114], bg=[250,250,249], pale=[244,244,243], shadow=[228,228,226];
-  const contentX=.58, right=.48, contentW=pageW-contentX-right;
+  const contentX=1.12, right=.48, contentW=pageW-contentX-right;
   const topY=1.20, bottomLimit=.72, cardGap=.14;
   const bodyFont=12.0, bodyLeading=.215, minPdfFont=12.0;
   let coverDataRevision=null, coverDataOriginal=null, interiorData=null;
@@ -1053,7 +1055,7 @@ async function exportPdf(options={}) {
     // The app only overlays live values in the designated form locations.
     // Original proposals use the master with the Revision icon/label suppressed.
     const coverData=rev?coverDataRevision:coverDataOriginal;
-    if(coverData) doc.addImage(coverData,'PNG',0,0,pageW,pageH,undefined,'FAST');
+    if(coverData) doc.addImage(coverData,'PNG',0,0,pageW,coverPageH,undefined,'FAST');
     else { setFill([255,255,255]);doc.rect(0,0,pageW,pageH,'F'); }
 
     const coverOffice={...getOfficeContact(p.estimatingOffice||"fredonia"),...(p.officeContact||{})};
@@ -1062,15 +1064,16 @@ async function exportPdf(options={}) {
 
     // Exact locations correspond to the Marketing-provided fillable areas.
     const fields={
-      project:{x1:1.195,x2:3.271,cy:4.838},
-      date:{x1:4.316,x2:5.894,cy:4.838},
-      client:{x1:1.195,x2:3.271,cy:5.869},
-      prepared:{x1:4.316,x2:5.894,cy:5.869},
-      attn:{x1:1.195,x2:3.271,cy:6.893},
-      revision:{x1:4.316,x2:5.894,cy:6.893},
-      address:{x1:.938,x2:2.515,cy:8.372},
-      phone:{x1:2.806,x2:4.383,cy:8.293},
-      website:{x1:4.673,x2:6.250,cy:8.293}
+      // Centers are aligned to the open value areas on Marketing's new cover master.
+      project:{x1:1.10,x2:3.42,cy:5.88},
+      date:{x1:4.02,x2:5.82,cy:5.88},
+      client:{x1:1.10,x2:3.42,cy:7.03},
+      prepared:{x1:4.02,x2:5.82,cy:7.03},
+      attn:{x1:1.10,x2:3.42,cy:8.17},
+      revision:{x1:4.02,x2:5.82,cy:8.17},
+      address:{x1:1.08,x2:5.78,cy:9.18},
+      phone:{x1:1.10,x2:3.42,cy:10.12},
+      website:{x1:4.02,x2:5.82,cy:10.12}
     };
     const drawCentered=(value,box,{bold=true,fontSize=12.0,maxLines=2}={})=>{
       const textValue=String(value||"").trim();if(!textValue)return;
