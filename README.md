@@ -1,3 +1,5 @@
+# Koehn Scope Builder V7.14
+
 # Koehn Scope Builder — V7.9
 
 ## V7.9 summary-page refinements
@@ -180,3 +182,11 @@ Passwords in this prototype are hashed in browser storage, but this local protot
 - Original/base proposals omit the Revision icon, label, and value. V1+ proposals show the Marketing revision icon/label and the current revision value.
 - Page numbering preserves the previous Scope Builder `PAGE X OF Y` lower-right style with orange underline.
 - All existing project storage, revision history, summaries, rich text, office selection, and 12 pt PDF minimum remain in place.
+
+
+## V7.14 Marketing icon fidelity fix
+- Cover icons are taken pixel-for-pixel from the Marketing-provided Koehn Proposal PDF render.
+- Only the pale blue form-guide pixels are removed in derived runtime cover assets.
+- Original uploaded Marketing PDFs remain unchanged in assets/marketing/source.
+- Original proposals suppress the entire Revision area; revised proposals retain the exact Marketing revision icon and label.
+- Pages 2+ and prior page numbering/export behavior are unchanged.
