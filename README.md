@@ -1,4 +1,12 @@
-# Koehn Scope Builder V7.16
+# Koehn Scope Builder V7.17
+
+## V7.17 proposal editor refinements
+- Clarifications, Exclusions, and Alternates now support Bold, Italic, and Underline formatting in the editor and PDF export.
+- Proposed Pricing Base Bid no longer shows a client-selection checkbox. Alternate/Add-On lines retain checkboxes.
+- A gray divider appears below Base Bid only when Alternate/Add-On rows exist.
+- Alternate/Add-On description fields were removed and the pricing-line field was widened.
+- Proposal Summary content starts lower on the marketing sidebar page so it clears the header/logo area shown in the uploaded reference screenshot.
+- Marketing-approved cover and sidebar background masters remain unchanged.
 
 # Koehn Scope Builder — V7.9
 

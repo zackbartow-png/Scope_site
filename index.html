@@ -207,15 +207,18 @@
           <div class="stacked-cards">
             <div class="text-section-card">
               <div class="text-card-header"><div><span class="section-number">C</span><h3>Clarifications</h3></div><label class="switch-label"><input type="checkbox" data-section-enabled="clarifications" checked><span class="switch"></span>Include</label></div>
-              <textarea data-field="clarifications" rows="9" placeholder="Enter one clarification per line or paste a bullet list."></textarea>
+              <div class="division-format-toolbar closeout-format-toolbar" role="toolbar" aria-label="Clarifications text formatting"><button type="button" class="scope-format-btn" data-format="bold" title="Bold (Ctrl+B)" aria-label="Bold"><strong>B</strong></button><button type="button" class="scope-format-btn" data-format="italic" title="Italic (Ctrl+I)" aria-label="Italic"><em>I</em></button><button type="button" class="scope-format-btn" data-format="underline" title="Underline (Ctrl+U)" aria-label="Underline"><span class="format-u">U</span></button></div>
+              <div class="rich-closeout-editor" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" data-closeout-field="clarifications" data-placeholder="Enter one clarification per line or paste a bullet list."></div>
             </div>
             <div class="text-section-card">
               <div class="text-card-header"><div><span class="section-number">E</span><h3>Exclusions</h3></div><label class="switch-label"><input type="checkbox" data-section-enabled="exclusions" checked><span class="switch"></span>Include</label></div>
-              <textarea data-field="exclusions" rows="9" placeholder="Enter project exclusions."></textarea>
+              <div class="division-format-toolbar closeout-format-toolbar" role="toolbar" aria-label="Exclusions text formatting"><button type="button" class="scope-format-btn" data-format="bold" title="Bold (Ctrl+B)" aria-label="Bold"><strong>B</strong></button><button type="button" class="scope-format-btn" data-format="italic" title="Italic (Ctrl+I)" aria-label="Italic"><em>I</em></button><button type="button" class="scope-format-btn" data-format="underline" title="Underline (Ctrl+U)" aria-label="Underline"><span class="format-u">U</span></button></div>
+              <div class="rich-closeout-editor" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" data-closeout-field="exclusions" data-placeholder="Enter project exclusions."></div>
             </div>
             <div class="text-section-card">
               <div class="text-card-header"><div><span class="section-number">A</span><h3>Alternates</h3></div><label class="switch-label"><input type="checkbox" data-section-enabled="alternates" checked><span class="switch"></span>Include</label></div>
-              <textarea data-field="alternates" rows="9" placeholder="Example: Alternate 01 – 10' x 70' bridge: Add $20,123.00"></textarea>
+              <div class="division-format-toolbar closeout-format-toolbar" role="toolbar" aria-label="Alternates text formatting"><button type="button" class="scope-format-btn" data-format="bold" title="Bold (Ctrl+B)" aria-label="Bold"><strong>B</strong></button><button type="button" class="scope-format-btn" data-format="italic" title="Italic (Ctrl+I)" aria-label="Italic"><em>I</em></button><button type="button" class="scope-format-btn" data-format="underline" title="Underline (Ctrl+U)" aria-label="Underline"><span class="format-u">U</span></button></div>
+              <div class="rich-closeout-editor" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" data-closeout-field="alternates" data-placeholder="Example: Alternate 01 – 10' x 70' bridge: Add $20,123.00"></div>
             </div>
           </div>
         </div>
@@ -237,7 +240,7 @@
               </div>
               <button id="addPriceItemBtn" class="btn btn-secondary" type="button">+ Add Alternate / Add-On</button>
             </div>
-            <div class="price-item-head"><span></span><span>Pricing Line</span><span>Description</span><span>Price</span><span></span></div>
+            <div class="price-item-head"><span></span><span>Pricing Line</span><span>Price</span><span></span></div>
             <div id="priceItems" class="price-items"></div>
             <div id="emptyPriceItems" class="inline-empty hidden"></div>
           </div>

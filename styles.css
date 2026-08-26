@@ -468,3 +468,24 @@ body { min-height: 100%; overflow-y: auto; }
 .rich-division-editor:empty::before { content: attr(data-placeholder); color: #9da1a5; pointer-events: none; }
 .rich-division-editor div { min-height: 1.45em; }
 .project-locked .rich-division-editor { background: #f5f6f6; color: #70757a; }
+
+/* V7.17 closeout rich text + proposed pricing refinements */
+.rich-closeout-editor { min-height: 150px; width: 100%; border: 1px solid #d8dbde; border-radius: 8px; background: #fff; padding: 11px 12px; font-family: inherit; font-size: 12px; line-height: 1.45; color: #272a2d; outline: none; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rich-closeout-editor:focus { border-color: #aeb3b7; box-shadow: 0 0 0 2px rgba(243,111,33,.10); }
+.rich-closeout-editor:empty::before { content: attr(data-placeholder); color: #9da1a5; pointer-events: none; }
+.rich-closeout-editor div { min-height: 1.45em; }
+.project-locked .rich-closeout-editor { background: #f5f6f6; color: #70757a; }
+.closeout-format-toolbar { margin-top: 10px; }
+
+.price-item-head { grid-template-columns: 30px minmax(0,2.35fr) .72fr 34px; }
+.price-item-row { position: relative; grid-template-columns: 30px minmax(0,2.35fr) .72fr 34px; }
+.price-item-row.base-bid-row { grid-template-columns: minmax(0,2.35fr) .72fr 52px; }
+.price-item-row.base-bid-row.has-alternates { margin-bottom: 13px; }
+.price-item-row.base-bid-row.has-alternates::after { content:""; position:absolute; left:0; right:0; bottom:-8px; height:1px; background:#bfc3c7; }
+.price-item-row .price-name { min-width: 0; }
+@media (max-width: 850px) {
+  .price-item-row, .price-item-row.base-bid-row { grid-template-columns: 1fr; }
+  .price-item-row .price-value { grid-column: 1; }
+  .price-item-row .row-check-preview { justify-self: start; }
+  .price-item-row .remove-price-item, .price-item-row .base-bid-lock { justify-self: end; }
+}
