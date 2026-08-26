@@ -46,7 +46,7 @@ const DEFAULT_DISCLAIMERS = [
   }
 ];
 
-const state = { user: null, currentProjectId: null, currentProjectOwner: null, authMode: "login", saveTimer: null, previewOpen: true, previewRenderTimer: null, previewRenderToken: 0, adminDisclaimerId: null, dashboardMode: "active", adminUserFilter: "all" };
+const state = { user: null, currentProjectId: null, currentProjectOwner: null, currentKickoffProjectId: null, currentKickoffOwner: null, authMode: "login", saveTimer: null, previewOpen: true, previewRenderTimer: null, previewRenderToken: 0, adminDisclaimerId: null, dashboardMode: "active", adminUserFilter: "all" };
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 
@@ -212,6 +212,8 @@ function normalizeProject(p, ownerUsername="") {
   p.deletedAt = p.deletedAt || null;
   p.deletedBy = p.deletedBy || null;
   p.deletedScope = p.deletedScope || null;
+  p.accepted = Boolean(p.accepted);
+  p.acceptedAt = p.acceptedAt || null;
   p.ownerUsername = p.ownerUsername || ownerUsername || "";
   p.divisions = p.divisions || Object.fromEntries(CSI_DIVISIONS.map(([n,t]) => [n,{number:n,title:t,enabled:false,text:""}]));
   CSI_DIVISIONS.forEach(([n,t]) => {
@@ -328,7 +330,7 @@ function makeProject(name="Untitled Project", client="", projectNumber="", estim
   const id=uid();
   const officeContact=getOfficeContact(estimatingOffice);
   return normalizeProject({
-    id, familyId:id, version:0, parentRevisionId:null, archived:false, locked:false, deletedByUser:false, estimatingOffice, officeContact, proposalType,
+    id, familyId:id, version:0, parentRevisionId:null, archived:false, locked:false, deletedByUser:false, accepted:false, acceptedAt:null, estimatingOffice, officeContact, proposalType,
     createdAt: nowIso(), updatedAt: nowIso(), projectName: name, projectNumber, clientName: client,
     attention: "", projectAddress: "", proposalDate: dateValue, preparedBy: "", documentTitle: "Proposal", introNote: "",
     clarifications: "", clarificationsRichText:"", exclusions: "", exclusionsRichText:"", alternates: "", alternatesRichText:"", priceItems: [{id:`base-bid-${id}`,name:"Base Bid",description:"",price:"",isBaseBid:true}], disclaimerId: getDisclaimers()[0]?.id || "",
@@ -392,8 +394,8 @@ function refreshRoleUi() {
   if (!admin && companyTabButton?.classList.contains("active")) activateTab("info");
 }
 function enterDashboard() {
-  showApp(); requestPersistentBrowserStorage(); state.currentProjectId=null; state.currentProjectOwner=null;
-  $("#dashboardView").classList.remove("hidden"); $("#editorView").classList.add("hidden");
+  showApp(); requestPersistentBrowserStorage(); state.currentProjectId=null; state.currentProjectOwner=null; state.currentKickoffProjectId=null; state.currentKickoffOwner=null;
+  $("#dashboardView").classList.remove("hidden"); $("#editorView").classList.add("hidden"); $("#kickoffView").classList.add("hidden");
   $("#backToDashboard").classList.add("hidden"); $("#exportPdfBtn").classList.add("hidden");
   refreshRoleUi(); refreshDashboardNav(); renderProjects();
 }
@@ -459,7 +461,7 @@ function renderProjects() {
     const familyArchived=f.versions.every(v=>v.archived);
     const familyDeleted=f.versions.every(v=>v.deletedByUser);
     const visibleVersions=(state.dashboardMode==="admin"||state.dashboardMode==="deleted")?f.versions:f.versions.filter(v=>!v.deletedByUser);
-    const status=[]; if(familyArchived)status.push('Archived'); if(p.locked)status.push('Locked'); if(familyDeleted)status.push(f.versions.every(v=>v.deletedScope==='project')?'Deleted project':'All versions deleted'); else if(f.versions.some(v=>v.deletedByUser))status.push('Deleted revision retained');
+    const status=[]; if(familyArchived)status.push('Archived'); if(p.locked)status.push('Locked'); if(f.versions.some(v=>v.accepted))status.push('Accepted'); if(familyDeleted)status.push(f.versions.every(v=>v.deletedScope==='project')?'Deleted project':'All versions deleted'); else if(f.versions.some(v=>v.deletedByUser))status.push('Deleted revision retained');
     if(p.deletedByUser){status.push(`Deleted by ${p.deletedBy||'Unknown'}`);status.push(`Deleted ${fmtTime(p.deletedAt)}`);}
     const card=document.createElement("article"); card.className=`project-card ${familyArchived?'archived-card':''} ${familyDeleted?'deleted-card':''}`;
     const adminRecovery=(state.dashboardMode==="deleted"&&isAdmin());
@@ -476,6 +478,7 @@ function renderProjects() {
           <div class="project-menu hidden" data-menu-panel="${p.id}">
             ${adminRecovery?`<button type="button" data-restore-family="${f.familyId}" data-owner="${esc(f.owner)}">Restore Project</button>`:`
               <button type="button" data-revise-project="${p.id}" data-owner="${esc(f.owner)}">Revise</button>
+              <button type="button" data-kickoff-project="${p.id}" data-owner="${esc(f.owner)}">Kickoff</button>
               <button type="button" data-archive-family="${f.familyId}" data-owner="${esc(f.owner)}">${familyArchived?'Unarchive':'Archive'}</button>
               <button type="button" data-lock-project="${p.id}" data-owner="${esc(f.owner)}">${p.locked?'Unlock':'Lock'}</button>
               <button type="button" class="menu-danger" data-delete-family="${f.familyId}" data-owner="${esc(f.owner)}">Delete Project</button>`}
@@ -490,12 +493,36 @@ function renderProjects() {
   $$('[data-open-project]').forEach(b=>b.addEventListener('click',()=>openProject(b.dataset.openProject,b.dataset.owner)));
   $$('[data-project-menu]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const panel=$(`[data-menu-panel="${CSS.escape(b.dataset.projectMenu)}"]`);$$('.project-menu').forEach(x=>{if(x!==panel)x.classList.add('hidden')});panel?.classList.toggle('hidden');}));
   $$('[data-revise-project]').forEach(b=>b.addEventListener('click',()=>reviseProject(b.dataset.reviseProject,b.dataset.owner)));
+  $$('[data-kickoff-project]').forEach(b=>b.addEventListener('click',()=>openKickoff(b.dataset.kickoffProject,b.dataset.owner)));
   $$('[data-archive-family]').forEach(b=>b.addEventListener('click',()=>toggleFamilyArchive(b.dataset.archiveFamily,b.dataset.owner)));
   $$('[data-lock-project]').forEach(b=>b.addEventListener('click',()=>toggleProjectLock(b.dataset.lockProject,b.dataset.owner)));
   $$('[data-delete-family]').forEach(b=>b.addEventListener('click',()=>softDeleteFamily(b.dataset.deleteFamily,b.dataset.owner)));
   $$('[data-restore-family]').forEach(b=>b.addEventListener('click',()=>restoreFamily(b.dataset.restoreFamily,b.dataset.owner)));
   $$('[data-restore-version]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();restoreVersion(b.dataset.restoreVersion,b.dataset.owner);}));
 }
+function openKickoff(projectId, ownerUsername){
+  const owner=ownerUsername||state.user?.username;
+  const projects=getProjectsForUser(owner,{includeDeleted:true});
+  const source=projects.find(p=>p.id===projectId);
+  if(!source)return toast("Project not found.");
+  if(ownerKey(owner)!==ownerKey(state.user.username)&&!isAdmin())return toast("You can only create a kickoff for your own projects.");
+  const familyId=source.familyId||source.id;
+  const acceptedAt=source.acceptedAt||nowIso();
+  const updated=projects.map(p=>p.familyId===familyId?{...p,accepted:true,acceptedAt:p.acceptedAt||acceptedAt,updatedAt:nowIso()}:p);
+  saveProjectsForUser(owner,updated);
+  state.currentProjectId=null; state.currentProjectOwner=null; state.currentKickoffProjectId=source.id; state.currentKickoffOwner=owner;
+  const current=updated.find(p=>p.id===source.id)||source;
+  $("#dashboardView").classList.add("hidden"); $("#editorView").classList.add("hidden"); $("#kickoffView").classList.remove("hidden");
+  $("#backToDashboard").classList.add("hidden"); $("#exportPdfBtn").classList.add("hidden");
+  $("#kickoffProjectName").textContent=current.projectName||"Untitled Project";
+  $("#kickoffClientName").textContent=current.clientName||"No client entered";
+  $("#kickoffProjectNumber").textContent=current.projectNumber||"No project number";
+  $("#kickoffVersion").textContent=versionLabel(current);
+  $("#kickoffAcceptedDate").textContent=fmtDate((current.acceptedAt||acceptedAt).slice(0,10));
+  refreshDashboardNav();
+  toast("Project marked Accepted. Kickoff opened.");
+}
+
 function reviseProject(projectId, ownerUsername){
   const source=getProjectsForUser(ownerUsername,{includeDeleted:true}).find(p=>p.id===projectId); if(!source)return;
   if(ownerKey(ownerUsername)!==ownerKey(state.user.username)&&!isAdmin())return toast("You can only revise your own proposals.");
@@ -580,7 +607,7 @@ function handleNewProject(e) {
 }
 function openProject(id, ownerUsername=state.user?.username) {
   state.currentProjectId=id; state.currentProjectOwner=ownerUsername||state.user?.username; const p=getCurrentProject(); if (!p) return enterDashboard();
-  $("#dashboardView").classList.add("hidden"); $("#editorView").classList.remove("hidden"); $("#backToDashboard").classList.remove("hidden"); $("#exportPdfBtn").classList.remove("hidden");
+  $("#dashboardView").classList.add("hidden"); $("#kickoffView").classList.add("hidden"); $("#editorView").classList.remove("hidden"); $("#backToDashboard").classList.remove("hidden"); $("#exportPdfBtn").classList.remove("hidden");
   $("#projectTitleInline").value=p.projectName; $("#sidebarProjectName").textContent=p.projectName;
   $("#projectVersionBadge").textContent=versionLabel(p); $("#projectVersionBadge").classList.toggle("base",(p.version||0)===0);
   $("#projectOwnerBadge").textContent=ownerKey(state.currentProjectOwner)===ownerKey(state.user.username)?"":`Owner: ${state.currentProjectOwner}`;
@@ -1102,18 +1129,18 @@ async function exportPdf(options={}) {
       website:{x1:4.02,x2:5.82,cy:10.12}
     };
     const divisionFields={
-      project:{x1:1.08,x2:3.35,cy:5.48},
-      date:{x1:3.93,x2:5.72,cy:5.48},
-      client:{x1:1.08,x2:3.35,cy:6.67},
-      prepared:{x1:3.93,x2:5.72,cy:6.67},
-      attn:{x1:1.08,x2:3.35,cy:7.95},
-      revision:{x1:3.93,x2:5.72,cy:7.95},
-      address:{x1:1.00,x2:3.55,cy:8.99},
-      phone:{x1:1.08,x2:3.35,cy:9.79},
-      website:{x1:3.93,x2:5.72,cy:9.79}
+      project:{x1:.96,x2:3.35,cy:5.48},
+      date:{x1:3.84,x2:5.72,cy:5.48},
+      client:{x1:.96,x2:3.35,cy:6.67},
+      prepared:{x1:3.84,x2:5.72,cy:6.67},
+      attn:{x1:.96,x2:3.35,cy:7.95},
+      revision:{x1:3.84,x2:5.72,cy:7.95},
+      address:{x1:.92,x2:3.55,cy:8.99},
+      phone:{x1:.96,x2:3.35,cy:9.79},
+      website:{x1:3.84,x2:5.72,cy:9.79}
     };
     const fields=proposalType==='standard'?standardFields:divisionFields;
-    const drawCentered=(value,box,{bold=true,fontSize=12.0,maxLines=2}={})=>{
+    const drawCentered=(value,box,{bold=true,fontSize=12.0,maxLines=2,align='center'}={})=>{
       const textValue=String(value||"").trim();if(!textValue)return;
       doc.setFont('helvetica',bold?'bold':'normal');doc.setFontSize(Math.max(minPdfFont,fontSize));setText(text);
       const width=Math.max(.25,box.x2-box.x1-.08);
@@ -1121,18 +1148,20 @@ async function exportPdf(options={}) {
       if(lines.length>maxLines)lines=lines.slice(0,maxLines);
       const leading=.185;
       const startY=box.cy-((lines.length-1)*leading)/2+.055;
-      doc.text(lines,(box.x1+box.x2)/2,startY,{align:'center',lineHeightFactor:leading/(Math.max(minPdfFont,fontSize)/72)});
+      const x=align==='left'?box.x1:(box.x1+box.x2)/2;
+      doc.text(lines,x,startY,{align,lineHeightFactor:leading/(Math.max(minPdfFont,fontSize)/72)});
     };
+    const coverAlign=proposalType==='standard'?'center':'left';
 
-    drawCentered(p.projectName||'Untitled Project',fields.project,{fontSize:12.5,maxLines:2});
-    drawCentered(fmtDate(p.proposalDate),fields.date,{fontSize:12.0,maxLines:1});
-    drawCentered(p.clientName||'—',fields.client,{fontSize:12.0,maxLines:2});
-    drawCentered(p.preparedBy||'—',fields.prepared,{fontSize:12.0,maxLines:2});
-    drawCentered((p.attention||'').trim(),fields.attn,{fontSize:12.0,maxLines:2});
-    if(rev)drawCentered(rev,fields.revision,{fontSize:12.0,maxLines:1});
-    drawCentered((coverOffice.address||'').replace(/\n/g,', '),fields.address,{bold:false,fontSize:12.0,maxLines:3});
-    drawCentered(livePhone,fields.phone,{bold:false,fontSize:12.0,maxLines:1});
-    drawCentered(website,fields.website,{bold:false,fontSize:12.0,maxLines:1});
+    drawCentered(p.projectName||'Untitled Project',fields.project,{fontSize:12.5,maxLines:2,align:coverAlign});
+    drawCentered(fmtDate(p.proposalDate),fields.date,{fontSize:12.0,maxLines:1,align:coverAlign});
+    drawCentered(p.clientName||'—',fields.client,{fontSize:12.0,maxLines:2,align:coverAlign});
+    drawCentered(p.preparedBy||'—',fields.prepared,{fontSize:12.0,maxLines:2,align:coverAlign});
+    drawCentered((p.attention||'').trim(),fields.attn,{fontSize:12.0,maxLines:2,align:coverAlign});
+    if(rev)drawCentered(rev,fields.revision,{fontSize:12.0,maxLines:1,align:coverAlign});
+    drawCentered((coverOffice.address||'').replace(/\n/g,', '),fields.address,{bold:false,fontSize:12.0,maxLines:3,align:coverAlign});
+    drawCentered(livePhone,fields.phone,{bold:false,fontSize:12.0,maxLines:1,align:coverAlign});
+    drawCentered(website,fields.website,{bold:false,fontSize:12.0,maxLines:1,align:coverAlign});
   }
 
   function drawBackground(){
@@ -1669,7 +1698,7 @@ $("#adminPanelBtn").addEventListener("click",openAdminDialog);$("#adminPopoverBt
 $("#closeAdminDialog").addEventListener("click",closeAdminDialog);$("#newDisclaimerBtn").addEventListener("click",newDisclaimer);$("#saveDisclaimerBtn").addEventListener("click",saveDisclaimerFromAdmin);$("#deleteDisclaimerBtn").addEventListener("click",deleteDisclaimerFromAdmin);$$('.admin-tab-btn').forEach(b=>b.addEventListener('click',()=>activateAdminTab(b.dataset.adminTab)));
 $("#adminDownloadBackupBtn").addEventListener("click",downloadDataBackup);$("#adminRestoreBackupBtn").addEventListener("click",triggerRestoreBackup);
 $("#newProjectBtn").addEventListener("click",openNewProjectDialog);$("#emptyNewProjectBtn").addEventListener("click",openNewProjectDialog);$("#newProjectForm").addEventListener("submit",handleNewProject);$("#closeNewProjectDialog")?.addEventListener("click",()=>$("#newProjectDialog").close());$("#cancelNewProjectDialog")?.addEventListener("click",()=>$("#newProjectDialog").close());$("#newProjectDialog")?.addEventListener("click",e=>{if(e.target===$("#newProjectDialog"))$("#newProjectDialog").close();});$("#projectSearch").addEventListener("input",renderProjects);$("#projectSort").addEventListener("change",renderProjects);$$('.project-nav-btn').forEach(b=>b.addEventListener('click',()=>setDashboardMode(b.dataset.projectView)));$("#adminUserFilter").addEventListener("change",()=>{state.adminUserFilter=$("#adminUserFilter").value;renderProjects();});
-$("#backToDashboard").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#sidebarBack").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#exportPdfBtn").addEventListener("click",exportPdf);$("#deleteProjectBtn").addEventListener("click",handleVersionDeleteRestore);
+$("#backToDashboard").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#sidebarBack").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#kickoffBackBtn").addEventListener("click",()=>enterDashboard());$("#exportPdfBtn").addEventListener("click",exportPdf);$("#deleteProjectBtn").addEventListener("click",handleVersionDeleteRestore);
 $("#divisionSearch").addEventListener("input",filterDivisionNav);$("#expandAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.add('open')));$("#collapseAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.remove('open')));
 $("#previewToggle").addEventListener("click",()=>togglePreview());$("#closePreviewBtn").addEventListener("click",()=>togglePreview(false));$$('.tab-btn').forEach(b=>b.addEventListener('click',()=>activateTab(b.dataset.tab)));
 $("#projectTitleInline").addEventListener("input",()=>{scheduleSave();updatePreview();});$("#addPriceItemBtn").addEventListener("click",addPriceItem);

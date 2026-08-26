@@ -489,3 +489,21 @@ body { min-height: 100%; overflow-y: auto; }
   .price-item-row .row-check-preview { justify-self: start; }
   .price-item-row .remove-price-item, .price-item-row .base-bid-lock { justify-self: end; }
 }
+
+/* Kickoff workspace */
+.kickoff-view { max-width: 1180px; margin: 0 auto; padding: 44px 30px 80px; }
+.kickoff-shell { max-width: 960px; margin: 0 auto; }
+.kickoff-topbar { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:18px; }
+.kickoff-accepted-badge { display:inline-flex; align-items:center; min-height:30px; padding:6px 12px; border-radius:999px; background:#edf7ef; border:1px solid #c9e5cf; color:#3d7a49; font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+.kickoff-card { background:#fff; border:1px solid #dfe2e5; border-radius:14px; padding:34px; box-shadow:0 12px 28px rgba(25,28,30,.06); }
+.kickoff-card h1 { margin:6px 0 24px; font:700 30px/1.2 Montserrat,sans-serif; color:#45484b; }
+.kickoff-meta-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin-bottom:28px; }
+.kickoff-meta-grid > div { border:1px solid #e2e4e6; border-radius:10px; padding:14px 16px; background:#fafafa; min-width:0; }
+.kickoff-meta-grid span { display:block; color:#8a8e92; font-size:9px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; margin-bottom:5px; }
+.kickoff-meta-grid strong { display:block; color:#44484c; font-size:14px; overflow-wrap:anywhere; }
+.kickoff-placeholder { border-top:1px solid #e2e4e6; padding-top:24px; }
+.kickoff-placeholder h2 { margin:0 0 8px; font-size:18px; color:#484c50; }
+.kickoff-placeholder p { margin:0; max-width:660px; color:#7e8388; font-size:12px; line-height:1.6; }
+.project-status-row span:first-child {}
+.project-status-row span { white-space:nowrap; }
+@media (max-width:700px){ .kickoff-view{padding:28px 18px 60px}.kickoff-card{padding:24px}.kickoff-meta-grid{grid-template-columns:1fr}.kickoff-topbar{align-items:flex-start;flex-direction:column-reverse} }
