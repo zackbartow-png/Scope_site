@@ -225,6 +225,7 @@ function normalizeProject(p, ownerUsername="") {
     }
   });
   p.company = {...DEFAULT_COMPANY, ...(p.company||{})};
+  if(!["standard","civil","concrete"].includes(p.proposalType)) p.proposalType="standard";
   if(!["fredonia","tulsa"].includes(p.estimatingOffice)) p.estimatingOffice="fredonia";
   const officeDefaults=getOfficeContact(p.estimatingOffice);
   p.officeContact={...officeDefaults,...(p.officeContact||{}),id:p.estimatingOffice,name:officeDefaults.name};
@@ -320,14 +321,14 @@ function projectFamilies(projects) {
   }));
 }
 
-function makeProject(name="Untitled Project", client="", projectNumber="", estimatingOffice="fredonia") {
+function makeProject(name="Untitled Project", client="", projectNumber="", estimatingOffice="fredonia", proposalType="standard") {
   const date = new Date();
   const dateValue = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
   const divisions = Object.fromEntries(CSI_DIVISIONS.map(([n,t]) => [n,{number:n,title:t,enabled:false,text:""}]));
   const id=uid();
   const officeContact=getOfficeContact(estimatingOffice);
   return normalizeProject({
-    id, familyId:id, version:0, parentRevisionId:null, archived:false, locked:false, deletedByUser:false, estimatingOffice, officeContact,
+    id, familyId:id, version:0, parentRevisionId:null, archived:false, locked:false, deletedByUser:false, estimatingOffice, officeContact, proposalType,
     createdAt: nowIso(), updatedAt: nowIso(), projectName: name, projectNumber, clientName: client,
     attention: "", projectAddress: "", proposalDate: dateValue, preparedBy: "", documentTitle: "Proposal", introNote: "",
     clarifications: "", clarificationsRichText:"", exclusions: "", exclusionsRichText:"", alternates: "", alternatesRichText:"", priceItems: [{id:`base-bid-${id}`,name:"Base Bid",description:"",price:"",isBaseBid:true}], disclaimerId: getDisclaimers()[0]?.id || "",
@@ -566,7 +567,7 @@ function restoreVersion(projectId,ownerUsername){
   const label=versionLabel(all[idx]); all[idx]=clearDeleted(all[idx]); saveProjectsForUser(ownerUsername,all); refreshDashboardNav(); renderProjects(); toast(`${label} restored to the user workspace.`);
 }
 function openNewProjectDialog() {
-  $("#newProjectName").value=""; $("#newClientName").value=""; $("#newProjectNumber").value=""; $("#newProjectOffice").value="fredonia";
+  $("#newProjectName").value=""; $("#newClientName").value=""; $("#newProjectNumber").value=""; $("#newProjectOffice").value="fredonia"; $("#newProjectType").value="standard";
   const offices=getOfficeSettings();
   const tulsaConfigured=Boolean((offices.tulsa.address||"").trim()&&(offices.tulsa.phone||"").trim());
   const note=$("#newProjectOfficeNote"); if(note)note.textContent=tulsaConfigured?"Office contact information will be used on the proposal cover.":"Tulsa office contact information can be configured by an Admin under Company Info.";
@@ -575,7 +576,7 @@ function openNewProjectDialog() {
 function handleNewProject(e) {
   e.preventDefault(); if (e.submitter&&e.submitter.value==="cancel") { $("#newProjectDialog").close(); return; }
   const name=$("#newProjectName").value.trim(); if (!name) return;
-  const p=makeProject(name,$("#newClientName").value.trim(),$("#newProjectNumber").value.trim(),$("#newProjectOffice").value||"fredonia"); state.currentProjectOwner=state.user.username; putProject(p,state.user.username); $("#newProjectDialog").close(); openProject(p.id,state.user.username);
+  const p=makeProject(name,$("#newClientName").value.trim(),$("#newProjectNumber").value.trim(),$("#newProjectOffice").value||"fredonia",$("#newProjectType").value||"standard"); state.currentProjectOwner=state.user.username; putProject(p,state.user.username); $("#newProjectDialog").close(); openProject(p.id,state.user.username);
 }
 function openProject(id, ownerUsername=state.user?.username) {
   state.currentProjectId=id; state.currentProjectOwner=ownerUsername||state.user?.username; const p=getCurrentProject(); if (!p) return enterDashboard();
@@ -1034,20 +1035,26 @@ async function exportPdf(options={}) {
 
   if(!previewOnly)setSaveStatus("Building PDF…");
   const {jsPDF}=window.jspdf;
-  const pageW=8.5,pageH=11,coverPageH=11.333333;
-  // Marketing's new cover master is 8.5 x 11.333 in. Keep Page 1 at the
-  // exact supplied aspect ratio; Pages 2+ remain US Letter.
+  const pageW=8.5,pageH=11;
+  const proposalType=["civil","concrete"].includes(p.proposalType)?p.proposalType:"standard";
+  // Marketing's standard cover master is 8.5 x 11.333 in; Civil and Concrete
+  // division covers are US Letter. Each is rendered at its exact supplied size.
+  const coverPageH=proposalType==="standard"?11.333333:11;
   const doc=new jsPDF({unit:"in",format:[pageW,coverPageH],orientation:"portrait",compress:true});
   const orange=hexToRgb(p.company.orange||DEFAULT_COMPANY.orange);
   const charcoal=[36,43,49], text=[17,17,17], muted=[107,111,114], bg=[250,250,249], pale=[244,244,243], shadow=[228,228,226];
   const contentX=1.12, right=.48, contentW=pageW-contentX-right;
   const topY=1.20, bottomLimit=.72, cardGap=.14;
   const bodyFont=12.0, bodyLeading=.215, minPdfFont=12.0;
-  let coverDataRevision=null, coverDataOriginal=null, interiorData=null;
+  let standardCoverRevision=null, standardCoverOriginal=null, civilCoverRevision=null, civilCoverOriginal=null, concreteCoverRevision=null, concreteCoverOriginal=null, interiorData=null;
   try {
-    [coverDataRevision,coverDataOriginal,interiorData]=await Promise.all([
+    [standardCoverRevision,standardCoverOriginal,civilCoverRevision,civilCoverOriginal,concreteCoverRevision,concreteCoverOriginal,interiorData]=await Promise.all([
       imageToDataUrl('assets/marketing/marketing-cover-revision.png'),
       imageToDataUrl('assets/marketing/marketing-cover-original.png'),
+      imageToDataUrl('assets/marketing/civil/cover-revision.png'),
+      imageToDataUrl('assets/marketing/civil/cover-original.png'),
+      imageToDataUrl('assets/marketing/concrete/cover-revision.png'),
+      imageToDataUrl('assets/marketing/concrete/cover-original.png'),
       imageToDataUrl('assets/marketing/marketing-blank.png')
     ]);
   } catch {}
@@ -1064,7 +1071,12 @@ async function exportPdf(options={}) {
     // Marketing-approved cover artwork is used as an immutable background master.
     // The app only overlays live values in the designated form locations.
     // Original proposals use the master with the Revision icon/label suppressed.
-    const coverData=rev?coverDataRevision:coverDataOriginal;
+    const coverSet=proposalType==="civil"
+      ? {revision:civilCoverRevision,original:civilCoverOriginal}
+      : proposalType==="concrete"
+        ? {revision:concreteCoverRevision,original:concreteCoverOriginal}
+        : {revision:standardCoverRevision,original:standardCoverOriginal};
+    const coverData=rev?coverSet.revision:coverSet.original;
     if(coverData) doc.addImage(coverData,'PNG',0,0,pageW,coverPageH,undefined,'FAST');
     else { setFill([255,255,255]);doc.rect(0,0,pageW,pageH,'F'); }
 
@@ -1073,17 +1085,19 @@ async function exportPdf(options={}) {
     const website=p.company.website||DEFAULT_COMPANY.website||"";
 
     // Exact locations correspond to the Marketing-provided fillable areas.
+    const yScale=coverPageH/11.333333;
     const fields={
-      // Centers are aligned to the open value areas on Marketing's new cover master.
-      project:{x1:1.10,x2:3.42,cy:5.88},
-      date:{x1:4.02,x2:5.82,cy:5.88},
-      client:{x1:1.10,x2:3.42,cy:7.03},
-      prepared:{x1:4.02,x2:5.82,cy:7.03},
-      attn:{x1:1.10,x2:3.42,cy:8.17},
-      revision:{x1:4.02,x2:5.82,cy:8.17},
-      address:{x1:1.08,x2:5.78,cy:9.18},
-      phone:{x1:1.10,x2:3.42,cy:10.12},
-      website:{x1:4.02,x2:5.82,cy:10.12}
+      // All three Marketing cover options use the same field grid. Y coordinates
+      // scale with the exact supplied cover height so Civil/Concrete remain US Letter.
+      project:{x1:1.10,x2:3.42,cy:5.88*yScale},
+      date:{x1:4.02,x2:5.82,cy:5.88*yScale},
+      client:{x1:1.10,x2:3.42,cy:7.03*yScale},
+      prepared:{x1:4.02,x2:5.82,cy:7.03*yScale},
+      attn:{x1:1.10,x2:3.42,cy:8.17*yScale},
+      revision:{x1:4.02,x2:5.82,cy:8.17*yScale},
+      address:{x1:1.08,x2:5.78,cy:9.18*yScale},
+      phone:{x1:1.10,x2:3.42,cy:10.12*yScale},
+      website:{x1:4.02,x2:5.82,cy:10.12*yScale}
     };
     const drawCentered=(value,box,{bold=true,fontSize=12.0,maxLines=2}={})=>{
       const textValue=String(value||"").trim();if(!textValue)return;
