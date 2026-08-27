@@ -46,7 +46,7 @@ const DEFAULT_DISCLAIMERS = [
   }
 ];
 
-const state = { user: null, currentProjectId: null, currentProjectOwner: null, currentKickoffProjectId: null, currentKickoffOwner: null, currentKickoffTab: "info", kickoffQuoteTargetDivisionId: null, kickoffSaveTimer: null, kickoffPreviewTimer: null, kickoffPreviewToken: 0, authMode: "login", saveTimer: null, previewOpen: true, previewRenderTimer: null, previewRenderToken: 0, adminDisclaimerId: null, dashboardMode: "active", adminUserFilter: "all" };
+const state = { user: null, currentProjectId: null, currentProjectOwner: null, currentKickoffProjectId: null, currentKickoffOwner: null, currentKickoffTab: "info", kickoffQuoteTargetDivisionId: null, kickoffSaveTimer: null, kickoffPreviewTimer: null, kickoffPreviewToken: 0, kickoffPreviewRendering: false, kickoffPreviewPending: false, authMode: "login", saveTimer: null, previewOpen: true, previewRenderTimer: null, previewRenderToken: 0, previewRendering: false, previewPending: false, adminDisclaimerId: null, dashboardMode: "active", adminUserFilter: "all" };
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 
@@ -755,10 +755,11 @@ function populateKickoffBuilder(p){
   renderKickoffDivisions();
   renderKickoffQuotes();
   renderKickoffPageOrder();
+  scheduleKickoffPdfPreview(80);
 }
-function scheduleKickoffSave(delay=250){
+function scheduleKickoffSave(delay=320){
   clearTimeout(state.kickoffSaveTimer);
-  state.kickoffSaveTimer=setTimeout(()=>{saveKickoffInfoFromForm(); if(state.currentKickoffTab==='preview')scheduleKickoffPdfPreview(250);},delay);
+  state.kickoffSaveTimer=setTimeout(()=>{saveKickoffInfoFromForm();scheduleKickoffPdfPreview(650);},delay);
 }
 function saveKickoffInfoFromForm(){
   const p=getCurrentKickoffProject(); if(!p)return;
@@ -836,7 +837,7 @@ async function prepareKickoffMapsForPdf(){
   if(maps.close!==false)tasks.push(['close',maps.closeZoom||17]);
   try{
     const saved={};
-    for(const [kind,zoom] of tasks)saved[kind]=await imageToDataUrl(kickoffStaticMapUrl(addr,zoom,key));
+    for(const [kind,zoom] of tasks)saved[kind]=await imageToDataUrl(kickoffStaticMapUrl(addr,zoom,key,tasks.length===1?'640x600':'640x320'));
     mutateKickoff(k=>{k.projectInfo=k.projectInfo||{};k.projectInfo.maps={...(k.projectInfo.maps||{})};if(saved.wide)k.projectInfo.maps.wideSnapshot=saved.wide;if(saved.close)k.projectInfo.maps.closeSnapshot=saved.close;});
     renderKickoffMapPreviews();scheduleKickoffPdfPreview(150);toast('Pinned map images are ready for PDF export.');
   }catch(err){console.error(err);toast('Google map images could not be captured. Upload map screenshots below the previews instead.');}
@@ -948,9 +949,9 @@ function renderKickoffDivisions(){
   $$('[data-kickoff-remove-division]',list).forEach(b=>b.addEventListener('click',()=>removeKickoffDivision(b.dataset.kickoffRemoveDivision)));
   $$('[data-kickoff-add-quote]',list).forEach(b=>b.addEventListener('click',()=>{state.kickoffQuoteTargetDivisionId=b.dataset.kickoffAddQuote;$("#kickoffQuoteFileInput")?.click();}));
   $$('[data-kickoff-format]',list).forEach(b=>b.addEventListener('click',()=>kickoffFormatSelection(b.closest('.kickoff-division-card')?.querySelector('.kickoff-rich-editor'),b.dataset.kickoffFormat)));
-  $$('input[data-kickoff-division-field]',list).forEach(el=>el.addEventListener('input',()=>{clearTimeout(state.kickoffSaveTimer);state.kickoffSaveTimer=setTimeout(()=>{collectKickoffDivisionsFromDom();scheduleKickoffPdfPreview(400);},220);}));
+  $$('input[data-kickoff-division-field]',list).forEach(el=>el.addEventListener('input',()=>{clearTimeout(state.kickoffSaveTimer);state.kickoffSaveTimer=setTimeout(()=>{collectKickoffDivisionsFromDom();scheduleKickoffPdfPreview(650);},300);}));
   $$('.kickoff-rich-editor',list).forEach(el=>{
-    el.addEventListener('input',()=>{clearTimeout(state.kickoffSaveTimer);state.kickoffSaveTimer=setTimeout(()=>{collectKickoffDivisionsFromDom();scheduleKickoffPdfPreview(400);},250);});
+    el.addEventListener('input',()=>{clearTimeout(state.kickoffSaveTimer);state.kickoffSaveTimer=setTimeout(()=>{collectKickoffDivisionsFromDom();scheduleKickoffPdfPreview(650);},320);});
     el.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&['b','i','u'].includes(e.key.toLowerCase())){e.preventDefault();const cmd={b:'bold',i:'italic',u:'underline'}[e.key.toLowerCase()];kickoffFormatSelection(el,cmd);}});
     el.addEventListener('paste',e=>{e.preventDefault();document.execCommand('insertText',false,e.clipboardData?.getData('text/plain')||'');});
   });
@@ -1468,15 +1469,17 @@ function togglePreview(open) {
   $("#previewToggle").textContent=state.previewOpen?"Hide Preview":"PDF Preview";
   if(state.previewOpen)schedulePdfPreview(40);
 }
-function schedulePdfPreview(delay=500){
+function schedulePdfPreview(delay=700){
   clearTimeout(state.previewRenderTimer);
   if(!state.previewOpen||!state.currentProjectId)return;
   state.previewRenderTimer=setTimeout(renderLivePdfPreview,delay);
 }
 async function renderLivePdfPreview(){
   if(!state.previewOpen||!state.currentProjectId)return;
+  if(state.previewRendering){state.previewPending=true;return;}
   const scroller=$("#pdfPreviewScroll"), pagesWrap=$("#pdfPreviewPages"), status=$("#pdfPreviewStatus");
   if(!scroller||!pagesWrap)return;
+  state.previewRendering=true;state.previewPending=false;
   const token=++state.previewRenderToken;
   const maxScroll=Math.max(1,scroller.scrollHeight-scroller.clientHeight);
   const scrollRatio=scroller.scrollTop/maxScroll;
@@ -1489,8 +1492,9 @@ async function renderLivePdfPreview(){
     if(window.pdfjsLib.GlobalWorkerOptions)window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     const pdf=await window.pdfjsLib.getDocument({data:buffer}).promise;
     if(token!==state.previewRenderToken)return;
-    const available=Math.max(260,Math.min(520,scroller.clientWidth-28));
-    const dpr=Math.min(2,window.devicePixelRatio||1);
+    const available=Math.max(250,Math.min(440,scroller.clientWidth-28));
+    // A 1x preview is dramatically faster and is still sharp enough for the live side pane.
+    const dpr=1;
     const fragment=document.createDocumentFragment();
     for(let i=1;i<=pdf.numPages;i++){
       if(token!==state.previewRenderToken)return;
@@ -1508,6 +1512,8 @@ async function renderLivePdfPreview(){
       const pageTag=document.createElement('div');pageTag.className='pdf-preview-page-tag';pageTag.textContent=`Page ${i} of ${pdf.numPages}`;
       sheet.append(canvas,pageTag);fragment.appendChild(sheet);
       await page.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport:renderViewport}).promise;
+      // Yield briefly so typing/scrolling stays responsive while long proposals render.
+      if(i%2===0)await new Promise(r=>setTimeout(r,0));
     }
     if(token!==state.previewRenderToken)return;
     pagesWrap.replaceChildren(fragment);
@@ -1518,11 +1524,40 @@ async function renderLivePdfPreview(){
     });
   }catch(err){
     console.error(err);
-    if(token!==state.previewRenderToken)return;
-    if(status){status.textContent="Live preview unavailable. Export PDF still uses the locked template.";status.classList.remove("hidden");}
+    if(token===state.previewRenderToken&&status){status.textContent="Live preview unavailable. Export PDF still uses the locked template.";status.classList.remove("hidden");}
+  }finally{
+    state.previewRendering=false;
+    if(state.previewPending){state.previewPending=false;schedulePdfPreview(220);}
   }
 }
-async function imageToDataUrl(src) { const img=new Image();img.crossOrigin="anonymous";return new Promise((resolve,reject)=>{img.onload=()=>{const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);resolve(c.toDataURL('image/png'));};img.onerror=reject;img.src=src;}); }
+
+const imageDataUrlCache=new Map();
+const mapCoverCropCache=new Map();
+async function imageToDataUrl(src) {
+  const key=String(src||'');
+  if(imageDataUrlCache.has(key))return imageDataUrlCache.get(key);
+  const promise=new Promise((resolve,reject)=>{const img=new Image();img.crossOrigin="anonymous";img.onload=()=>{const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);resolve(c.toDataURL('image/png'));};img.onerror=reject;img.src=key;});
+  imageDataUrlCache.set(key,promise);
+  try{return await promise;}catch(err){imageDataUrlCache.delete(key);throw err;}
+}
+async function cropMapDataUrlToAspect(dataUrl,targetAspect){
+  const aspect=Math.max(.25,Number(targetAspect)||1);
+  const cacheKey=`${dataUrl.length}:${dataUrl.slice(-80)}:${aspect.toFixed(4)}`;
+  if(mapCoverCropCache.has(cacheKey))return mapCoverCropCache.get(cacheKey);
+  const promise=new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const iw=img.naturalWidth,ih=img.naturalHeight;if(!iw||!ih)return resolve(dataUrl);
+      const sourceAspect=iw/ih;let sx=0,sy=0,sw=iw,sh=ih;
+      if(sourceAspect>aspect){sw=ih*aspect;sx=(iw-sw)/2;}else if(sourceAspect<aspect){sh=iw/aspect;sy=(ih-sh)/2;}
+      const outW=Math.min(1600,Math.max(900,Math.round(sw)));const outH=Math.max(1,Math.round(outW/aspect));
+      const c=document.createElement('canvas');c.width=outW;c.height=outH;const ctx=c.getContext('2d',{alpha:false});ctx.fillStyle='#fff';ctx.fillRect(0,0,outW,outH);ctx.drawImage(img,sx,sy,sw,sh,0,0,outW,outH);
+      resolve(c.toDataURL('image/jpeg',.92));
+    };
+    img.onerror=()=>resolve(dataUrl);img.src=dataUrl;
+  });
+  mapCoverCropCache.set(cacheKey,promise);return promise;
+}
 function parseScopeLines(text) { return String(text||"").split(/\r?\n/).map(s=>s.trim()).filter(Boolean).map(s=>{const cleaned=s.replace(/^[-•▪◦*]\s*/,"");return{bullet:cleaned!==s||/^\d+[.)]\s/.test(s),text:cleaned};}); }
 function scopeItemsFromRichHtml(html="",fallbackText="") {
   const safe=sanitizeScopeHtml(String(html||"").trim()||plainTextToRichHtml(fallbackText||""));
@@ -1594,9 +1629,9 @@ async function quoteBlobToJpegDataUrl(blob){
     return c.toDataURL('image/jpeg',0.92);
   }finally{URL.revokeObjectURL(url);}
 }
-function kickoffStaticMapUrl(address,zoom,key){
+function kickoffStaticMapUrl(address,zoom,key,size='640x320'){
   const marker=`color:0xf36f21|${String(address||'').trim()}`;
-  const params=new URLSearchParams({center:String(address||''),zoom:String(zoom),size:'640x300',scale:'2',maptype:'roadmap',markers:marker,key:String(key||'')});
+  const params=new URLSearchParams({center:String(address||''),zoom:String(zoom),size:String(size||'640x320'),scale:'2',maptype:'roadmap',markers:marker,key:String(key||'')});
   return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
 }
 function kickoffRichLinesFromHtml(html=""){
@@ -1669,16 +1704,14 @@ async function buildKickoffPdf(options={}){
       const h=views.length===1?7.2:3.55;doc.setDrawColor(...border);doc.setFillColor(248,248,247);doc.roundedRect(contentX,mapY,contentW,h,.08,.08,'FD');
       doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);doc.text(view.label,contentX+.14,mapY+.24);
       let mapData=view.label==='WIDE VIEW'?String(maps.wideSnapshot||''):String(maps.closeSnapshot||'');
-      if(!mapData&&key&&addr){try{mapData=await imageToDataUrl(kickoffStaticMapUrl(addr,view.zoom,key));}catch{mapData=null;}}
+      if(!mapData&&key&&addr){try{mapData=await imageToDataUrl(kickoffStaticMapUrl(addr,view.zoom,key,views.length===1?'640x600':'640x320'));}catch{mapData=null;}}
       if(mapData){
         const boxX=contentX+.12,boxY=mapY+.36,boxW=contentW-.24,boxH=h-.48;
-        const fmt=mapData.startsWith('data:image/jpeg')?'JPEG':'PNG';
-        let drawX=boxX,drawY=boxY,drawW=boxW,drawH=boxH;
-        try{
-          const props=doc.getImageProperties(mapData),iw=Number(props?.width)||0,ih=Number(props?.height)||0;
-          if(iw>0&&ih>0){const scale=Math.min(boxW/iw,boxH/ih);drawW=iw*scale;drawH=ih*scale;drawX=boxX+(boxW-drawW)/2;drawY=boxY+(boxH-drawH)/2;}
-        }catch{}
-        doc.addImage(mapData,fmt,drawX,drawY,drawW,drawH,undefined,'FAST');
+        // Fill the existing map window edge-to-edge without stretching. The saved
+        // image is center-cropped only enough to match the window's aspect ratio.
+        const fitted=await cropMapDataUrlToAspect(mapData,boxW/boxH);
+        const fmt=fitted.startsWith('data:image/jpeg')?'JPEG':'PNG';
+        doc.addImage(fitted,fmt,boxX,boxY,boxW,boxH,undefined,'FAST');
       }
       else{doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);const msg='Map image not prepared. In Kickoff → Project Info, click Prepare Maps for PDF or upload a Google Maps screenshot for this view.';doc.text(doc.splitTextToSize(msg,contentW-.46),contentX+.22,mapY+h/2,{lineHeightFactor:1.2});}
       mapY+=h+.18;
@@ -1735,15 +1768,49 @@ async function buildKickoffPdf(options={}){
   if(previewOnly)return doc;
   const safe=safeFilePart(p.projectNumber||p.projectName||'Project');doc.save(`${safe}_Kickoff.pdf`);toast('Kickoff PDF exported.');return doc;
 }
-function scheduleKickoffPdfPreview(delay=450){clearTimeout(state.kickoffPreviewTimer);if(!state.currentKickoffProjectId)return;state.kickoffPreviewTimer=setTimeout(renderKickoffPdfPreview,delay);}
+function scheduleKickoffPdfPreview(delay=700){
+  clearTimeout(state.kickoffPreviewTimer);
+  if(!state.currentKickoffProjectId)return;
+  state.kickoffPreviewTimer=setTimeout(renderKickoffPdfPreview,delay);
+}
+async function renderKickoffPdfPages(pdf,wrap,token,{maxWidth=360,dpr=1}={}){
+  if(!wrap)return;
+  const available=Math.min(maxWidth,Math.max(250,wrap.clientWidth||maxWidth));
+  const fragment=document.createDocumentFragment();
+  for(let i=1;i<=pdf.numPages;i++){
+    if(token!==state.kickoffPreviewToken)return false;
+    const page=await pdf.getPage(i),base=page.getViewport({scale:1}),cssScale=available/base.width,viewport=page.getViewport({scale:cssScale*dpr});
+    const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);canvas.style.width=`${Math.round(base.width*cssScale)}px`;canvas.style.height=`${Math.round(base.height*cssScale)}px`;
+    const sheet=document.createElement('div');sheet.className='kickoff-pdf-preview-sheet';const tag=document.createElement('span');tag.className='kickoff-pdf-preview-tag';tag.textContent=`Page ${i} of ${pdf.numPages}`;sheet.append(canvas,tag);fragment.appendChild(sheet);
+    await page.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport}).promise;
+    if(i%2===0)await new Promise(r=>setTimeout(r,0));
+  }
+  if(token!==state.kickoffPreviewToken)return false;wrap.replaceChildren(fragment);return true;
+}
 async function renderKickoffPdfPreview(){
-  if(!state.currentKickoffProjectId||state.currentKickoffTab!=='preview')return;
-  const wrap=$("#kickoffPdfPreviewPages"),status=$("#kickoffPdfPreviewStatus");if(!wrap)return;const token=++state.kickoffPreviewToken;if(status){status.textContent='Building kickoff preview…';status.classList.remove('hidden');}
+  if(!state.currentKickoffProjectId)return;
+  if(state.kickoffPreviewRendering){state.kickoffPreviewPending=true;return;}
+  const liveWrap=$("#kickoffLivePreviewPages"),liveStatus=$("#kickoffLivePreviewStatus"),liveScroll=$("#kickoffLivePreviewScroll");
+  const tabWrap=$("#kickoffPdfPreviewPages"),tabStatus=$("#kickoffPdfPreviewStatus");
+  if(!liveWrap&&!tabWrap)return;
+  state.kickoffPreviewRendering=true;state.kickoffPreviewPending=false;const token=++state.kickoffPreviewToken;
+  const liveMax=Math.max(1,(liveScroll?.scrollHeight||1)-(liveScroll?.clientHeight||0));const liveRatio=(liveScroll?.scrollTop||0)/liveMax;
+  if(liveStatus){liveStatus.textContent='Updating kickoff PDF…';liveStatus.classList.remove('hidden');}
+  if(state.currentKickoffTab==='preview'&&tabStatus){tabStatus.textContent='Updating kickoff PDF…';tabStatus.classList.remove('hidden');}
   try{
-    const doc=await buildKickoffPdf({preview:true});if(!doc||token!==state.kickoffPreviewToken)return;if(!window.pdfjsLib)throw new Error('Preview renderer unavailable.');if(window.pdfjsLib.GlobalWorkerOptions)window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';const pdf=await window.pdfjsLib.getDocument({data:doc.output('arraybuffer')}).promise;const fragment=document.createDocumentFragment();const available=Math.min(760,Math.max(300,wrap.clientWidth||760));const dpr=Math.min(2,window.devicePixelRatio||1);
-    for(let i=1;i<=pdf.numPages;i++){if(token!==state.kickoffPreviewToken)return;const page=await pdf.getPage(i),base=page.getViewport({scale:1}),cssScale=available/base.width,viewport=page.getViewport({scale:cssScale*dpr}),canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);canvas.style.width=`${Math.round(base.width*cssScale)}px`;canvas.style.height=`${Math.round(base.height*cssScale)}px`;const sheet=document.createElement('div');sheet.className='kickoff-pdf-preview-sheet';const tag=document.createElement('span');tag.className='kickoff-pdf-preview-tag';tag.textContent=`Page ${i} of ${pdf.numPages}`;sheet.append(canvas,tag);fragment.appendChild(sheet);await page.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport}).promise;}
-    wrap.replaceChildren(fragment);if(status)status.classList.add('hidden');
-  }catch(err){console.error(err);if(status){status.textContent='Kickoff preview unavailable. Try Export Kickoff PDF.';status.classList.remove('hidden');}}
+    const doc=await buildKickoffPdf({preview:true});if(!doc||token!==state.kickoffPreviewToken)return;
+    if(!window.pdfjsLib)throw new Error('Preview renderer unavailable.');
+    if(window.pdfjsLib.GlobalWorkerOptions)window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await window.pdfjsLib.getDocument({data:doc.output('arraybuffer')}).promise;if(token!==state.kickoffPreviewToken)return;
+    if(liveWrap){await renderKickoffPdfPages(pdf,liveWrap,token,{maxWidth:350,dpr:1});if(liveStatus)liveStatus.classList.add('hidden');requestAnimationFrame(()=>{if(!liveScroll)return;const max=Math.max(0,liveScroll.scrollHeight-liveScroll.clientHeight);liveScroll.scrollTop=Math.min(max,max*liveRatio);});}
+    if(state.currentKickoffTab==='preview'&&tabWrap){await renderKickoffPdfPages(pdf,tabWrap,token,{maxWidth:760,dpr:1.15});if(tabStatus)tabStatus.classList.add('hidden');}
+  }catch(err){
+    console.error(err);
+    if(token===state.kickoffPreviewToken){if(liveStatus){liveStatus.textContent='Kickoff preview unavailable. Export PDF is still available.';liveStatus.classList.remove('hidden');}if(tabStatus&&state.currentKickoffTab==='preview'){tabStatus.textContent='Kickoff preview unavailable. Try Export Kickoff PDF.';tabStatus.classList.remove('hidden');}}
+  }finally{
+    state.kickoffPreviewRendering=false;
+    if(state.kickoffPreviewPending){state.kickoffPreviewPending=false;scheduleKickoffPdfPreview(220);}
+  }
 }
 
 async function exportPdf(options={}) {

@@ -144,6 +144,8 @@
           <div class="kickoff-accepted-date"><span>Accepted</span><strong id="kickoffAcceptedDate">—</strong></div>
         </section>
 
+        <div class="kickoff-workspace-grid">
+          <div class="kickoff-workspace-main">
         <div class="kickoff-tabs" role="tablist" aria-label="Kickoff Builder sections">
           <button class="kickoff-tab-btn active" data-kickoff-tab="info" type="button">Project Info</button>
           <button class="kickoff-tab-btn" data-kickoff-tab="divisions" type="button">Divisions</button>
@@ -227,9 +229,21 @@
             <div><h2>Kickoff PDF Preview</h2><p>US Letter preview of the current kickoff book, including division pages and uploaded quote snapshots.</p></div>
             <button id="refreshKickoffPreviewBtn" class="btn btn-secondary" type="button">Refresh Preview</button>
           </div>
-          <div id="kickoffPdfPreviewStatus" class="kickoff-pdf-preview-status">Open this tab to build the preview.</div>
+          <div id="kickoffPdfPreviewStatus" class="kickoff-pdf-preview-status">Building kickoff preview…</div>
           <div id="kickoffPdfPreviewPages" class="kickoff-pdf-preview-pages"></div>
         </section>
+          </div>
+          <aside id="kickoffLivePreviewPane" class="kickoff-live-preview-pane" aria-label="Live kickoff PDF preview">
+            <div class="kickoff-live-preview-head">
+              <div><span class="eyebrow">Live PDF</span><strong>Kickoff Preview</strong></div>
+              <span>Updates after you pause typing</span>
+            </div>
+            <div id="kickoffLivePreviewScroll" class="kickoff-live-preview-scroll">
+              <div id="kickoffLivePreviewStatus" class="kickoff-pdf-preview-status">Building kickoff preview…</div>
+              <div id="kickoffLivePreviewPages" class="kickoff-pdf-preview-pages kickoff-live-preview-pages"></div>
+            </div>
+          </aside>
+        </div>
       </div>
     </main>
 

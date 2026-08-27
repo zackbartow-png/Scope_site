@@ -624,3 +624,26 @@ body { min-height: 100%; overflow-y: auto; }
 #kickoffMapsDiagnostics.error{color:#a63d31;font-weight:700}
 
 .kickoff-map-preview img { display:block; width:100%; height:245px; object-fit:contain; object-position:center; background:#f3f4f4; }
+
+/* V7.28 Kickoff live PDF workspace + faster previews */
+.kickoff-view { max-width: 1540px; }
+.kickoff-builder-shell { max-width: 1480px; }
+.kickoff-workspace-grid { display:grid; grid-template-columns:minmax(0,1fr) 390px; gap:18px; align-items:start; }
+.kickoff-workspace-main { min-width:0; }
+.kickoff-live-preview-pane { position:sticky; top:84px; height:calc(100vh - 104px); min-height:520px; border:1px solid #d7dade; border-radius:13px; overflow:hidden; background:#dfe2e4; box-shadow:0 9px 22px rgba(22,26,29,.08); display:flex; flex-direction:column; }
+.kickoff-live-preview-head { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:11px 12px; background:#fff; border-bottom:1px solid #d8dbde; }
+.kickoff-live-preview-head strong { display:block; margin-top:2px; color:#41464a; font-size:12px; }
+.kickoff-live-preview-head > span { max-width:145px; color:#878c90; font-size:8px; line-height:1.3; text-align:right; }
+.kickoff-live-preview-scroll { flex:1; min-height:0; overflow:auto; padding:12px 10px 24px; overscroll-behavior:auto; scrollbar-gutter:stable; }
+.kickoff-live-preview-pages { gap:14px; margin-top:8px; }
+.kickoff-live-preview-pane .kickoff-pdf-preview-status { padding:9px 10px; margin:0 0 9px; border:0; background:rgba(255,255,255,.82); font-size:9px; }
+.kickoff-live-preview-pane .kickoff-pdf-preview-sheet { box-shadow:0 6px 16px rgba(25,28,30,.15); }
+.kickoff-live-preview-pane .kickoff-pdf-preview-tag { bottom:5px; right:5px; font-size:7px; }
+@media (max-width:1180px){
+  .kickoff-workspace-grid{grid-template-columns:1fr}
+  .kickoff-live-preview-pane{position:relative;top:auto;height:680px;min-height:480px}
+}
+@media (max-width:700px){ .kickoff-live-preview-pane{height:560px} }
+
+/* Live interactive maps always fill their viewport; saved PDF snapshots are cropped only as needed to the same frame ratio. */
+.kickoff-google-map { overflow:hidden; }
