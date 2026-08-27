@@ -562,15 +562,18 @@ body { min-height: 100%; overflow-y: auto; }
 .kickoff-map-option-head span { display:block; margin-top:3px; color:#858a8e; font-size:10px; font-weight:500; line-height:1.4; }
 .kickoff-map-settings { margin-top:14px; }
 .kickoff-map-settings.hidden { display:none; }
-.kickoff-map-settings { display:grid; grid-template-columns:auto auto 1fr; gap:10px 14px; align-items:center; }
+.kickoff-map-settings { display:block; }
+.kickoff-map-control-row { display:flex; align-items:center; gap:14px; flex-wrap:nowrap; margin-bottom:12px; }
+.kickoff-map-control-row .kickoff-map-source-actions { flex:0 0 auto; margin:0; }
+.kickoff-map-control-row .map-check { flex:0 0 auto; white-space:nowrap; }
 .map-check { display:flex!important; grid-auto-flow:column; align-items:center; gap:7px!important; font-size:10px!important; }
 .map-check input { width:15px!important; height:15px; }
-.kickoff-map-preview-grid { grid-column:1/-1; display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; }
+.kickoff-map-preview-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; }
 .kickoff-map-preview { border:1px solid #dadde0; border-radius:10px; overflow:hidden; background:#fff; }
 .kickoff-map-preview-label { padding:8px 10px; color:#555a5e; font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; border-bottom:1px solid #e3e5e7; }
 .kickoff-map-preview iframe, .kickoff-map-preview .kickoff-google-map { display:block; width:100%; height:245px; border:0; background:#f3f4f4; }
 .kickoff-google-map .map-fallback { height:100%; display:grid; place-items:center; padding:20px; text-align:center; color:#777d82; font-size:12px; line-height:1.45; }
-.kickoff-map-note { grid-column:1/-1; margin:0; color:#858a8e; font-size:9px; line-height:1.45; }
+.kickoff-map-note { margin:10px 0 0; color:#858a8e; font-size:9px; line-height:1.45; }
 .maps-api-panel { margin-top:14px; }
 .kickoff-import-card { display:grid; grid-template-columns:minmax(0,1fr) minmax(300px,.7fr); gap:20px; align-items:center; border:1px solid #dfe2e5; border-radius:12px; padding:16px 18px; background:#fff; margin-bottom:14px; }
 .kickoff-import-card strong { display:block; color:#42464a; font-size:13px; margin:3px 0 4px; }
@@ -607,7 +610,7 @@ body { min-height: 100%; overflow-y: auto; }
 @media (max-width:900px){
   .kickoff-builder-head{align-items:flex-start;flex-direction:column}.kickoff-accepted-date{text-align:left}
   .kickoff-form-grid.two-col{grid-template-columns:1fr}.kickoff-form-grid .full{grid-column:auto}
-  .kickoff-map-preview-grid{grid-template-columns:1fr}.kickoff-map-settings{grid-template-columns:1fr}.kickoff-map-preview-grid,.kickoff-map-note{grid-column:auto}
+  .kickoff-map-preview-grid{grid-template-columns:1fr}.kickoff-map-control-row{flex-wrap:wrap;gap:10px 14px}
   .kickoff-import-card{grid-template-columns:1fr}.kickoff-import-actions{grid-template-columns:1fr}
   .kickoff-division-card-head{grid-template-columns:1fr 1fr}.kickoff-division-actions{grid-column:1/-1;justify-content:flex-end}
 }

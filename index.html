@@ -170,12 +170,14 @@
                 <label class="switch-label"><input id="kickoffMapsEnabled" type="checkbox"><span class="switch"></span>Include Maps</label>
               </div>
               <div id="kickoffMapSettings" class="kickoff-map-settings hidden">
-                <div class="kickoff-map-source-actions">
-                  <button id="openKickoffGoogleMapsBtn" class="btn btn-secondary" type="button">Open Google Maps in New Tab</button>
+                <div class="kickoff-map-control-row">
+                  <div class="kickoff-map-source-actions">
+                    <button id="openKickoffGoogleMapsBtn" class="btn btn-secondary" type="button">Open Google Maps in New Tab</button>
+                  </div>
+                  <label class="map-check"><input id="kickoffWideMapEnabled" type="checkbox" checked> Wide View</label>
+                  <label class="map-check"><input id="kickoffCloseMapEnabled" type="checkbox" checked> Close-Up View</label>
+                  <label class="map-check"><input id="kickoffStreetMapEnabled" type="checkbox"> Street View</label>
                 </div>
-                <label class="map-check"><input id="kickoffWideMapEnabled" type="checkbox" checked> Wide View</label>
-                <label class="map-check"><input id="kickoffCloseMapEnabled" type="checkbox" checked> Close-Up View</label>
-                <label class="map-check"><input id="kickoffStreetMapEnabled" type="checkbox"> Street View</label>
                 <div class="kickoff-map-preview-grid">
                   <div class="kickoff-map-preview">
                     <div class="kickoff-map-preview-label">Wide View <span id="kickoffWideMapStatus" class="kickoff-map-status">No image</span></div>
@@ -196,7 +198,7 @@
                 <input id="kickoffWideMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
                 <input id="kickoffCloseMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
                 <input id="kickoffStreetMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
-                <p id="kickoffMapExportNote" class="kickoff-map-note"><strong>Screenshot workflow:</strong> open the project address in Google Maps, frame the view you want, copy a screenshot, then click <strong>Paste Screenshot</strong>. You can also save the screenshot and use <strong>Upload Image</strong>. Each selected screenshot is placed on its own kickoff PDF page at the largest size that fits while preserving its original proportions.</p>
+                <p id="kickoffMapExportNote" class="kickoff-map-note"><strong>Screenshot workflow:</strong> open the project address in Google Maps, frame the view you want, copy a screenshot, then click <strong>Paste Screenshot</strong>. You can also save the screenshot and use <strong>Upload Image</strong>. Wide and Close-Up views share one kickoff PDF page. Street View, when selected, is placed on the following page. Screenshots keep their original proportions without stretching.</p>
               </div>
             </div>
 

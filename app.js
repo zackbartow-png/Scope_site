@@ -1199,8 +1199,10 @@ function renderKickoffPageOrder(){
   rows.push({page:page++,title:'Project Kickoff Overview',sub:'Project information'});
   if(p.kickoff.projectInfo?.maps?.enabled){
     const maps=p.kickoff.projectInfo.maps||{};
-    if(maps.wide)rows.push({page:page++,title:'Project Location – Wide View',sub:'Map screenshot'});
-    if(maps.close)rows.push({page:page++,title:'Project Location – Close-Up View',sub:'Map screenshot'});
+    if(maps.wide||maps.close){
+      const names=[maps.wide?'Wide View':'',maps.close?'Close-Up View':''].filter(Boolean).join(' + ');
+      rows.push({page:page++,title:`Project Location – ${names}`,sub:'Map screenshots'});
+    }
     if(maps.street)rows.push({page:page++,title:'Project Location – Street View',sub:'Screenshot'});
   }
   (p.kickoff.divisions||[]).forEach(d=>{
@@ -2070,41 +2072,54 @@ async function buildKickoffPdf(options={}){
   y=drawSection(y,'Project Location',info.projectLocation||p.projectAddress||'');
   y=drawSection(y,'Design Team',info.designTeam||'');
 
-  // Optional project-location screenshot pages. Each selected view receives its
-  // own page so screenshots are not compressed into a single page. Images are
-  // scaled proportionally to the largest size that fits; they are never stretched
-  // or cropped to a forced aspect ratio.
+  // Optional project-location screenshot pages. Wide and Close-Up views share
+  // one page in matching standard slots; Street View gets the following page.
+  // Images are scaled proportionally and are never stretched. The frame is drawn
+  // around the actual image rather than a tall fixed gray box, which keeps the
+  // page compact and avoids unnecessary empty space above or below screenshots.
   const maps=info.maps||{};
   if(maps.enabled&&(maps.wide||maps.close||maps.street)){
-    const views=[];
-    if(maps.wide)views.push({label:'WIDE VIEW',snapshot:String(maps.wideSnapshot||'')});
-    if(maps.close)views.push({label:'CLOSE-UP VIEW',snapshot:String(maps.closeSnapshot||'')});
-    if(maps.street)views.push({label:'STREET VIEW',snapshot:String(maps.streetSnapshot||'')});
-    for(const view of views){
-      const mapY=newPage('PROJECT LOCATION',info.projectLocation||p.projectAddress||'');
-      doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);doc.text(view.label,contentX,mapY+.10);
-      const frameY=mapY+.27,frameH=Math.max(1,bottom-frameY),frameW=contentW;
-      doc.setDrawColor(...border);doc.setFillColor(248,248,247);doc.roundedRect(contentX,frameY,frameW,frameH,.08,.08,'FD');
+    const loadMapDims=mapData=>new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve({w:img.naturalWidth||1,h:img.naturalHeight||1});img.onerror=reject;img.src=mapData;});
+    async function drawMapView(view,y,maxH){
+      doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);doc.text(view.label,contentX,y+.10);
+      const imageTop=y+.24;
       const mapData=view.snapshot;
       if(mapData){
         try{
-          const dims=await new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve({w:img.naturalWidth||1,h:img.naturalHeight||1});img.onerror=reject;img.src=mapData;});
-          const innerX=contentX+.12,innerY=frameY+.12,maxW=frameW-.24,maxH=frameH-.24;
+          const dims=await loadMapDims(mapData);
+          const maxW=contentW;
           const ratio=Math.min(maxW/dims.w,maxH/dims.h);
           const drawW=dims.w*ratio,drawH=dims.h*ratio;
-          const drawX=innerX+(maxW-drawW)/2,drawY=innerY+(maxH-drawH)/2;
+          const drawX=contentX+(contentW-drawW)/2,drawY=imageTop;
+          doc.setDrawColor(...border);doc.setFillColor(255,255,255);doc.roundedRect(drawX-.035,drawY-.035,drawW+.07,drawH+.07,.05,.05,'FD');
           const fmt=mapData.startsWith('data:image/jpeg')?'JPEG':mapData.startsWith('data:image/webp')?'WEBP':'PNG';
           doc.addImage(mapData,fmt,drawX,drawY,drawW,drawH,undefined,'FAST');
+          return drawY+drawH;
         }catch(err){
           console.warn('Kickoff map screenshot could not be placed in PDF.',err);
-          doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);
-          doc.text('This screenshot could not be rendered. Re-paste or upload the image and try again.',contentX+.22,frameY+.44,{maxWidth:contentW-.44});
         }
-      } else {
-        doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);
-        const msg=`No ${view.label.toLowerCase()} screenshot has been added. Paste or upload the screenshot in Kickoff → Project Info.`;
-        doc.text(doc.splitTextToSize(msg,contentW-.46),contentX+.22,frameY+.50,{lineHeightFactor:1.2});
       }
+      const placeholderH=Math.min(maxH,1.15);
+      doc.setDrawColor(...border);doc.setFillColor(...light);doc.roundedRect(contentX,imageTop,contentW,placeholderH,.06,.06,'FD');
+      doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);
+      const msg=mapData?'This screenshot could not be rendered. Re-paste or upload the image and try again.':`No ${view.label.toLowerCase()} screenshot has been added. Paste or upload the screenshot in Kickoff → Project Info.`;
+      doc.text(doc.splitTextToSize(msg,contentW-.34),contentX+.17,imageTop+.36,{lineHeightFactor:1.2});
+      return imageTop+placeholderH;
+    }
+
+    const paired=[];
+    if(maps.wide)paired.push({label:'WIDE VIEW',snapshot:String(maps.wideSnapshot||'')});
+    if(maps.close)paired.push({label:'CLOSE-UP VIEW',snapshot:String(maps.closeSnapshot||'')});
+    if(paired.length){
+      let mapY=newPage('PROJECT LOCATION',info.projectLocation||p.projectAddress||'');
+      for(let i=0;i<paired.length;i++){
+        const endY=await drawMapView(paired[i],mapY,3.35);
+        mapY=Math.max(mapY+3.72,endY+.24);
+      }
+    }
+    if(maps.street){
+      const streetY=newPage('PROJECT LOCATION',info.projectLocation||p.projectAddress||'');
+      await drawMapView({label:'STREET VIEW',snapshot:String(maps.streetSnapshot||'')},streetY,4.45);
     }
   }
 
