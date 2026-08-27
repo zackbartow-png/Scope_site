@@ -859,18 +859,27 @@ function updateKickoffMapStatuses(){
   const p=getCurrentKickoffProject();if(!p)return;
   const maps=p.kickoff?.projectInfo?.maps||{};
   [['wide','#kickoffWideMapStatus'],['close','#kickoffCloseMapStatus'],['street','#kickoffStreetMapStatus']].forEach(([kind,sel])=>{
-    const el=$(sel);if(!el)return;const ready=Boolean(maps[`${kind}Snapshot`]);el.textContent=ready?'Ready for PDF':'Live preview';el.classList.toggle('ready',ready);
+    const el=$(sel);if(!el)return;const ready=Boolean(maps[`${kind}Snapshot`]);el.textContent=ready?'Image added':'No image';el.classList.toggle('ready',ready);
   });
+}
+function renderKickoffMapSnapshotFrame(el,snapshot,label){
+  if(!el)return;
+  if(snapshot){
+    el.innerHTML=`<img class="kickoff-map-snapshot-img" src="${esc(snapshot)}" alt="${esc(label)} screenshot">`;
+  }else{
+    el.innerHTML=`<div class="map-fallback"><strong>No screenshot added.</strong><br>Copy a map screenshot, then use Paste Screenshot below.</div>`;
+  }
 }
 function renderKickoffMapPreviews(){
   const p=getCurrentKickoffProject(); if(!p)return;
   const info=p.kickoff.projectInfo||{}; const enabled=Boolean($("#kickoffMapsEnabled")?.checked ?? info.maps?.enabled);
   $("#kickoffMapSettings")?.classList.toggle('hidden',!enabled);
-  const addr=String($("[data-kickoff-info=projectLocation]")?.value||info.projectLocation||p.projectAddress||"").trim();
+  const maps=info.maps||{};
   const wide=$("#kickoffWideMapFrame"), close=$("#kickoffCloseMapFrame"), street=$("#kickoffStreetMapFrame");
-  if(wide){ if(enabled&&($("#kickoffWideMapEnabled")?.checked??true))renderGoogleKickoffMap(wide,addr,12); else wide.innerHTML=''; }
-  if(close){ if(enabled&&($("#kickoffCloseMapEnabled")?.checked??true))renderGoogleKickoffMap(close,addr,17); else close.innerHTML=''; }
-  if(street){ if(enabled&&Boolean($("#kickoffStreetMapEnabled")?.checked))renderGoogleKickoffStreetView(street,addr,info.maps||{}); else {street.innerHTML='';state.kickoffStreetPanorama=null;} }
+  if(wide){ if(enabled&&($("#kickoffWideMapEnabled")?.checked??true))renderKickoffMapSnapshotFrame(wide,maps.wideSnapshot,'Wide View'); else wide.innerHTML=''; }
+  if(close){ if(enabled&&($("#kickoffCloseMapEnabled")?.checked??true))renderKickoffMapSnapshotFrame(close,maps.closeSnapshot,'Close-Up View'); else close.innerHTML=''; }
+  if(street){ if(enabled&&Boolean($("#kickoffStreetMapEnabled")?.checked))renderKickoffMapSnapshotFrame(street,maps.streetSnapshot,'Street View'); else street.innerHTML=''; }
+  state.kickoffStreetPanorama=null;
   updateKickoffMapStatuses();
 }
 async function compressKickoffMapImage(file){
@@ -890,6 +899,31 @@ async function saveKickoffMapUpload(kind,file){
     mutateKickoff(k=>{k.projectInfo=k.projectInfo||{};k.projectInfo.maps={wide:true,close:true,street:false,wideZoom:12,closeZoom:17,...(k.projectInfo.maps||{}),enabled:true};k.projectInfo.maps[kind]=true;k.projectInfo.maps[`${kind}Snapshot`]=data;});
     renderKickoffMapPreviews();scheduleKickoffPdfPreview(180);toast(`${kind==='wide'?'Wide':kind==='close'?'Close-up':'Street View'} image saved for PDF.`);
   }catch(err){console.error(err);toast('Unable to save that map image.');}
+}
+async function pasteKickoffMapScreenshot(kind){
+  try{
+    if(!navigator.clipboard?.read)throw new Error('Clipboard image access is not supported in this browser.');
+    const items=await navigator.clipboard.read();
+    for(const item of items){
+      const type=item.types.find(t=>String(t).startsWith('image/'));
+      if(!type)continue;
+      const blob=await item.getType(type);
+      await saveKickoffMapUpload(kind,blob);
+      return;
+    }
+    toast('No image was found on the clipboard. Copy a screenshot first.');
+  }catch(err){
+    console.warn(err);
+    toast('Could not read an image from the clipboard. Use Upload Image instead, or allow clipboard access for this site.');
+  }
+}
+function openKickoffMapSearch(provider){
+  const p=getCurrentKickoffProject();if(!p)return;
+  const address=String($("[data-kickoff-info=projectLocation]")?.value||p.kickoff?.projectInfo?.projectLocation||p.projectAddress||'').trim();
+  if(!address)return toast('Enter the project location first.');
+  const q=encodeURIComponent(address);
+  const url=provider==='osm'?`https://www.openstreetmap.org/search?query=${q}`:`https://www.google.com/maps/search/?api=1&query=${q}`;
+  window.open(url,'_blank','noopener,noreferrer');
 }
 async function externalImageUrlToDataUrl(url){
   // Prefer fetch/blob so API errors return useful HTTP status information.
@@ -2061,9 +2095,15 @@ async function buildKickoffPdf(options={}){
     }
   }
 
-  function drawDivisionHeader(d,title='DIVISION KICKOFF'){
-    let dy=newPage(title,`${d.number?d.number+' - ':''}${d.description||'Untitled Division'}`);const h=1.15;doc.setFillColor(249,249,248);doc.setDrawColor(...border);doc.roundedRect(contentX,dy,contentW,h,.08,.08,'FD');
-    const cols=[{x:contentX+.16,w:2.55,label:'DIVISION',value:`${d.number?d.number+' - ':''}${d.description||'—'}`},{x:contentX+2.78,w:2.18,label:'SUBCONTRACTOR',value:d.subcontractor||'—'},{x:contentX+5.05,w:1.30,label:'BUDGET',value:d.budget||'—'}];
+  function newKickoffDivisionPage(){
+    if(firstPage)firstPage=false;else doc.addPage('letter','portrait');
+    background();
+    return 1.18;
+  }
+  function drawDivisionHeader(d,continued=false){
+    let dy=newKickoffDivisionPage();const h=1.15;doc.setFillColor(249,249,248);doc.setDrawColor(...border);doc.roundedRect(contentX,dy,contentW,h,.08,.08,'FD');
+    const divisionDescription=`${d.number?d.number+' - ':''}${d.description||'—'}${continued?' (CONT.)':''}`;
+    const cols=[{x:contentX+.16,w:2.55,label:'DIVISION',value:divisionDescription},{x:contentX+2.78,w:2.18,label:'SUBCONTRACTOR',value:d.subcontractor||'—'},{x:contentX+5.05,w:1.30,label:'BUDGET',value:d.budget||'—'}];
     cols.forEach(c=>{doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);doc.text(c.label,c.x,dy+.27);doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...text);const lines=doc.splitTextToSize(String(c.value),c.w);doc.text(lines.slice(0,3),c.x,dy+.55,{lineHeightFactor:1.14});});
     return dy+h+.18;
   }
@@ -2085,13 +2125,13 @@ async function buildKickoffPdf(options={}){
     for(const richLine of richLines){
       // An empty logical line is an intentional blank line in the kickoff editor.
       if(!richLine.length){
-        if(dy+.24>bottom){dy=drawDivisionHeader(d,'DIVISION KICKOFF (CONT.)');}
+        if(dy+.24>bottom){dy=drawDivisionHeader(d,true);}
         dy+=.22;
         continue;
       }
       const wrapped=wrapKickoffRuns(richLine,contentW-.18);
       for(const line of wrapped){
-        if(dy+.24>bottom){dy=drawDivisionHeader(d,'DIVISION KICKOFF (CONT.)');}
+        if(dy+.24>bottom){dy=drawDivisionHeader(d,true);}
         drawKickoffRunLine(line,contentX+.08,dy+.16);dy+=.22;
       }
       dy+=.02;
@@ -2834,6 +2874,11 @@ $("#kickoffWideMapFileInput")?.addEventListener('change',async e=>{const file=e.
 $("#kickoffCloseMapFileInput")?.addEventListener('change',async e=>{const file=e.target.files?.[0];e.target.value='';if(file)await saveKickoffMapUpload('close',file);});
 $("#kickoffStreetMapFileInput")?.addEventListener('change',async e=>{const file=e.target.files?.[0];e.target.value='';if(file)await saveKickoffMapUpload('street',file);});
 $("#kickoffMapsEnabled")?.addEventListener('change',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();});
+$("#openKickoffGoogleMapsBtn")?.addEventListener('click',()=>openKickoffMapSearch('google'));
+$("#openKickoffOsmBtn")?.addEventListener('click',()=>openKickoffMapSearch('osm'));
+$("#pasteKickoffWideMapBtn")?.addEventListener('click',()=>pasteKickoffMapScreenshot('wide'));
+$("#pasteKickoffCloseMapBtn")?.addEventListener('click',()=>pasteKickoffMapScreenshot('close'));
+$("#pasteKickoffStreetMapBtn")?.addEventListener('click',()=>pasteKickoffMapScreenshot('street'));
 $("#kickoffWideMapEnabled")?.addEventListener('change',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();});
 $("#kickoffCloseMapEnabled")?.addEventListener('change',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();});
 $("#kickoffStreetMapEnabled")?.addEventListener('change',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();scheduleKickoffPdfPreview(220);});

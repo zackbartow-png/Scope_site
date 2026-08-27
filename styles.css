@@ -706,3 +706,9 @@ body { min-height: 100%; overflow-y: auto; }
 @media(max-width:900px){
   .alternate-scope-card-head{grid-template-columns:auto 1fr auto auto}.alternate-order-btn,.alternate-delete-btn{grid-row:2}.alternate-scope-section-head{align-items:flex-start;flex-direction:column}
 }
+
+/* V7.35 screenshot-first kickoff maps */
+.kickoff-map-source-actions{display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 10px;}
+.kickoff-screenshot-frame{display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f7f7f5;}
+.kickoff-map-snapshot-img{width:100%;height:100%;display:block;object-fit:cover;object-position:center;}
+.kickoff-map-actions{display:flex;gap:12px;flex-wrap:wrap;}

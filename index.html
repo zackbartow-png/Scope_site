@@ -166,36 +166,38 @@
 
             <div class="kickoff-map-options full">
               <div class="kickoff-map-option-head">
-                <div><strong>Google Maps Location Views</strong><span>Optionally include a wide-area and close-up map with a pin at the project location.</span></div>
+                <div><strong>Project Location Images</strong><span>Paste or upload map screenshots for the kickoff PDF. No map API or paid account is required.</span></div>
                 <label class="switch-label"><input id="kickoffMapsEnabled" type="checkbox"><span class="switch"></span>Include Maps</label>
               </div>
               <div id="kickoffMapSettings" class="kickoff-map-settings hidden">
+                <div class="kickoff-map-source-actions">
+                  <button id="openKickoffGoogleMapsBtn" class="btn btn-secondary" type="button">Open Address in Google Maps</button>
+                  <button id="openKickoffOsmBtn" class="btn btn-secondary" type="button">Open Address in OpenStreetMap</button>
+                </div>
                 <label class="map-check"><input id="kickoffWideMapEnabled" type="checkbox" checked> Wide View</label>
                 <label class="map-check"><input id="kickoffCloseMapEnabled" type="checkbox" checked> Close-Up View</label>
                 <label class="map-check"><input id="kickoffStreetMapEnabled" type="checkbox"> Street View</label>
-                <button id="refreshKickoffMapsBtn" class="btn btn-secondary" type="button">Refresh Map Views</button>
-                <button id="prepareKickoffMapsBtn" class="btn btn-primary" type="button">Prepare Maps for PDF</button>
                 <div class="kickoff-map-preview-grid">
                   <div class="kickoff-map-preview">
-                    <div class="kickoff-map-preview-label">Wide View <span id="kickoffWideMapStatus" class="kickoff-map-status">Live preview</span></div>
-                    <div id="kickoffWideMapFrame" class="kickoff-google-map" role="img" aria-label="Wide Google Maps project view"></div>
-                    <div class="kickoff-map-actions"><button id="uploadKickoffWideMapBtn" class="text-btn" type="button">Upload Wide Map Image</button></div>
+                    <div class="kickoff-map-preview-label">Wide View <span id="kickoffWideMapStatus" class="kickoff-map-status">No image</span></div>
+                    <div id="kickoffWideMapFrame" class="kickoff-google-map kickoff-screenshot-frame" role="img" aria-label="Wide project map screenshot"></div>
+                    <div class="kickoff-map-actions"><button id="pasteKickoffWideMapBtn" class="text-btn" type="button">Paste Screenshot</button><button id="uploadKickoffWideMapBtn" class="text-btn" type="button">Upload Image</button></div>
                   </div>
                   <div class="kickoff-map-preview">
-                    <div class="kickoff-map-preview-label">Close-Up View <span id="kickoffCloseMapStatus" class="kickoff-map-status">Live preview</span></div>
-                    <div id="kickoffCloseMapFrame" class="kickoff-google-map" role="img" aria-label="Close Google Maps project view"></div>
-                    <div class="kickoff-map-actions"><button id="uploadKickoffCloseMapBtn" class="text-btn" type="button">Upload Close-Up Map Image</button></div>
+                    <div class="kickoff-map-preview-label">Close-Up View <span id="kickoffCloseMapStatus" class="kickoff-map-status">No image</span></div>
+                    <div id="kickoffCloseMapFrame" class="kickoff-google-map kickoff-screenshot-frame" role="img" aria-label="Close-up project map screenshot"></div>
+                    <div class="kickoff-map-actions"><button id="pasteKickoffCloseMapBtn" class="text-btn" type="button">Paste Screenshot</button><button id="uploadKickoffCloseMapBtn" class="text-btn" type="button">Upload Image</button></div>
                   </div>
                   <div class="kickoff-map-preview">
-                    <div class="kickoff-map-preview-label">Street View <span id="kickoffStreetMapStatus" class="kickoff-map-status">Live preview</span></div>
-                    <div id="kickoffStreetMapFrame" class="kickoff-google-map" role="img" aria-label="Google Street View project view"></div>
-                    <div class="kickoff-map-actions"><button id="uploadKickoffStreetMapBtn" class="text-btn" type="button">Upload Street View Image</button></div>
+                    <div class="kickoff-map-preview-label">Street View <span id="kickoffStreetMapStatus" class="kickoff-map-status">No image</span></div>
+                    <div id="kickoffStreetMapFrame" class="kickoff-google-map kickoff-screenshot-frame" role="img" aria-label="Street View screenshot"></div>
+                    <div class="kickoff-map-actions"><button id="pasteKickoffStreetMapBtn" class="text-btn" type="button">Paste Screenshot</button><button id="uploadKickoffStreetMapBtn" class="text-btn" type="button">Upload Image</button></div>
                   </div>
                 </div>
                 <input id="kickoffWideMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
                 <input id="kickoffCloseMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
                 <input id="kickoffStreetMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
-                <p id="kickoffMapExportNote" class="kickoff-map-note">For the hosted site, paste the raw Google keys into <strong>maps-config.txt</strong> after the equals signs—no quotes required. Use <strong>Prepare Maps for PDF</strong> to prepare the selected Wide, Close-Up, and Street View images for export. <strong>config.js</strong> and the Admin Static Maps field remain supported as fallbacks.</p>
+                <p id="kickoffMapExportNote" class="kickoff-map-note"><strong>Screenshot workflow:</strong> open the project address in your preferred map site, frame the view you want, copy a screenshot, then click <strong>Paste Screenshot</strong>. You can also save the screenshot and use <strong>Upload Image</strong>. The stored image is used directly in the kickoff PDF and archive.</p>
               </div>
             </div>
 
