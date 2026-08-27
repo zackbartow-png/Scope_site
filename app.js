@@ -2874,7 +2874,7 @@ async function exportPdf(options={}) {
       const x=align==='left'?box.x1:(box.x1+box.x2)/2;
       doc.text(lines,x,startY,{align,lineHeightFactor:leading/(Math.max(minPdfFont,fontSize)/72)});
     };
-    const coverAlign=proposalType==='standard'?'center':'left';
+    const coverAlign='left';
 
     drawCentered(p.projectName||'Untitled Project',fields.project,{fontSize:12.5,maxLines:2,align:coverAlign});
     drawCentered(fmtDate(p.proposalDate),fields.date,{fontSize:12.0,maxLines:1,align:coverAlign});
