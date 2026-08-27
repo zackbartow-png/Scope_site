@@ -311,13 +311,35 @@ function getMapSettings(){ const data=readDataStore(); return {apiKey:String(dat
 function saveMapSettings(settings){ const data=readDataStore(); data.mapsSettings={apiKey:String(settings?.apiKey||"")}; writeDataStore(data); }
 function getKoehnConfig(){ return (window.KOEHN_CONFIG&&typeof window.KOEHN_CONFIG==='object')?window.KOEHN_CONFIG:{}; }
 function validConfiguredKey(value){ const v=String(value||'').trim(); return v&&!/^PASTE_/.test(v)?v:''; }
+let koehnMapsTextConfigPromise=null;
+async function loadKoehnMapsTextConfig(){
+  if(koehnMapsTextConfigPromise)return koehnMapsTextConfigPromise;
+  koehnMapsTextConfigPromise=(async()=>{
+    try{
+      const res=await fetch(`maps-config.txt?v=${Date.now()}`,{cache:'no-store'});
+      if(!res.ok)return getKoehnConfig();
+      const text=await res.text();
+      const parsed={};
+      text.split(/\r?\n/).forEach(raw=>{
+        const line=raw.trim(); if(!line||line.startsWith('#')||!line.includes('='))return;
+        const idx=line.indexOf('='),name=line.slice(0,idx).trim(),value=line.slice(idx+1).trim();
+        if(name==='GOOGLE_MAPS_JAVASCRIPT_API_KEY'&&value)parsed.googleMapsJavaScriptApiKey=value;
+        if(name==='GOOGLE_MAPS_STATIC_API_KEY'&&value)parsed.googleMapsStaticApiKey=value;
+      });
+      window.KOEHN_CONFIG={...getKoehnConfig(),...parsed};
+      return window.KOEHN_CONFIG;
+    }catch(err){console.warn('Maps text config could not be loaded.',err);return getKoehnConfig();}
+  })();
+  return koehnMapsTextConfigPromise;
+}
 function getGoogleMapsJavaScriptApiKey(){ return validConfiguredKey(getKoehnConfig().googleMapsJavaScriptApiKey); }
 function getGoogleMapsStaticApiKey(){ return validConfiguredKey(getKoehnConfig().googleMapsStaticApiKey)||String(getMapSettings().apiKey||'').trim(); }
 let googleMapsLoadPromise=null;
-function ensureGoogleMapsApi(){
-  if(window.google?.maps)return Promise.resolve(window.google.maps);
+async function ensureGoogleMapsApi(){
+  if(window.google?.maps)return window.google.maps;
+  await loadKoehnMapsTextConfig();
   const key=getGoogleMapsJavaScriptApiKey();
-  if(!key)return Promise.reject(new Error('Google Maps JavaScript API key is not configured.'));
+  if(!key)throw new Error('Google Maps JavaScript API key is not configured.');
   if(googleMapsLoadPromise)return googleMapsLoadPromise;
   googleMapsLoadPromise=new Promise((resolve,reject)=>{
     const existing=document.querySelector('script[data-koehn-google-maps]');
@@ -803,6 +825,7 @@ async function saveKickoffMapUpload(kind,file){
 }
 async function prepareKickoffMapsForPdf(){
   saveKickoffInfoFromForm();
+  await loadKoehnMapsTextConfig();
   const p=getCurrentKickoffProject();if(!p)return;
   const maps=p.kickoff?.projectInfo?.maps||{},addr=String(p.kickoff?.projectInfo?.projectLocation||p.projectAddress||'').trim(),key=getGoogleMapsStaticApiKey();
   if(!addr)return toast('Enter the project location first.');
@@ -816,6 +839,39 @@ async function prepareKickoffMapsForPdf(){
     mutateKickoff(k=>{k.projectInfo=k.projectInfo||{};k.projectInfo.maps={...(k.projectInfo.maps||{})};if(saved.wide)k.projectInfo.maps.wideSnapshot=saved.wide;if(saved.close)k.projectInfo.maps.closeSnapshot=saved.close;});
     renderKickoffMapPreviews();scheduleKickoffPdfPreview(150);toast('Pinned map images are ready for PDF export.');
   }catch(err){console.error(err);toast('Google map images could not be captured. Upload map screenshots below the previews instead.');}
+}
+async function runKickoffMapsDiagnostics(){
+  const out=$("#kickoffMapsDiagnostics");
+  if(out){out.textContent='Testing Google Maps configuration…';out.classList.remove('error','ready');}
+  await loadKoehnMapsTextConfig();
+  const jsKey=getGoogleMapsJavaScriptApiKey(),staticKey=getGoogleMapsStaticApiKey();
+  const p=getCurrentKickoffProject();
+  const addr=String($("[data-kickoff-info=projectLocation]")?.value||p?.kickoff?.projectInfo?.projectLocation||p?.projectAddress||'').trim();
+  const results=[];
+  results.push(`Browser map key: ${jsKey?'loaded':'MISSING'}`);
+  results.push(`PDF/static map key: ${staticKey?'loaded':'MISSING'}`);
+  if(!addr)results.push('Project location: missing');
+  else results.push(`Project location: ${addr}`);
+  if(jsKey){
+    try{
+      await ensureGoogleMapsApi();
+      results.push('Maps JavaScript API: connected');
+      if(addr){
+        const pos=await googleGeocodeAddress(addr);
+        results.push(`Address geocoding: OK (${pos.lat().toFixed(5)}, ${pos.lng().toFixed(5)})`);
+      }
+    }catch(err){results.push(`Maps JavaScript API: ERROR — ${err?.message||err}`);}
+  }
+  if(staticKey&&addr){
+    try{
+      await imageToDataUrl(kickoffStaticMapUrl(addr,12,staticKey));
+      results.push('Static map PDF capture: OK');
+    }catch(err){results.push(`Static map PDF capture: ERROR — ${err?.message||'request/canvas blocked'}`);}
+  }
+  const hasError=results.some(x=>/MISSING|ERROR/.test(x));
+  if(out){out.textContent=results.join(' • ');out.classList.toggle('error',hasError);out.classList.toggle('ready',!hasError);}
+  if(!hasError){renderKickoffMapPreviews();toast('Google Maps configuration passed.');}
+  else toast('Maps diagnostics found an issue. See the status message under the map buttons.');
 }
 function renderKickoffProposalDivisionOptions(p=getCurrentKickoffProject()){
   const select=$("#kickoffProposalDivisionSelect"); if(!select||!p)return;
@@ -2338,6 +2394,7 @@ $("#exportKickoffPdfBtn")?.addEventListener('click',()=>buildKickoffPdf({preview
 $("#refreshKickoffPreviewBtn")?.addEventListener('click',()=>scheduleKickoffPdfPreview(10));
 $("#refreshKickoffMapsBtn")?.addEventListener('click',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();scheduleKickoffPdfPreview(250);});
 $("#prepareKickoffMapsBtn")?.addEventListener('click',prepareKickoffMapsForPdf);
+$("#testKickoffMapsBtn")?.addEventListener('click',runKickoffMapsDiagnostics);
 $("#uploadKickoffWideMapBtn")?.addEventListener('click',()=>$("#kickoffWideMapFileInput")?.click());
 $("#uploadKickoffCloseMapBtn")?.addEventListener('click',()=>$("#kickoffCloseMapFileInput")?.click());
 $("#kickoffWideMapFileInput")?.addEventListener('change',async e=>{const file=e.target.files?.[0];e.target.value='';if(file)await saveKickoffMapUpload('wide',file);});

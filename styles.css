@@ -617,3 +617,5 @@ body { min-height: 100%; overflow-y: auto; }
 .kickoff-map-status.ready { color:#2f7d32; }
 .kickoff-map-actions { padding:7px 10px 9px; border-top:1px solid #eceeef; background:#fff; }
 .kickoff-map-actions .text-btn { font-size:9px; }
+#kickoffMapsDiagnostics.ready{color:#267347;font-weight:700}
+#kickoffMapsDiagnostics.error{color:#a63d31;font-weight:700}

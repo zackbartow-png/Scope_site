@@ -171,6 +171,7 @@
                 <label class="map-check"><input id="kickoffWideMapEnabled" type="checkbox" checked> Wide View</label>
                 <label class="map-check"><input id="kickoffCloseMapEnabled" type="checkbox" checked> Close-Up View</label>
                 <button id="refreshKickoffMapsBtn" class="btn btn-secondary" type="button">Refresh Map Views</button>
+                <button id="testKickoffMapsBtn" class="btn btn-secondary" type="button">Test Maps API</button>
                 <button id="prepareKickoffMapsBtn" class="btn btn-primary" type="button">Prepare Maps for PDF</button>
                 <div class="kickoff-map-preview-grid">
                   <div class="kickoff-map-preview">
@@ -186,7 +187,8 @@
                 </div>
                 <input id="kickoffWideMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
                 <input id="kickoffCloseMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
-                <p id="kickoffMapExportNote" class="kickoff-map-note">For PDF export, click <strong>Prepare Maps for PDF</strong>. The site will use the Google Maps Static API key from <strong>config.js</strong> (or the Admin fallback key). If no Static Maps key is configured, you can upload a wide and/or close-up map image here.</p>
+                <p id="kickoffMapExportNote" class="kickoff-map-note">For the hosted site, paste the raw Google keys into <strong>maps-config.txt</strong> after the equals signs—no quotes required. Click <strong>Test Maps API</strong> to verify the browser map, address geocoding, and PDF/static map capture. <strong>config.js</strong> and the Admin Static Maps field remain supported as fallbacks.</p>
+                <p id="kickoffMapsDiagnostics" class="kickoff-map-note">Maps API status has not been tested yet.</p>
               </div>
             </div>
 

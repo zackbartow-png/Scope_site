@@ -1,0 +1,5 @@
+# Koehn Scope Builder Google Maps configuration
+# Paste the raw keys after the equals sign. DO NOT add quotes.
+# Keep each key on one line.
+GOOGLE_MAPS_JAVASCRIPT_API_KEY=AIzaSyDdyIJ2MISC37_bmcEshOna0OO4acc3qDk
+GOOGLE_MAPS_STATIC_API_KEY=AIzaSyCzTsFLCgy0JH00N7-DgpuLb9H_XOTRI2w
