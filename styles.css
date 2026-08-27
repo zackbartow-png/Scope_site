@@ -665,3 +665,15 @@ body { min-height: 100%; overflow-y: auto; }
 @media (max-width:900px){ #kickoffPdfPreviewPages{min-height:560px} }
 /* Dedicated kickoff preview keeps its own scroll position between live refreshes. */
 #kickoffPdfPreviewPages { max-height:78vh; overflow:auto; padding:14px 10px 28px; background:#dfe2e4; scrollbar-gutter:stable; }
+
+/* Kickoff per-division proposal reference */
+.kickoff-proposal-reference { margin-top:14px; border:1px solid #d9dde0; border-radius:10px; background:#f7f7f6; padding:13px 14px; }
+.kickoff-proposal-reference-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.kickoff-proposal-reference-head strong { display:block; color:#414549; font-size:12px; margin-top:2px; }
+.kickoff-proposal-reference-select-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; margin-bottom:9px; }
+.kickoff-proposal-reference select, .kickoff-proposal-reference textarea { width:100%; border:1px solid #d5d9dc; border-radius:8px; background:#fff; color:#313438; font:500 12px/1.45 Inter,sans-serif; }
+.kickoff-proposal-reference select { padding:9px 10px; }
+.kickoff-proposal-reference textarea { padding:11px 12px; resize:vertical; min-height:130px; }
+.kickoff-proposal-reference p { margin:7px 0 0; color:#858a8e; font-size:9px; line-height:1.45; }
+.kickoff-division-footer-actions { display:flex; gap:8px; flex-wrap:wrap; margin-left:auto; }
+@media (max-width:720px){ .kickoff-proposal-reference-select-row{grid-template-columns:1fr}.kickoff-division-footer-actions{width:100%}.kickoff-division-footer-actions .btn{flex:1 1 auto} }

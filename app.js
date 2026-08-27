@@ -383,7 +383,7 @@ function normalizeProject(p, ownerUsername="") {
   p.acceptedAt = p.acceptedAt || null;
   p.kickoff = {...(p.kickoff||{})};
   p.kickoff.quotes = Array.isArray(p.kickoff.quotes) ? p.kickoff.quotes.map(q=>({...q,pages:Array.isArray(q.pages)?q.pages:[],divisionId:q.divisionId||null})) : [];
-  p.kickoff.divisions = Array.isArray(p.kickoff.divisions) ? p.kickoff.divisions.map(d=>({id:d.id||uid(),number:String(d.number||""),description:String(d.description||""),subcontractor:String(d.subcontractor||""),budget:String(d.budget||""),notesHtml:sanitizeScopeHtml(d.notesHtml||plainTextToRichHtml(d.notes||"")),sourceDivisionNumber:d.sourceDivisionNumber||""})) : [];
+  p.kickoff.divisions = Array.isArray(p.kickoff.divisions) ? p.kickoff.divisions.map(d=>({id:d.id||uid(),number:String(d.number||""),description:String(d.description||""),subcontractor:String(d.subcontractor||""),budget:String(d.budget||""),notesHtml:sanitizeScopeHtml(d.notesHtml||plainTextToRichHtml(d.notes||"")),sourceDivisionNumber:d.sourceDivisionNumber||"",proposalReferenceNumber:d.proposalReferenceNumber||d.sourceDivisionNumber||""})) : [];
   p.kickoff.projectInfo = {...(p.kickoff.projectInfo||{})};
   p.kickoff.projectInfo.maps = {enabled:false,wide:true,close:true,street:false,wideZoom:12,closeZoom:17,streetHeading:0,streetPitch:0,streetFov:90,wideSnapshot:"",closeSnapshot:"",streetSnapshot:"",...(p.kickoff.projectInfo.maps||{})};
   p.ownerUsername = p.ownerUsername || ownerUsername || "";
@@ -754,7 +754,6 @@ function populateKickoffBuilder(p){
   $("#kickoffStreetMapEnabled").checked=Boolean(info.maps?.street);
   $("#kickoffMapSettings").classList.toggle('hidden',!info.maps?.enabled);
   renderKickoffMapPreviews();
-  renderKickoffProposalDivisionOptions(p);
   renderKickoffDivisions();
   renderKickoffQuotes();
   renderKickoffPageOrder();
@@ -952,12 +951,45 @@ async function runKickoffMapsDiagnostics(){
   if(!hasError){renderKickoffMapPreviews();toast('Google Maps configuration passed.');}
   else toast('Maps diagnostics found an issue. See the status message under the map buttons.');
 }
-function renderKickoffProposalDivisionOptions(p=getCurrentKickoffProject()){
-  const select=$("#kickoffProposalDivisionSelect"); if(!select||!p)return;
-  const current=select.value;
-  const options=CSI_DIVISIONS.filter(([n])=>p.divisions?.[n]?.enabled).map(([n,t])=>`<option value="${esc(n)}">${esc(n)} - ${esc(p.divisions[n]?.title||t)}</option>`).join('');
-  select.innerHTML='<option value="">Select proposal division…</option>'+options;
-  if([...select.options].some(o=>o.value===current))select.value=current;
+function kickoffProposalDivisionOptionsHtml(p, selected=""){
+  if(!p)return '<option value="">Select proposal division…</option>';
+  const options=CSI_DIVISIONS.filter(([n])=>p.divisions?.[n]?.enabled).map(([n,t])=>`<option value="${esc(n)}" ${String(selected)===String(n)?'selected':''}>${esc(n)} - ${esc(p.divisions[n]?.title||t)}</option>`).join('');
+  return '<option value="">Select proposal division…</option>'+options;
+}
+function proposalDivisionReferenceText(p,n){
+  const d=p?.divisions?.[n];
+  if(!d)return "";
+  const holder=document.createElement('div');
+  holder.innerHTML=normalizedDivisionRichHtml(d);
+  return String(holder.innerText||d.text||"").replace(/\r/g,"").replace(/\n+$/g,"");
+}
+function kickoffReferenceNumberForDivision(p,d){
+  const stored=String(d?.proposalReferenceNumber||d?.sourceDivisionNumber||"").trim();
+  if(stored&&p?.divisions?.[stored]?.enabled)return stored;
+  const same=String(d?.number||"").trim();
+  return same&&p?.divisions?.[same]?.enabled?same:"";
+}
+function updateKickoffProposalReferencePanel(card, number){
+  const p=getCurrentKickoffProject(); if(!card||!p)return;
+  const textArea=card.querySelector('[data-kickoff-proposal-reference-text]');
+  const title=card.querySelector('[data-kickoff-proposal-reference-title]');
+  const d=p.divisions?.[number];
+  if(title)title.textContent=d?`Proposal Division ${number} - ${d.title||''}`:'Proposal Division Text';
+  if(textArea){
+    const text=proposalDivisionReferenceText(p,number);
+    textArea.value=number?(text||'No proposal scope text was entered for this division.'):'Select a proposal division above to view its scope text.';
+  }
+  card.dataset.kickoffProposalReference=number||"";
+}
+async function copyKickoffProposalReference(card){
+  const area=card?.querySelector('[data-kickoff-proposal-reference-text]'); if(!area)return;
+  const text=area.value||"";
+  if(!text||text.startsWith('Select a proposal division')||text.startsWith('No proposal scope'))return toast('Select a proposal division with scope text first.');
+  try{await navigator.clipboard.writeText(text);toast('Proposal text copied.');}
+  catch{
+    area.focus();area.select();
+    try{document.execCommand('copy');toast('Proposal text copied.');}catch{toast('Select the proposal text and copy it manually.');}
+  }
 }
 function proposalDivisionBudget(p,n){
   const advanced=String(p.summary?.divisionCosts?.[n]?.amount||"").trim(); if(advanced)return advanced;
@@ -966,10 +998,10 @@ function proposalDivisionBudget(p,n){
 }
 function addKickoffDivision(sourceNumber=""){
   const p=getCurrentKickoffProject(); if(!p)return;
-  let division={id:uid(),number:"",description:"",subcontractor:"",budget:"",notesHtml:"",sourceDivisionNumber:""};
+  let division={id:uid(),number:"",description:"",subcontractor:"",budget:"",notesHtml:"",sourceDivisionNumber:"",proposalReferenceNumber:""};
   if(sourceNumber&&p.divisions?.[sourceNumber]){
     const source=p.divisions[sourceNumber];
-    division={...division,number:sourceNumber,description:source.title||"",budget:proposalDivisionBudget(p,sourceNumber),notesHtml:normalizedDivisionRichHtml(source),sourceDivisionNumber:sourceNumber};
+    division={...division,number:sourceNumber,description:source.title||"",budget:proposalDivisionBudget(p,sourceNumber),notesHtml:normalizedDivisionRichHtml(source),sourceDivisionNumber:sourceNumber,proposalReferenceNumber:sourceNumber};
   }
   mutateKickoff(k=>{k.divisions=Array.isArray(k.divisions)?k.divisions:[];k.divisions.push(division);});
   renderKickoffDivisions();renderKickoffPageOrder();activateKickoffTab('divisions');
@@ -982,7 +1014,7 @@ function collectKickoffDivisionsFromDom(){
     const id=card.dataset.kickoffDivisionId, old=existing.get(id)||{};
     const get=f=>card.querySelector(`[data-kickoff-division-field="${f}"]`)?.value||"";
     const editor=card.querySelector('.kickoff-rich-editor');
-    return {id,number:get('number'),description:get('description'),subcontractor:get('subcontractor'),budget:get('budget'),notesHtml:sanitizeScopeHtml(editor?.innerHTML||""),sourceDivisionNumber:old.sourceDivisionNumber||""};
+    return {id,number:get('number'),description:get('description'),subcontractor:get('subcontractor'),budget:get('budget'),notesHtml:sanitizeScopeHtml(editor?.innerHTML||""),sourceDivisionNumber:old.sourceDivisionNumber||"",proposalReferenceNumber:card.dataset.kickoffProposalReference||old.proposalReferenceNumber||old.sourceDivisionNumber||""};
   });
   mutateKickoff(k=>k.divisions=divisions);
   renderKickoffPageOrder();
@@ -1007,7 +1039,11 @@ function renderKickoffDivisions(){
   const list=$("#kickoffDivisionList"), empty=$("#kickoffDivisionEmpty"); if(!list)return;
   const p=getCurrentKickoffProject(), divisions=p?.kickoff?.divisions||[];
   empty?.classList.toggle('hidden',divisions.length>0);
-  list.innerHTML=divisions.map((d,index)=>`<section class="kickoff-division-card" data-kickoff-division-id="${esc(d.id)}">
+  list.innerHTML=divisions.map((d,index)=>{
+    const ref=kickoffReferenceNumberForDivision(p,d);
+    const refText=ref?proposalDivisionReferenceText(p,ref):"";
+    const refDivision=ref?p.divisions?.[ref]:null;
+    return `<section class="kickoff-division-card" data-kickoff-division-id="${esc(d.id)}" data-kickoff-proposal-reference="${esc(ref)}">
     <div class="kickoff-division-card-head">
       <label>Division<input data-kickoff-division-field="number" value="${esc(d.number)}" placeholder="03" /></label>
       <label>Description<input data-kickoff-division-field="description" value="${esc(d.description)}" placeholder="Structural Concrete" /></label>
@@ -1018,13 +1054,40 @@ function renderKickoffDivisions(){
     <div class="kickoff-division-card-body">
       <div class="kickoff-notes-toolbar"><button class="scope-format-btn" data-kickoff-format="bold" type="button"><strong>B</strong></button><button class="scope-format-btn" data-kickoff-format="italic" type="button"><em>I</em></button><button class="scope-format-btn" data-kickoff-format="underline" type="button"><span class="format-u">U</span></button></div>
       <div class="kickoff-rich-editor" contenteditable="true" data-placeholder="Kickoff scope, coordination notes, quote clarifications, missed items, schedule notes…">${sanitizeScopeHtml(d.notesHtml||"")}</div>
-      <div class="kickoff-division-footer"><span class="kickoff-source-note">${d.sourceDivisionNumber?`Imported from Proposal Division ${esc(d.sourceDivisionNumber)}`:'Custom kickoff division'}</span><button class="btn btn-secondary" data-kickoff-add-quote="${esc(d.id)}" type="button">+ Add Quote After Division</button></div>
+      <div class="kickoff-proposal-reference hidden" data-kickoff-proposal-reference-panel>
+        <div class="kickoff-proposal-reference-head">
+          <div><span class="eyebrow">Accepted Proposal Reference</span><strong data-kickoff-proposal-reference-title>${refDivision?`Proposal Division ${esc(ref)} - ${esc(refDivision.title||'')}`:'Proposal Division Text'}</strong></div>
+          <button class="text-btn" data-kickoff-hide-proposal-text type="button">Hide</button>
+        </div>
+        <div class="kickoff-proposal-reference-select-row">
+          <select data-kickoff-proposal-reference-select>${kickoffProposalDivisionOptionsHtml(p,ref)}</select>
+          <button class="btn btn-secondary btn-small" data-kickoff-copy-proposal-text type="button">Copy Text</button>
+        </div>
+        <textarea readonly data-kickoff-proposal-reference-text rows="7">${esc(ref?(refText||'No proposal scope text was entered for this division.'):'Select a proposal division above to view its scope text.')}</textarea>
+        <p>This is reference-only. Copy the text you want and paste it into the kickoff notes above.</p>
+      </div>
+      <div class="kickoff-division-footer">
+        <div class="kickoff-division-footer-actions"><button class="btn btn-secondary" data-kickoff-show-proposal-text="${esc(d.id)}" type="button">+ Proposal Text</button><button class="btn btn-secondary" data-kickoff-add-quote="${esc(d.id)}" type="button">+ Add Quote After Division</button></div>
+      </div>
     </div>
-  </section>`).join('');
+  </section>`;
+  }).join('');
   $$('[data-kickoff-move-up]',list).forEach(b=>b.addEventListener('click',()=>moveKickoffDivision(b.dataset.kickoffMoveUp,-1)));
   $$('[data-kickoff-move-down]',list).forEach(b=>b.addEventListener('click',()=>moveKickoffDivision(b.dataset.kickoffMoveDown,1)));
   $$('[data-kickoff-remove-division]',list).forEach(b=>b.addEventListener('click',()=>removeKickoffDivision(b.dataset.kickoffRemoveDivision)));
   $$('[data-kickoff-add-quote]',list).forEach(b=>b.addEventListener('click',()=>{state.kickoffQuoteTargetDivisionId=b.dataset.kickoffAddQuote;$("#kickoffQuoteFileInput")?.click();}));
+  $$('[data-kickoff-show-proposal-text]',list).forEach(b=>b.addEventListener('click',()=>{
+    const card=b.closest('.kickoff-division-card'), panel=card?.querySelector('[data-kickoff-proposal-reference-panel]');
+    panel?.classList.remove('hidden');
+    const select=card?.querySelector('[data-kickoff-proposal-reference-select]');
+    if(select&&!select.value){const n=String(card?.querySelector('[data-kickoff-division-field="number"]')?.value||'').trim();if(p.divisions?.[n]?.enabled){select.value=n;updateKickoffProposalReferencePanel(card,n);collectKickoffDivisionsFromDom();}}
+    panel?.scrollIntoView({block:'nearest',behavior:'smooth'});
+  }));
+  $$('[data-kickoff-hide-proposal-text]',list).forEach(b=>b.addEventListener('click',()=>b.closest('[data-kickoff-proposal-reference-panel]')?.classList.add('hidden')));
+  $$('[data-kickoff-proposal-reference-select]',list).forEach(select=>select.addEventListener('change',()=>{
+    const card=select.closest('.kickoff-division-card');updateKickoffProposalReferencePanel(card,select.value);collectKickoffDivisionsFromDom();
+  }));
+  $$('[data-kickoff-copy-proposal-text]',list).forEach(b=>b.addEventListener('click',()=>copyKickoffProposalReference(b.closest('.kickoff-division-card'))));
   $$('[data-kickoff-format]',list).forEach(b=>b.addEventListener('click',()=>kickoffFormatSelection(b.closest('.kickoff-division-card')?.querySelector('.kickoff-rich-editor'),b.dataset.kickoffFormat)));
   $$('input[data-kickoff-division-field]',list).forEach(el=>el.addEventListener('input',()=>{clearTimeout(state.kickoffSaveTimer);state.kickoffSaveTimer=setTimeout(()=>{collectKickoffDivisionsFromDom();scheduleKickoffPdfPreview(650);},300);}));
   $$('.kickoff-rich-editor',list).forEach(el=>{
@@ -2557,7 +2620,6 @@ $("#addKickoffQuoteBtn")?.addEventListener("click",()=>{state.kickoffQuoteTarget
 $("#kickoffQuoteFileInput")?.addEventListener("change",async e=>{const file=e.target.files?.[0];e.target.value="";if(file)await handleKickoffQuoteUpload(file);});
 $$('.kickoff-tab-btn').forEach(b=>b.addEventListener('click',()=>activateKickoffTab(b.dataset.kickoffTab)));
 $("#addKickoffDivisionBtn")?.addEventListener('click',()=>addKickoffDivision());
-$("#importKickoffDivisionBtn")?.addEventListener('click',()=>{const n=$("#kickoffProposalDivisionSelect")?.value;if(!n)return toast('Select a proposal division to import.');addKickoffDivision(n);});
 $("#exportKickoffPdfBtn")?.addEventListener('click',()=>buildKickoffPdf({preview:false}));
 $("#refreshKickoffPreviewBtn")?.addEventListener('click',()=>scheduleKickoffPdfPreview(10));
 $("#refreshKickoffMapsBtn")?.addEventListener('click',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();scheduleKickoffPdfPreview(250);});
