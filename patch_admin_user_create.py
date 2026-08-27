@@ -1,3 +1,4 @@
+# Trigger patch workflow
 from pathlib import Path
 
 index = Path('index.html')
