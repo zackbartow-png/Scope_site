@@ -671,9 +671,12 @@ body { min-height: 100%; overflow-y: auto; }
 .kickoff-proposal-reference-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:10px; }
 .kickoff-proposal-reference-head strong { display:block; color:#414549; font-size:12px; margin-top:2px; }
 .kickoff-proposal-reference-select-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; margin-bottom:9px; }
-.kickoff-proposal-reference select, .kickoff-proposal-reference textarea { width:100%; border:1px solid #d5d9dc; border-radius:8px; background:#fff; color:#313438; font:500 12px/1.45 Inter,sans-serif; }
+.kickoff-proposal-reference select { width:100%; border:1px solid #d5d9dc; border-radius:8px; background:#fff; color:#313438; font:500 12px/1.45 Inter,sans-serif; }
 .kickoff-proposal-reference select { padding:9px 10px; }
-.kickoff-proposal-reference textarea { padding:11px 12px; resize:vertical; min-height:130px; }
+.kickoff-proposal-reference-preview { width:100%; border:1px solid #d5d9dc; border-radius:8px; background:#fff; color:#313438; font:500 12px/1.45 Inter,sans-serif; padding:11px 12px; min-height:130px; max-height:360px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; user-select:text; }
+.kickoff-proposal-reference-preview div { min-height:1.45em; }
+.kickoff-proposal-reference-preview.reference-empty { color:#7d8388; }
+.kickoff-proposal-reference-preview:focus { outline:none; border-color:#aeb3b7; box-shadow:0 0 0 2px rgba(243,111,33,.10); }
 .kickoff-proposal-reference p { margin:7px 0 0; color:#858a8e; font-size:9px; line-height:1.45; }
 .kickoff-division-footer-actions { display:flex; gap:8px; flex-wrap:wrap; margin-left:auto; }
 @media (max-width:720px){ .kickoff-proposal-reference-select-row{grid-template-columns:1fr}.kickoff-division-footer-actions{width:100%}.kickoff-division-footer-actions .btn{flex:1 1 auto} }
