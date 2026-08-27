@@ -54,6 +54,11 @@ const DIRECT_SUPABASE_CONFIG = {
   supabasePublishableKey: "sb_publishable_rjCbtjPD-UN-nCCdbSKweQ_pVuqCezK"
 };
 let passwordChangeReason = "";
+const CLOUD_ASSET_BUCKET = "scope-builder-assets";
+const cloudProfileIdByEmail = new Map();
+const cloudProjectSyncTimers = new Map();
+const cloudSettingSyncTimers = new Map();
+let cloudWorkspacePromise = null;
 
 const state = { user: null, currentProjectId: null, currentProjectOwner: null, currentKickoffProjectId: null, currentKickoffOwner: null, currentKickoffTab: "info", kickoffQuoteTargetDivisionId: null, kickoffSaveTimer: null, kickoffPreviewTimer: null, kickoffPreviewToken: 0, kickoffPreviewRendering: false, kickoffPreviewPending: false, kickoffPreviewBlobUrl: null, authMode: "login", saveTimer: null, previewOpen: true, previewRenderTimer: null, previewRenderToken: 0, previewRendering: false, previewPending: false, previewBlobUrl: null, adminDisclaimerId: null, dashboardMode: "active", adminUserFilter: "all" };
 const $ = (sel, root=document) => root.querySelector(sel);
@@ -144,26 +149,114 @@ function openAssetDb(){
     req.onerror=()=>reject(req.error||new Error("Unable to open kickoff asset storage."));
   });
 }
-async function putQuoteAsset(record){
+async function putQuoteAssetLocal(record){
   const db=await openAssetDb();
   try{ await new Promise((resolve,reject)=>{const tx=db.transaction(KOEHN_ASSET_STORE,"readwrite");tx.objectStore(KOEHN_ASSET_STORE).put(record);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);}); }
   finally{db.close();}
 }
-async function getQuoteAsset(key){
+async function getQuoteAssetLocal(key){
   const db=await openAssetDb();
   try{return await new Promise((resolve,reject)=>{const tx=db.transaction(KOEHN_ASSET_STORE,"readonly");const r=tx.objectStore(KOEHN_ASSET_STORE).get(key);r.onsuccess=()=>resolve(r.result||null);r.onerror=()=>reject(r.error);});}
   finally{db.close();}
 }
-async function getFamilyQuoteAssets(familyId){
+async function getFamilyQuoteAssetsLocal(familyId){
   const db=await openAssetDb();
   try{return await new Promise((resolve,reject)=>{const tx=db.transaction(KOEHN_ASSET_STORE,"readonly");const idx=tx.objectStore(KOEHN_ASSET_STORE).index("familyId");const r=idx.getAll(familyId);r.onsuccess=()=>resolve(r.result||[]);r.onerror=()=>reject(r.error);});}
   finally{db.close();}
+}
+async function getAllQuoteAssetsLocal(){
+  const db=await openAssetDb();
+  try{return await new Promise((resolve,reject)=>{const tx=db.transaction(KOEHN_ASSET_STORE,"readonly");const r=tx.objectStore(KOEHN_ASSET_STORE).getAll();r.onsuccess=()=>resolve(r.result||[]);r.onerror=()=>reject(r.error);});}
+  finally{db.close();}
+}
+function assetOwnerUsername(familyId){
+  const data=readDataStore();
+  for(const [username,projects] of Object.entries(data.projects||{})){
+    if((projects||[]).some(p=>(p.familyId||p.id)===familyId))return username;
+  }
+  return state.currentKickoffOwner||state.currentProjectOwner||state.user?.username||"";
+}
+function assetFileExtension(mime=""){
+  const m=String(mime||"").toLowerCase();
+  if(m.includes("webp"))return "webp";
+  if(m.includes("png"))return "png";
+  return "jpg";
+}
+async function uploadQuoteAssetToCloud(record){
+  if(!authBackendConfigured||!authClient||!state.user||!record?.blob||!record?.key)return;
+  const ownerUsername=assetOwnerUsername(record.familyId);
+  const ownerId=await resolveCloudOwnerId(ownerUsername);
+  if(!ownerId)return;
+  const ownerProjects=getProjectsForUser(ownerUsername,{includeDeleted:true});
+  if(ownerProjects.length)await syncProjectsToCloudNow(ownerUsername,ownerProjects);
+  const familyId=String(record.familyId||"");
+  const ext=assetFileExtension(record.mime);
+  const storagePath=`${ownerId}/${safeFilePart(familyId)}/${safeFilePart(record.key)}.${ext}`;
+  const {error:uploadError}=await authClient.storage.from(CLOUD_ASSET_BUCKET).upload(storagePath,record.blob,{contentType:record.mime||record.blob.type||"image/jpeg",upsert:true,cacheControl:"3600"});
+  if(uploadError)throw uploadError;
+  const metadata={quoteId:record.quoteId||null,divisionId:record.divisionId||null,assetType:record.assetType||null,pageIndex:Number.isFinite(record.pageIndex)?record.pageIndex:null,width:record.width||null,height:record.height||null,createdAt:record.createdAt||nowIso()};
+  const row={project_id:familyId,owner_id:ownerId,asset_key:record.key,family_id:familyId,asset_kind:record.assetType==="divisionImage"?"division_image":"quote_page",storage_path:storagePath,file_name:record.name||"",mime_type:record.mime||record.blob.type||"application/octet-stream",byte_size:record.blob.size||null,metadata};
+  const {error:metaError}=await authClient.from('project_assets').upsert(row,{onConflict:'owner_id,asset_key'});
+  if(metaError){await authClient.storage.from(CLOUD_ASSET_BUCKET).remove([storagePath]).catch(()=>{});throw metaError;}
+}
+async function downloadQuoteAssetFromCloud(key){
+  if(!authBackendConfigured||!authClient||!state.user||!key)return null;
+  const {data:rows,error}=await authClient.from('project_assets').select('asset_key,family_id,storage_path,file_name,mime_type,metadata').eq('asset_key',key).limit(1);
+  if(error)throw error;
+  const meta=rows?.[0];if(!meta)return null;
+  const {data:blob,error:downloadError}=await authClient.storage.from(CLOUD_ASSET_BUCKET).download(meta.storage_path);
+  if(downloadError)throw downloadError;
+  const m=meta.metadata||{};
+  const record={key:meta.asset_key,familyId:meta.family_id,quoteId:m.quoteId||undefined,divisionId:m.divisionId||undefined,assetType:m.assetType||undefined,pageIndex:Number.isFinite(m.pageIndex)?m.pageIndex:undefined,name:meta.file_name||"",mime:meta.mime_type||blob.type||"image/jpeg",blob,width:m.width||undefined,height:m.height||undefined,createdAt:m.createdAt||nowIso()};
+  await putQuoteAssetLocal(record);
+  return record;
+}
+async function migrateLocalAssetsToCloud(){
+  if(!authBackendConfigured||!authClient||!state.user)return;
+  const localAssets=await getAllQuoteAssetsLocal();if(!localAssets.length)return;
+  const {data:cloudRows,error}=await authClient.from('project_assets').select('asset_key');
+  if(error)throw error;
+  const cloudKeys=new Set((cloudRows||[]).map(r=>r.asset_key));
+  const missing=localAssets.filter(a=>a?.key&&!cloudKeys.has(a.key));
+  for(const asset of missing){
+    try{await uploadQuoteAssetToCloud(asset);cloudKeys.add(asset.key);}
+    catch(err){console.error(`Could not migrate local kickoff asset ${asset.key} to cloud.`,err);}
+  }
+}
+async function hydrateCloudFamilyAssets(familyId){
+  if(!authBackendConfigured||!authClient||!state.user||!familyId)return;
+  const {data:rows,error}=await authClient.from('project_assets').select('asset_key').eq('family_id',familyId);
+  if(error)throw error;
+  for(const row of rows||[]){if(!(await getQuoteAssetLocal(row.asset_key)))await downloadQuoteAssetFromCloud(row.asset_key);}
+}
+async function deleteCloudAssetsByKeys(keys=[]){
+  if(!authBackendConfigured||!authClient||!state.user||!keys.length)return;
+  const {data:rows,error}=await authClient.from('project_assets').select('id,asset_key,storage_path').in('asset_key',keys);
+  if(error)throw error;
+  const paths=(rows||[]).map(r=>r.storage_path).filter(Boolean);
+  if(paths.length){const {error:removeError}=await authClient.storage.from(CLOUD_ASSET_BUCKET).remove(paths);if(removeError)throw removeError;}
+  const ids=(rows||[]).map(r=>r.id).filter(Boolean);
+  if(ids.length){const {error:deleteError}=await authClient.from('project_assets').delete().in('id',ids);if(deleteError)throw deleteError;}
+}
+async function putQuoteAsset(record,{skipCloud=false}={}){
+  await putQuoteAssetLocal(record);
+  if(!skipCloud&&authBackendConfigured&&authClient&&state.user)await uploadQuoteAssetToCloud(record);
+}
+async function getQuoteAsset(key){
+  const local=await getQuoteAssetLocal(key);
+  if(local)return local;
+  try{return await downloadQuoteAssetFromCloud(key);}catch(err){console.error('Cloud asset download failed.',err);return null;}
+}
+async function getFamilyQuoteAssets(familyId){
+  if(authBackendConfigured&&authClient&&state.user){try{await hydrateCloudFamilyAssets(familyId);}catch(err){console.error('Cloud family asset load failed.',err);}}
+  return await getFamilyQuoteAssetsLocal(familyId);
 }
 async function deleteQuoteAssetsByKeys(keys=[]){
   if(!keys.length)return;
   const db=await openAssetDb();
   try{await new Promise((resolve,reject)=>{const tx=db.transaction(KOEHN_ASSET_STORE,"readwrite");const st=tx.objectStore(KOEHN_ASSET_STORE);keys.forEach(k=>st.delete(k));tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});}
   finally{db.close();}
+  if(authBackendConfigured&&authClient&&state.user){try{await deleteCloudAssetsByKeys(keys);}catch(err){console.error('Cloud asset delete failed.',err);}}
 }
 async function deleteFamilyQuoteAssets(familyId){
   const assets=await getFamilyQuoteAssets(familyId);
@@ -368,10 +461,10 @@ function normalizeUser(record) {
 }
 function isAdmin() { return state.user?.role === "admin"; }
 function getDisclaimers() { return readDataStore().disclaimers.map(x=>({...x})); }
-function saveDisclaimers(items) { const data=readDataStore(); data.disclaimers=items.map(x=>({...x})); writeDataStore(data); }
+function saveDisclaimers(items) { const data=readDataStore(); data.disclaimers=items.map(x=>({...x})); writeDataStore(data); if(authBackendConfigured&&authClient&&isAdmin())scheduleCloudSettingSync('disclaimers',data.disclaimers); }
 function getDisclaimer(id) { const all=getDisclaimers(); return all.find(d=>d.id===id) || all[0] || null; }
 function getOfficeSettings() { return normalizeOfficeSettings(readDataStore().officeSettings); }
-function saveOfficeSettings(settings) { const data=readDataStore(); data.officeSettings=normalizeOfficeSettings(settings); writeDataStore(data); }
+function saveOfficeSettings(settings) { const data=readDataStore(); data.officeSettings=normalizeOfficeSettings(settings); writeDataStore(data); if(authBackendConfigured&&authClient&&isAdmin())scheduleCloudSettingSync('office_settings',data.officeSettings); }
 function getOfficeContact(key="fredonia") { const offices=getOfficeSettings(); return {...(offices[key]||offices.fredonia)}; }
 function getMapSettings(){ const data=readDataStore(); return {apiKey:String(data.mapsSettings?.apiKey||"")}; }
 function saveMapSettings(settings){ const data=readDataStore(); data.mapsSettings={apiKey:String(settings?.apiKey||"")}; writeDataStore(data); }
@@ -553,6 +646,7 @@ function saveProjectsForUser(username, projects) {
   const key=ownerKey(username), data=readDataStore();
   data.projects[key] = projects.map(p=>normalizeProject(p, username));
   writeDataStore(data);
+  if(authBackendConfigured&&authClient&&state.user)scheduleCloudProjectSync(username,data.projects[key]);
 }
 function getProjects() {
   if (!state.user) return [];
@@ -655,6 +749,155 @@ async function supabaseFunctionFetch(functionName,options={}){
   if(!res.ok)throw new Error(payload.error||"The server request failed.");
   return payload;
 }
+async function syncCloudSettingNow(key,value){
+  if(!authBackendConfigured||!authClient||!isAdmin()||!key)return;
+  const {error}=await authClient.from('app_settings').upsert({key,value,updated_by:state.user.id},{onConflict:'key'});
+  if(error)throw error;
+}
+function scheduleCloudSettingSync(key,value){
+  if(!authBackendConfigured||!authClient||!isAdmin()||!key)return;
+  clearTimeout(cloudSettingSyncTimers.get(key));
+  const snapshot=JSON.parse(JSON.stringify(value));
+  cloudSettingSyncTimers.set(key,setTimeout(async()=>{cloudSettingSyncTimers.delete(key);try{await syncCloudSettingNow(key,snapshot);}catch(err){console.error('Cloud setting sync failed.',err);}},450));
+}
+async function loadCloudSharedSettings(){
+  if(!authBackendConfigured||!authClient||!state.user)return;
+  const {data:rows,error}=await authClient.from('app_settings').select('key,value').in('key',['disclaimers','office_settings']);
+  if(error)throw error;
+  const byKey=new Map((rows||[]).map(r=>[r.key,r.value]));
+  const local=readDataStore();
+  if(byKey.has('disclaimers')){
+    const value=byKey.get('disclaimers');
+    if(Array.isArray(value)&&value.length)local.disclaimers=value;
+  }else if(isAdmin()){
+    await syncCloudSettingNow('disclaimers',local.disclaimers||DEFAULT_DISCLAIMERS.map(x=>({...x})));
+  }
+  if(byKey.has('office_settings')){
+    local.officeSettings=normalizeOfficeSettings(byKey.get('office_settings'));
+  }else if(isAdmin()){
+    await syncCloudSettingNow('office_settings',normalizeOfficeSettings(local.officeSettings));
+  }
+  writeDataStore(local);
+}
+
+function cloudProjectStatus(p){
+  if(p?.deletedByUser)return 'deleted';
+  if(p?.accepted)return 'accepted';
+  if(p?.archived)return 'archived';
+  return 'active';
+}
+async function refreshCloudProfileCache(){
+  if(!authBackendConfigured||!authClient||!state.user)return [];
+  const {data,error}=await authClient.from('profiles').select('id,email,display_name,role,status,must_change_password,created_at,last_seen_at');
+  if(error)throw error;
+  cloudProfileIdByEmail.clear();
+  (data||[]).forEach(p=>{
+    const email=String(p.email||'').toLowerCase();if(!email)return;
+    cloudProfileIdByEmail.set(email,p.id);
+    saveUserRecord(remoteUserRecord({id:p.id,email:p.email,role:p.role,createdAt:p.created_at,lastSignInAt:p.last_seen_at,mustChangePassword:p.must_change_password}));
+  });
+  return data||[];
+}
+async function resolveCloudOwnerId(username){
+  const key=ownerKey(username);
+  if(!key)return null;
+  if(state.user?.id&&key===ownerKey(state.user.username))return state.user.id;
+  if(cloudProfileIdByEmail.has(key))return cloudProfileIdByEmail.get(key);
+  try{
+    const {data,error}=await authClient.from('profiles').select('id,email').eq('email',username).maybeSingle();
+    if(error)throw error;
+    if(data?.id){cloudProfileIdByEmail.set(key,data.id);return data.id;}
+  }catch(err){console.error('Could not resolve cloud project owner.',err);}
+  return null;
+}
+function cloudProjectRow(p,ownerId,ownerUsername){
+  const normalized=normalizeProject({...p,ownerUsername},ownerUsername);
+  return {id:normalized.id,family_id:normalized.familyId||normalized.id,owner_id:ownerId,project_name:normalized.projectName||'',project_number:normalized.projectNumber||'',client_name:normalized.clientName||'',version_label:versionLabel(normalized),workflow_status:cloudProjectStatus(normalized),project_data:normalized,created_at:normalized.createdAt||nowIso(),updated_at:normalized.updatedAt||nowIso(),deleted_at:normalized.deletedAt||null};
+}
+async function syncProjectsToCloudNow(username,projects){
+  if(!authBackendConfigured||!authClient||!state.user||!username)return;
+  const ownerId=await resolveCloudOwnerId(username);if(!ownerId)return;
+  const list=(projects||[]).map(p=>normalizeProject(p,username));
+  if(list.length){
+    const rows=list.map(p=>cloudProjectRow(p,ownerId,username));
+    const {error}=await authClient.from('projects').upsert(rows,{onConflict:'id'});
+    if(error)throw error;
+  }
+}
+async function deleteCloudProjectFamily(username,familyId){
+  if(!authBackendConfigured||!authClient||!state.user||!username||!familyId)return;
+  const ownerId=await resolveCloudOwnerId(username);if(!ownerId)return;
+  const {error}=await authClient.from('projects').delete().eq('owner_id',ownerId).eq('family_id',familyId);
+  if(error)throw error;
+}
+function scheduleCloudProjectSync(username,projects){
+  if(!authBackendConfigured||!authClient||!state.user||!username)return;
+  const key=ownerKey(username);clearTimeout(cloudProjectSyncTimers.get(key));
+  const snapshot=JSON.parse(JSON.stringify(projects||[]));
+  const timer=setTimeout(async()=>{cloudProjectSyncTimers.delete(key);try{await syncProjectsToCloudNow(username,snapshot);}catch(err){console.error('Cloud project sync failed.',err);toast('Cloud sync could not complete. Your local copy is still saved.');}},550);
+  cloudProjectSyncTimers.set(key,timer);
+}
+function mergeCloudAndLocalProjects(localProjects,cloudRows,ownerUsername){
+  const map=new Map();
+  (localProjects||[]).forEach(raw=>{const p=normalizeProject(raw,ownerUsername);map.set(p.id,p);});
+  (cloudRows||[]).forEach(row=>{
+    const cloud=normalizeProject({...row.project_data,ownerUsername},ownerUsername);
+    const local=map.get(cloud.id);
+    if(!local){map.set(cloud.id,cloud);return;}
+    const localTime=Date.parse(local.updatedAt||local.createdAt||0)||0,cloudTime=Date.parse(row.updated_at||cloud.updatedAt||0)||0;
+    if(cloudTime>localTime)map.set(cloud.id,cloud);
+  });
+  return [...map.values()].sort((a,b)=>(Date.parse(b.updatedAt||b.createdAt||0)||0)-(Date.parse(a.updatedAt||a.createdAt||0)||0));
+}
+async function loadCloudWorkspace(){
+  if(!authBackendConfigured||!authClient||!state.user)return;
+  if(cloudWorkspacePromise)return cloudWorkspacePromise;
+  cloudWorkspacePromise=(async()=>{
+    await loadCloudSharedSettings();
+    const profiles=await refreshCloudProfileCache();
+    const {data:rows,error}=await authClient.from('projects').select('id,family_id,owner_id,project_name,project_number,client_name,version_label,workflow_status,project_data,created_at,updated_at,deleted_at').order('updated_at',{ascending:false});
+    if(error)throw error;
+    const grouped=new Map();
+    (rows||[]).forEach(row=>{if(!grouped.has(row.owner_id))grouped.set(row.owner_id,[]);grouped.get(row.owner_id).push(row);});
+    const data=readDataStore();
+    const activeEmails=new Set(profiles.map(p=>ownerKey(p.email)).filter(Boolean));
+    const currentAdminKey=ownerKey(state.user.username);
+    for(const key of Object.keys(data.projects||{})){
+      if(activeEmails.has(key))continue;
+      const cachedUser=data.users?.[key];
+      const orphanProjects=Array.isArray(data.projects[key])?data.projects[key]:[];
+      if(cachedUser?.authProvider==='supabase'){
+        delete data.projects[key];
+      }else if(isAdmin()&&orphanProjects.length){
+        const existing=data.projects[currentAdminKey]||[];
+        const combined=[...existing,...orphanProjects.map(p=>normalizeProject({...p,ownerUsername:state.user.username},state.user.username))];
+        const deduped=new Map();combined.forEach(p=>{const prior=deduped.get(p.id);if(!prior||(Date.parse(p.updatedAt||0)||0)>=(Date.parse(prior.updatedAt||0)||0))deduped.set(p.id,p);});
+        data.projects[currentAdminKey]=[...deduped.values()];
+        delete data.projects[key];
+      }
+    }
+    for(const key of Object.keys(data.users||{})){if(!activeEmails.has(key))delete data.users[key];}
+    for(const profile of profiles){
+      const email=ownerKey(profile.email);if(!email)continue;
+      const merged=mergeCloudAndLocalProjects(data.projects[email]||[],grouped.get(profile.id)||[],profile.email);
+      data.projects[email]=merged;
+    }
+    writeDataStore(data);
+    for(const profile of profiles){
+      const email=ownerKey(profile.email);if(!email)continue;
+      const merged=data.projects[email]||[];
+      if(merged.length||grouped.get(profile.id)?.length)await syncProjectsToCloudNow(profile.email,merged);
+    }
+    await migrateLocalAssetsToCloud();
+  })().finally(()=>{cloudWorkspacePromise=null;});
+  return cloudWorkspacePromise;
+}
+async function refreshDashboardFromCloud(){
+  if(!authBackendConfigured||!authClient||!state.user)return;
+  try{await loadCloudWorkspace();refreshDashboardNav();renderProjects();}
+  catch(err){console.error('Cloud workspace load failed.',err);toast('Could not load the shared cloud workspace. Local projects are still available.');}
+}
+
 async function hydrateRemoteUser(session){
   if(!session?.user)return null;
   const {data:profile,error}=await authClient.from('profiles').select('id,email,display_name,role,status,must_change_password,created_at,last_seen_at').eq('id',session.user.id).single();
@@ -787,6 +1030,7 @@ function enterDashboard() {
   $("#dashboardView").classList.remove("hidden"); $("#editorView").classList.add("hidden"); $("#kickoffView").classList.add("hidden");
   $("#backToDashboard").classList.add("hidden"); $("#exportPdfBtn").classList.add("hidden");
   refreshRoleUi(); refreshDashboardNav(); renderProjects();
+  if(authBackendConfigured&&authClient)refreshDashboardFromCloud();
 }
 function setDashboardMode(mode){
   if((mode==="admin"||mode==="deleted")&&!isAdmin())mode="active";
@@ -1576,6 +1820,7 @@ async function archiveFamilyToKoehn(familyId,ownerUsername){
     // active workspace copy and its local kickoff assets.
     saveProjectsForUser(ownerUsername,all.filter(p=>(p.familyId||p.id)!==familyId));
     await deleteFamilyQuoteAssets(familyId);
+    if(authBackendConfigured&&authClient)await deleteCloudProjectFamily(ownerUsername,familyId);
     refreshDashboardNav();renderProjects();toast(`Archived to ${fname}.`);
   }catch(err){toast(err?.message||"Could not create the project archive.");}
   finally{if(menuBtn)menuBtn.disabled=false;}
@@ -3063,12 +3308,13 @@ async function renderAdminUsers(){
         const record=remoteUserRecord(u);saveUserRecord(record);
         const row=document.createElement('div');row.className='admin-user-row secure-user';
         const you=state.user?.id===u.id||String(state.user?.username||'').toLowerCase()===String(u.email||'').toLowerCase();
-        row.innerHTML=`<div class="user-meta"><strong>${esc(u.email)}${you?' · You':''}</strong><span>${u.last_sign_in_at?'Active account':'Invitation pending'}${u.last_sign_in_at?` · Last sign in ${esc(fmtTime(u.last_sign_in_at))}`:''}</span></div><select class="admin-role-select" data-role-id="${esc(u.id)}" data-role-email="${esc(u.email)}"><option value="employee" ${u.role==='employee'?'selected':''}>Employee</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select><div class="admin-user-actions"><button class="btn btn-secondary admin-send-reset" type="button" data-user-email="${esc(u.email)}">Reset Email</button><button class="btn btn-secondary admin-temp-password" type="button" data-user-id="${esc(u.id)}" data-user-email="${esc(u.email)}">Temp Password</button></div>`;
+        row.innerHTML=`<div class="user-meta"><strong>${esc(u.email)}${you?' · You':''}</strong><span>${u.last_sign_in_at?'Active account':'Invitation pending'}${u.last_sign_in_at?` · Last sign in ${esc(fmtTime(u.last_sign_in_at))}`:''}</span></div><select class="admin-role-select" data-role-id="${esc(u.id)}" data-role-email="${esc(u.email)}"><option value="employee" ${u.role==='employee'?'selected':''}>Employee</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select><div class="admin-user-actions"><button class="btn btn-secondary admin-send-reset" type="button" data-user-email="${esc(u.email)}">Reset Email</button><button class="btn btn-secondary admin-temp-password" type="button" data-user-id="${esc(u.id)}" data-user-email="${esc(u.email)}">Temp Password</button>${you?'':`<button class="btn btn-danger admin-remove-user" type="button" data-user-id="${esc(u.id)}" data-user-email="${esc(u.email)}">Remove User</button>`}</div>`;
         wrap.appendChild(row);
       });
       $$('.admin-role-select',wrap).forEach(sel=>sel.addEventListener('change',()=>changeRemoteUserRole(sel.dataset.roleId,sel.dataset.roleEmail,sel.value,sel)));
       $$('.admin-send-reset',wrap).forEach(btn=>btn.addEventListener('click',()=>adminSendPasswordReset(btn.dataset.userEmail)));
       $$('.admin-temp-password',wrap).forEach(btn=>btn.addEventListener('click',()=>adminSetTemporaryPassword(btn.dataset.userId,btn.dataset.userEmail)));
+      $$('.admin-remove-user',wrap).forEach(btn=>btn.addEventListener('click',()=>adminRemoveRemoteUser(btn.dataset.userId,btn.dataset.userEmail)));
       refreshDashboardNav();
     }catch(err){console.error(err);wrap.innerHTML=`<div class="admin-note">${esc(err.message||'Could not load users.')}</div>`;}
     return;
@@ -3084,6 +3330,18 @@ async function inviteRemoteUser(){
 }
 async function changeRemoteUserRole(userId,email,role,selectEl){
   try{await supabaseFunctionFetch('scope-admin-role',{method:'POST',body:JSON.stringify({userId,role})});if(String(state.user?.id||'')===userId){const {data:{session}}=await authClient.auth.getSession();if(session)await hydrateRemoteUser(session);refreshRoleUi();if(!isAdmin()){closeAdminDialog();toast("Your role is now Employee.");return;}}await renderAdminUsers();toast(`${email} is now ${role==='admin'?'an Admin':'an Employee'}.`);}catch(err){console.error(err);selectEl.value=role==='admin'?'employee':'admin';toast(err.message||"Could not change role.");}
+}
+async function adminRemoveRemoteUser(userId,email){
+  if(!isAdmin()||!userId||!email)return;
+  const ok=confirm(`Remove ${email} from Scope Builder?\n\nThey will no longer be able to sign in. Any projects they own will be transferred to your Admin account so company project history is preserved. This account removal cannot be undone.`);
+  if(!ok)return;
+  try{
+    const result=await supabaseFunctionFetch('scope-admin-remove-user',{method:'POST',body:JSON.stringify({userId})});
+    const data=readDataStore(),targetKey=ownerKey(email);delete data.users[targetKey];delete data.projects[targetKey];writeDataStore(data);
+    await loadCloudWorkspace();
+    await renderAdminUsers();refreshDashboardNav();renderProjects();
+    toast(`${email} removed. Their projects were transferred to ${result.projectsTransferredTo||state.user.username}.`);
+  }catch(err){console.error(err);toast(err.message||'Could not remove that user.');}
 }
 async function adminSendPasswordReset(email){
   if(!authClient)return;try{await authClient.auth.resetPasswordForEmail(email,{redirectTo:authRedirectUrl('recovery')});}catch(err){console.error(err);}toast(`If the account is active, a reset link was sent to ${email}.`);

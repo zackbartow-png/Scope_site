@@ -1,29 +1,53 @@
-# Scope Builder V7.41 — Supabase Direct Auth
+# Scope Builder V7.42 — Shared Supabase Workspace
 
-This build connects directly to the Koehn Scope Builder Supabase project. The public Supabase project URL and publishable key are intentionally included in the browser app. Security is enforced by Supabase Auth, Row Level Security, and authenticated Edge Functions. No Supabase secret/service-role key is included in the website files.
+This build connects directly to the Koehn Scope Builder Supabase project. The public Supabase project URL and publishable key are intentionally included in the browser app. Security is enforced by Supabase Auth, Row Level Security, private Supabase Storage, and authenticated Edge Functions. No Supabase secret/service-role key is included in the website files.
 
-## Hosting
+## Temporary hosting architecture
 
-The website can be hosted on Vercel, the future Koehn company web host, or another static host. Supabase remains the authentication/database backend.
+- Vercel (or another static host) serves `index.html`, `app.js`, `styles.css`, and the locked marketing assets.
+- Supabase Auth manages company users, passwords, invitations, and roles.
+- Supabase Postgres stores the shared project records.
+- Supabase private Storage stores kickoff quote-page snapshots and inline division images.
+- Local browser storage/IndexedDB remains as a performance/offline cache.
 
-## Supabase backend now active
+This means a user can sign into the same deployed Scope Builder URL on another computer and load the same Supabase-backed projects. When Koehn's permanent website hosting is ready, move the static website files to the new host and keep the same Supabase backend.
+
+## Cloud migration behavior
+
+On the first V7.42 login from a browser that already contains Scope Builder projects, local and cloud copies are merged by project ID and most recent update timestamp. Existing local projects are uploaded to Supabase rather than erased. Legacy prototype projects stored under old local-only usernames are moved into the current Admin account during the first cloud migration so they are not stranded. Future project edits are saved locally immediately and synchronized to Supabase in the background.
+
+Existing and new kickoff quote snapshots and inline division screenshots are uploaded to the private `scope-builder-assets` bucket. V7.42 checks the existing browser IndexedDB during the first cloud migration and uploads any assets that are not already in Supabase. On another computer they are downloaded into the local cache as needed.
+
+## User removal
+
+Admin → Users now includes **Remove User**. Removing a user:
+
+1. Requires an Admin session.
+2. Does not allow an Admin to remove their own account.
+3. Prevents removal of the final Admin.
+4. Transfers the removed user's projects and project-asset ownership to the Admin performing the removal.
+5. Deletes the user's Supabase Auth account so they can no longer sign in.
+6. Records the action in the Admin audit log.
+
+## Current backend
 
 - `profiles` — employee/admin role, status, password-change requirement
-- `projects` — cloud project records ready for Phase 2 migration
-- `project_assets` — metadata for cloud screenshots/quote assets
-- `app_settings` — company-controlled settings foundation
+- `projects` — shared project records with complete project JSON
+- `project_assets` — cloud asset metadata
+- `app_settings` — shared Admin-controlled Terms & Conditions and estimating-office settings
 - `admin_audit_log` — administrative action history
-- RLS policies — employees are limited to their own projects; Admins can read all projects
-- Edge Functions — user list, user invite, Admin role changes, temporary passwords
+- `scope-builder-assets` — private Storage bucket for quote snapshots and kickoff division images
+- RLS — employees can access their own projects/assets; Admins can access all company projects/assets
+- Edge Functions — user list, invite, role change, temporary password, and remove user
 
-## Auth URL configuration still required
+## Current Admin
 
-In Supabase Authentication → URL Configuration, set the production Scope Builder URL as the Site URL and add any testing/preview URLs to Redirect URLs. Invite and password-reset emails must return to an approved URL.
+`zack.bartow@koehncs.com` is established as an Admin. New invited users default to Employee.
 
-## First Admin
+## Auth URL configuration
 
-The Supabase project currently has no Auth users. Create/invite the first account, then set that profile to Admin. Once one Admin exists, all future users should be invited from Scope Builder → Admin → Users and default to Employee.
+While testing on Vercel, set the deployed Scope Builder URL as the Supabase Auth Site URL and add any required preview URLs to Redirect URLs. When the permanent company host goes live, update this URL.
 
 ## Production email
 
-Supabase's built-in mailer is suitable for initial testing. Before production rollout, configure custom SMTP for reliable company invitations and password resets.
+Company-branded SMTP can wait until the `koehncs.com` DNS/hosting move is complete. Supabase's built-in mail service remains suitable only for limited testing.
