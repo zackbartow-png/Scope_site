@@ -319,8 +319,6 @@ textarea { resize: vertical; line-height: 1.5; }
 .version-restore-btn:hover { border-color:#f2a16f; color:var(--orange-dark); background:#fff7f1; }
 .project-status-row { display:flex; gap:6px; flex-wrap:wrap; margin-top:9px; }
 .project-status-row span { border-radius:999px; background:#f1f2f3; padding:4px 7px; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.035em; color:#73777b; }
-.project-card.archived-card::before { background:#9b9ea1; }
-.project-card.archived-card { background:#fbfbfb; }
 .project-card.deleted-card::before { background:#a54b43; }
 .project-card.deleted-card { background:#fffafa; }
 .editor-project-badges { display:flex; align-items:center; flex-wrap:wrap; gap:7px; margin-top:7px; }
@@ -513,3 +511,18 @@ body { min-height: 100%; overflow-y: auto; }
 .project-card.accepted-card .project-number,
 .project-card.accepted-card .project-open { color:#3d7a49; }
 .project-status-row .accepted-status { background:#edf7ef; border:1px solid #c9e5cf; color:#3d7a49; }
+
+/* V7.22 project archive + kickoff quote storage */
+.dashboard-hero-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+.kickoff-placeholder-head { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; }
+.kickoff-placeholder-head > div { min-width:0; }
+.kickoff-quote-list { display:grid; gap:10px; margin-top:18px; }
+.kickoff-quote-empty { border:1px dashed #d6d9dc; border-radius:10px; padding:18px; color:#858a8e; background:#fbfbfb; font-size:12px; }
+.kickoff-quote-item { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:14px; align-items:center; border:1px solid #e0e3e5; border-radius:10px; padding:14px 16px; background:#fafafa; }
+.kickoff-quote-item strong { display:block; color:#474b4f; font-size:13px; margin-bottom:4px; overflow-wrap:anywhere; }
+.kickoff-quote-meta { color:#858a8e; font-size:10px; line-height:1.5; }
+.kickoff-quote-remove { border:0; background:transparent; color:#9b3c32; font-weight:700; cursor:pointer; padding:8px; }
+.kickoff-processing { display:flex; align-items:center; gap:10px; color:#6f7479; font-size:11px; padding:10px 0; }
+.kickoff-processing::before { content:""; width:14px; height:14px; border:2px solid #d9dcde; border-top-color:#f05a28; border-radius:50%; animation:ksb-spin .8s linear infinite; }
+@keyframes ksb-spin { to { transform:rotate(360deg); } }
+@media (max-width:700px){ .dashboard-hero-actions{width:100%;justify-content:flex-start}.kickoff-placeholder-head{flex-direction:column}.kickoff-quote-item{grid-template-columns:1fr} }

@@ -82,17 +82,19 @@
           <h1>Project Scopes</h1>
           <p>Create, revise, and export client-ready scope documents while keeping every project organized by CSI division.</p>
         </div>
-        <button id="newProjectBtn" class="btn btn-primary btn-lg">+ New Scope Project</button>
+        <div class="dashboard-hero-actions">
+          <button id="importProjectArchiveBtn" class="btn btn-secondary btn-lg" type="button">Import .koehn Archive</button>
+          <button id="newProjectBtn" class="btn btn-primary btn-lg">+ New Scope Project</button>
+        </div>
       </section>
 
       <div class="dashboard-layout">
         <aside class="project-library-nav">
           <div class="library-nav-title">Proposal Library</div>
           <button class="project-nav-btn active" data-project-view="active" type="button"><span>Active Proposals</span><strong id="activeProjectCount">0</strong></button>
-          <button class="project-nav-btn" data-project-view="archived" type="button"><span>Archived</span><strong id="archivedProjectCount">0</strong></button>
           <button id="adminAllProjectsBtn" class="project-nav-btn admin-project-nav hidden" data-project-view="admin" type="button"><span>All User Proposals</span><strong>Admin</strong></button>
           <button id="adminDeletedProjectsBtn" class="project-nav-btn admin-project-nav hidden" data-project-view="deleted" type="button"><span>Deleted Items</span><strong id="adminDeletedProjectCount">0</strong></button>
-          <p class="library-nav-note">Archived proposals remain saved. Deleted projects and revisions are never permanently erased and remain recoverable by Admin.</p>
+          <p class="library-nav-note">Use <strong>Archive</strong> on a project to download a standalone .koehn file and remove it from the active workspace. Import that file here whenever you need the project again.</p>
         </aside>
         <section class="dashboard-projects-panel">
           <div class="dashboard-panel-head">
@@ -139,8 +141,14 @@
             <div><span>Accepted</span><strong id="kickoffAcceptedDate">—</strong></div>
           </div>
           <div class="kickoff-placeholder">
-            <h2>Kickoff Builder</h2>
-            <p>This workspace is ready for the kickoff workflow. Additional kickoff fields and sections can be added here next.</p>
+            <div class="kickoff-placeholder-head">
+              <div>
+                <h2>Kickoff Builder</h2>
+                <p>Quote PDFs are converted immediately to compressed page snapshots for reliable storage and later PDF export. The original uploaded PDF is not retained.</p>
+              </div>
+              <button id="addKickoffQuoteBtn" class="btn btn-primary" type="button">+ Add Quote PDF</button>
+            </div>
+            <div id="kickoffQuoteList" class="kickoff-quote-list"></div>
           </div>
         </section>
       </div>
@@ -484,6 +492,8 @@
   </dialog>
 
   <input id="backupFileInput" type="file" accept=".ksb,.json,application/json" hidden />
+  <input id="projectArchiveFileInput" type="file" accept=".koehn,application/octet-stream,application/json" hidden />
+  <input id="kickoffQuoteFileInput" type="file" accept="application/pdf,.pdf" hidden />
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>

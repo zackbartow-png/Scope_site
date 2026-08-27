@@ -105,6 +105,114 @@ function moneyNumber(v="") {
 }
 function formatMoneyNumber(n){ return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0,maximumFractionDigits:2}).format(Number(n)||0); }
 
+
+const KOEHN_ASSET_DB = "koehn_scope_builder_assets_v1";
+const KOEHN_ASSET_STORE = "kickoffQuotePages";
+function openAssetDb(){
+  return new Promise((resolve,reject)=>{
+    const req=indexedDB.open(KOEHN_ASSET_DB,1);
+    req.onupgradeneeded=()=>{
+      const db=req.result;
+      if(!db.objectStoreNames.contains(KOEHN_ASSET_STORE)){
+        const store=db.createObjectStore(KOEHN_ASSET_STORE,{keyPath:"key"});
+        store.createIndex("familyId","familyId",{unique:false});
+        store.createIndex("quoteId","quoteId",{unique:false});
+      }
+    };
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error||new Error("Unable to open kickoff asset storage."));
+  });
+}
+async function putQuoteAsset(record){
+  const db=await openAssetDb();
+  try{ await new Promise((resolve,reject)=>{const tx=db.transaction(KOEHN_ASSET_STORE,"readwrite");tx.objectStore(KOEHN_ASSET_STORE).put(record);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);}); }
+  finally{db.close();}
+}
+async function getQuoteAsset(key){
+  const db=await openAssetDb();
+  try{return await new Promise((resolve,reject)=>{const tx=db.transaction(KOEHN_ASSET_STORE,"readonly");const r=tx.objectStore(KOEHN_ASSET_STORE).get(key);r.onsuccess=()=>resolve(r.result||null);r.onerror=()=>reject(r.error);});}
+  finally{db.close();}
+}
+async function getFamilyQuoteAssets(familyId){
+  const db=await openAssetDb();
+  try{return await new Promise((resolve,reject)=>{const tx=db.transaction(KOEHN_ASSET_STORE,"readonly");const idx=tx.objectStore(KOEHN_ASSET_STORE).index("familyId");const r=idx.getAll(familyId);r.onsuccess=()=>resolve(r.result||[]);r.onerror=()=>reject(r.error);});}
+  finally{db.close();}
+}
+async function deleteQuoteAssetsByKeys(keys=[]){
+  if(!keys.length)return;
+  const db=await openAssetDb();
+  try{await new Promise((resolve,reject)=>{const tx=db.transaction(KOEHN_ASSET_STORE,"readwrite");const st=tx.objectStore(KOEHN_ASSET_STORE);keys.forEach(k=>st.delete(k));tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});}
+  finally{db.close();}
+}
+async function deleteFamilyQuoteAssets(familyId){
+  const assets=await getFamilyQuoteAssets(familyId);
+  await deleteQuoteAssetsByKeys(assets.map(a=>a.key));
+}
+function blobToBase64(blob){
+  return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result||"").split(",")[1]||"");r.onerror=()=>reject(r.error);r.readAsDataURL(blob);});
+}
+function base64ToBlob(base64,mime="application/octet-stream"){
+  const raw=atob(base64||""); const bytes=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i); return new Blob([bytes],{type:mime});
+}
+function humanBytes(bytes=0){
+  const n=Number(bytes)||0; if(n<1024)return `${n} B`; if(n<1024*1024)return `${(n/1024).toFixed(1)} KB`; return `${(n/(1024*1024)).toFixed(n>=10*1024*1024?1:2)} MB`;
+}
+function canvasToCompressedBlob(canvas){
+  return new Promise(resolve=>{
+    canvas.toBlob(b=>{if(b)return resolve({blob:b,mime:"image/webp"});canvas.toBlob(j=>resolve({blob:j,mime:"image/jpeg"}),"image/jpeg",0.88);},"image/webp",0.84);
+  });
+}
+async function convertKickoffPdfToSnapshots(file,familyId,quoteId,onProgress=()=>{}){
+  if(!window.pdfjsLib)throw new Error("PDF converter did not load.");
+  if(window.pdfjsLib.GlobalWorkerOptions)window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const bytes=new Uint8Array(await file.arrayBuffer());
+  const pdf=await window.pdfjsLib.getDocument({data:bytes}).promise;
+  if(pdf.numPages>100)throw new Error("Quote PDFs are limited to 100 pages per upload.");
+  const pageKeys=[]; let compressedBytes=0;
+  for(let pageNum=1;pageNum<=pdf.numPages;pageNum++){
+    onProgress(pageNum,pdf.numPages);
+    const page=await pdf.getPage(pageNum);
+    const base=page.getViewport({scale:1});
+    // About 160 DPI for a letter-size page. This keeps typed quotes sharp while
+    // dramatically reducing storage compared with the source PDF.
+    const targetWidth=Math.min(1700,Math.max(1200,Math.round(base.width*2.2)));
+    const scale=targetWidth/base.width;
+    const viewport=page.getViewport({scale});
+    const canvas=document.createElement("canvas");
+    canvas.width=Math.max(1,Math.round(viewport.width)); canvas.height=Math.max(1,Math.round(viewport.height));
+    const ctx=canvas.getContext("2d",{alpha:false}); ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);
+    await page.render({canvasContext:ctx,viewport}).promise;
+    const {blob,mime}=await canvasToCompressedBlob(canvas);
+    compressedBytes+=blob.size;
+    const key=`${familyId}::${quoteId}::${pageNum}`;
+    await putQuoteAsset({key,familyId,quoteId,pageIndex:pageNum-1,name:file.name,mime,blob,width:canvas.width,height:canvas.height,createdAt:nowIso()});
+    pageKeys.push(key);
+    canvas.width=1;canvas.height=1;
+  }
+  return {pageKeys,pageCount:pdf.numPages,compressedBytes,originalBytes:file.size};
+}
+async function gzipJsonBlob(payload){
+  const raw=new Blob([JSON.stringify(payload)],{type:"application/json"});
+  if(typeof CompressionStream!=="function")return raw;
+  const stream=raw.stream().pipeThrough(new CompressionStream("gzip"));
+  return await new Response(stream).blob();
+}
+async function readKoehnArchiveFile(file){
+  const arr=new Uint8Array(await file.arrayBuffer());
+  let text;
+  if(arr.length>=2&&arr[0]===0x1f&&arr[1]===0x8b){
+    if(typeof DecompressionStream!=="function")throw new Error("This browser cannot open compressed .koehn files.");
+    text=await new Response(new Blob([arr]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  }else{text=new TextDecoder().decode(arr);}
+  const payload=JSON.parse(text);
+  if(payload?.schema!=="koehn-project-archive"||!Array.isArray(payload.projects))throw new Error("This is not a valid Koehn project archive.");
+  return payload;
+}
+function downloadBlob(blob,filename){
+  const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),15000);
+}
+function safeFilePart(value="Project"){return String(value||"Project").trim().replace(/[^a-z0-9._-]+/gi,"_").replace(/^_+|_+$/g,"").slice(0,80)||"Project";}
+
 async function hashPassword(password) {
   const bytes = new TextEncoder().encode(password);
   const hash = await crypto.subtle.digest("SHA-256", bytes);
@@ -214,6 +322,8 @@ function normalizeProject(p, ownerUsername="") {
   p.deletedScope = p.deletedScope || null;
   p.accepted = Boolean(p.accepted);
   p.acceptedAt = p.acceptedAt || null;
+  p.kickoff = {...(p.kickoff||{})};
+  p.kickoff.quotes = Array.isArray(p.kickoff.quotes) ? p.kickoff.quotes.map(q=>({...q,pages:Array.isArray(q.pages)?q.pages:[]})) : [];
   p.ownerUsername = p.ownerUsername || ownerUsername || "";
   p.divisions = p.divisions || Object.fromEntries(CSI_DIVISIONS.map(([n,t]) => [n,{number:n,title:t,enabled:false,text:""}]));
   CSI_DIVISIONS.forEach(([n,t]) => {
@@ -401,9 +511,10 @@ function enterDashboard() {
 }
 function setDashboardMode(mode){
   if((mode==="admin"||mode==="deleted")&&!isAdmin())mode="active";
+  if(!["active","admin","deleted"].includes(mode))mode="active";
   state.dashboardMode=mode;
   $$('.project-nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.projectView===mode));
-  const title=mode==="archived"?"Archived Proposals":mode==="admin"?"All User Proposals":mode==="deleted"?"Deleted Items":"Active Proposals";
+  const title=mode==="admin"?"All User Proposals":mode==="deleted"?"Deleted Items":"Active Proposals";
   $("#dashboardSectionTitle").textContent=title;
   $("#adminUserFilter").classList.toggle("hidden",!(mode==="admin"||mode==="deleted")||!isAdmin());
   renderProjects();
@@ -411,8 +522,7 @@ function setDashboardMode(mode){
 function refreshDashboardNav(){
   const own=getProjectsForUser(state.user.username,{includeDeleted:false});
   const families=projectFamilies(own);
-  $("#activeProjectCount").textContent=families.filter(f=>!f.versions.every(v=>v.archived)).length;
-  $("#archivedProjectCount").textContent=families.filter(f=>f.versions.every(v=>v.archived)).length;
+  if($("#activeProjectCount"))$("#activeProjectCount").textContent=families.length;
   $("#adminAllProjectsBtn").classList.toggle("hidden",!isAdmin());
   $("#adminDeletedProjectsBtn").classList.toggle("hidden",!isAdmin());
   if(isAdmin()){
@@ -420,8 +530,9 @@ function refreshDashboardNav(){
     $("#adminDeletedProjectCount").textContent=deletedCount;
   }
   if(!isAdmin()&&(state.dashboardMode==="admin"||state.dashboardMode==="deleted"))state.dashboardMode="active";
+  if(!["active","admin","deleted"].includes(state.dashboardMode))state.dashboardMode="active";
   $$('.project-nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.projectView===state.dashboardMode));
-  const title=state.dashboardMode==="archived"?"Archived Proposals":state.dashboardMode==="admin"?"All User Proposals":state.dashboardMode==="deleted"?"Deleted Items":"Active Proposals";
+  const title=state.dashboardMode==="admin"?"All User Proposals":state.dashboardMode==="deleted"?"Deleted Items":"Active Proposals";
   $("#dashboardSectionTitle").textContent=title;
   $("#adminUserFilter").classList.toggle("hidden",!(state.dashboardMode==="admin"||state.dashboardMode==="deleted")||!isAdmin());
   if(isAdmin()){
@@ -446,25 +557,23 @@ function renderProjects() {
   const grouped=new Map();
   entries.forEach(({owner,p})=>{const key=`${ownerKey(owner)}::${p.familyId||p.id}`;if(!grouped.has(key))grouped.set(key,{owner,familyId:p.familyId||p.id,versions:[]});grouped.get(key).versions.push(p);});
   let families=[...grouped.values()].map(f=>{f.versions.sort((a,b)=>(a.version||0)-(b.version||0));f.latest=[...f.versions].sort((a,b)=>(b.version||0)-(a.version||0))[0];return f;});
-  if(state.dashboardMode==="active")families=families.filter(f=>!f.versions.every(v=>v.archived));
-  if(state.dashboardMode==="archived")families=families.filter(f=>f.versions.every(v=>v.archived));
+
   families.sort((a,b)=> sort==="name"?(a.latest.projectName||"").localeCompare(b.latest.projectName||""):sort==="client"?(a.latest.clientName||"").localeCompare(b.latest.clientName||""):new Date(b.latest.updatedAt)-new Date(a.latest.updatedAt));
   const grid=$("#projectsGrid"); grid.innerHTML="";
   const noProjects=!families.length;
   $("#emptyProjects").classList.toggle("hidden",!noProjects||q.length>0||state.dashboardMode==="admin"||state.dashboardMode==="deleted");
   if(noProjects){
-    const msg=q?"No matching projects":state.dashboardMode==="archived"?"No archived proposals":state.dashboardMode==="admin"?"No user proposals found":state.dashboardMode==="deleted"?"Recycle bin is empty":"";
-    if(msg)grid.innerHTML=`<div class="empty-state compact-empty" style="grid-column:1/-1"><h3>${msg}</h3><p>${q?'Try a different project, client, or project number.':state.dashboardMode==='archived'?'Archived project families will appear here.':state.dashboardMode==='deleted'?'Deleted projects and revisions are retained here for Admin recovery.':'User proposals will appear here as they are created.'}</p></div>`;
+    const msg=q?"No matching projects":state.dashboardMode==="admin"?"No user proposals found":state.dashboardMode==="deleted"?"Recycle bin is empty":"";
+    if(msg)grid.innerHTML=`<div class="empty-state compact-empty" style="grid-column:1/-1"><h3>${msg}</h3><p>${q?'Try a different project, client, or project number.':state.dashboardMode==='deleted'?'Deleted projects and revisions are retained here for Admin recovery.':'User proposals will appear here as they are created.'}</p></div>`;
   }
   families.forEach(f=>{
     const p=f.latest, used=Object.values(p.divisions||{}).filter(d=>d.enabled&&d.text.trim()).length;
-    const familyArchived=f.versions.every(v=>v.archived);
     const familyDeleted=f.versions.every(v=>v.deletedByUser);
     const visibleVersions=(state.dashboardMode==="admin"||state.dashboardMode==="deleted")?f.versions:f.versions.filter(v=>!v.deletedByUser);
-    const status=[]; if(familyArchived)status.push('Archived'); if(p.locked)status.push('Locked'); if(f.versions.some(v=>v.accepted))status.push('Accepted'); if(familyDeleted)status.push(f.versions.every(v=>v.deletedScope==='project')?'Deleted project':'All versions deleted'); else if(f.versions.some(v=>v.deletedByUser))status.push('Deleted revision retained');
+    const status=[]; if(p.locked)status.push('Locked'); if(f.versions.some(v=>v.accepted))status.push('Accepted'); if(familyDeleted)status.push(f.versions.every(v=>v.deletedScope==='project')?'Deleted project':'All versions deleted'); else if(f.versions.some(v=>v.deletedByUser))status.push('Deleted revision retained');
     if(p.deletedByUser){status.push(`Deleted by ${p.deletedBy||'Unknown'}`);status.push(`Deleted ${fmtTime(p.deletedAt)}`);}
     const familyAccepted=f.versions.some(v=>v.accepted);
-    const card=document.createElement("article"); card.className=`project-card ${familyArchived?'archived-card':''} ${familyDeleted?'deleted-card':''} ${familyAccepted?'accepted-card':''}`;
+    const card=document.createElement("article"); card.className=`project-card ${familyDeleted?'deleted-card':''} ${familyAccepted?'accepted-card':''}`;
     const adminRecovery=(state.dashboardMode==="deleted"&&isAdmin());
     card.innerHTML=`
       <div class="project-card-head">
@@ -480,7 +589,7 @@ function renderProjects() {
             ${adminRecovery?`<button type="button" data-restore-family="${f.familyId}" data-owner="${esc(f.owner)}">Restore Project</button>`:`
               <button type="button" data-revise-project="${p.id}" data-owner="${esc(f.owner)}">Revise</button>
               <button type="button" data-kickoff-project="${p.id}" data-owner="${esc(f.owner)}">Kickoff</button>
-              <button type="button" data-archive-family="${f.familyId}" data-owner="${esc(f.owner)}">${familyArchived?'Unarchive':'Archive'}</button>
+              <button type="button" data-archive-family="${f.familyId}" data-owner="${esc(f.owner)}">Archive</button>
               <button type="button" data-lock-project="${p.id}" data-owner="${esc(f.owner)}">${p.locked?'Unlock':'Lock'}</button>
               <button type="button" class="menu-danger" data-delete-family="${f.familyId}" data-owner="${esc(f.owner)}">Delete Project</button>`}
           </div>
@@ -495,7 +604,7 @@ function renderProjects() {
   $$('[data-project-menu]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const panel=$(`[data-menu-panel="${CSS.escape(b.dataset.projectMenu)}"]`);$$('.project-menu').forEach(x=>{if(x!==panel)x.classList.add('hidden')});panel?.classList.toggle('hidden');}));
   $$('[data-revise-project]').forEach(b=>b.addEventListener('click',()=>reviseProject(b.dataset.reviseProject,b.dataset.owner)));
   $$('[data-kickoff-project]').forEach(b=>b.addEventListener('click',()=>openKickoff(b.dataset.kickoffProject,b.dataset.owner)));
-  $$('[data-archive-family]').forEach(b=>b.addEventListener('click',()=>toggleFamilyArchive(b.dataset.archiveFamily,b.dataset.owner)));
+  $$('[data-archive-family]').forEach(b=>b.addEventListener('click',()=>archiveFamilyToKoehn(b.dataset.archiveFamily,b.dataset.owner)));
   $$('[data-lock-project]').forEach(b=>b.addEventListener('click',()=>toggleProjectLock(b.dataset.lockProject,b.dataset.owner)));
   $$('[data-delete-family]').forEach(b=>b.addEventListener('click',()=>softDeleteFamily(b.dataset.deleteFamily,b.dataset.owner)));
   $$('[data-restore-family]').forEach(b=>b.addEventListener('click',()=>restoreFamily(b.dataset.restoreFamily,b.dataset.owner)));
@@ -520,8 +629,102 @@ function openKickoff(projectId, ownerUsername){
   $("#kickoffProjectNumber").textContent=current.projectNumber||"No project number";
   $("#kickoffVersion").textContent=versionLabel(current);
   $("#kickoffAcceptedDate").textContent=fmtDate((current.acceptedAt||acceptedAt).slice(0,10));
+  renderKickoffQuotes();
   refreshDashboardNav();
   toast("Project marked Accepted. Kickoff opened.");
+}
+
+
+function getCurrentKickoffProject(){
+  if(!state.currentKickoffProjectId)return null;
+  const owner=state.currentKickoffOwner||state.user?.username;
+  return getProjectsForUser(owner,{includeDeleted:true}).find(p=>p.id===state.currentKickoffProjectId)||null;
+}
+async function renderKickoffQuotes(){
+  const list=$("#kickoffQuoteList"); if(!list)return;
+  const p=getCurrentKickoffProject(); const quotes=p?.kickoff?.quotes||[];
+  if(!quotes.length){list.innerHTML='<div class="kickoff-quote-empty">No quote PDFs added yet. Uploaded PDFs will be converted to compact page snapshots and the original PDF will not be retained.</div>';return;}
+  list.innerHTML=quotes.map(q=>{
+    const savings=q.originalBytes>0?Math.max(0,Math.round((1-(q.compressedBytes||0)/q.originalBytes)*100)):0;
+    return `<div class="kickoff-quote-item"><div><strong>${esc(q.name||'Quote')}</strong><div class="kickoff-quote-meta">${Number(q.pageCount||q.pages?.length||0)} page${Number(q.pageCount||q.pages?.length||0)===1?'':'s'} · stored ${humanBytes(q.compressedBytes||0)}${q.originalBytes?` from ${humanBytes(q.originalBytes)}${savings?` · ${savings}% smaller`:''}`:''}</div></div><button type="button" class="kickoff-quote-remove" data-remove-kickoff-quote="${esc(q.id)}">Remove</button></div>`;
+  }).join('');
+  $$('[data-remove-kickoff-quote]',list).forEach(b=>b.addEventListener('click',()=>removeKickoffQuote(b.dataset.removeKickoffQuote)));
+}
+async function handleKickoffQuoteUpload(file){
+  if(!file)return;
+  if(file.type!=="application/pdf"&&!/\.pdf$/i.test(file.name||""))return toast("Please select a PDF quote.");
+  const p=getCurrentKickoffProject(); if(!p)return toast("Open a kickoff project first.");
+  const familyId=p.familyId||p.id, quoteId=uid();
+  const list=$("#kickoffQuoteList"), addBtn=$("#addKickoffQuoteBtn");
+  if(addBtn)addBtn.disabled=true;
+  if(list)list.innerHTML='<div class="kickoff-processing">Converting quote to compact page snapshots…</div>';
+  try{
+    const converted=await convertKickoffPdfToSnapshots(file,familyId,quoteId,(n,total)=>{if(list)list.innerHTML=`<div class="kickoff-processing">Converting page ${n} of ${total}…</div>`;});
+    const current=getCurrentKickoffProject(); if(!current)throw new Error("Kickoff project is no longer open.");
+    current.kickoff=current.kickoff||{quotes:[]}; current.kickoff.quotes=Array.isArray(current.kickoff.quotes)?current.kickoff.quotes:[];
+    current.kickoff.quotes.push({id:quoteId,name:file.name,pageCount:converted.pageCount,pages:converted.pageKeys,originalBytes:converted.originalBytes,compressedBytes:converted.compressedBytes,storageFormat:"compressed-page-snapshots",createdAt:nowIso()});
+    putProject(current,state.currentKickoffOwner||state.user.username);
+    toast(`Quote stored as ${converted.pageCount} compressed page snapshot${converted.pageCount===1?'':'s'}.`);
+  }catch(err){
+    try{const partial=(await getFamilyQuoteAssets(familyId)).filter(a=>a.quoteId===quoteId);await deleteQuoteAssetsByKeys(partial.map(a=>a.key));}catch{}
+    toast(err?.message||"Could not convert that quote PDF.");
+  }finally{if(addBtn)addBtn.disabled=false;await renderKickoffQuotes();}
+}
+async function removeKickoffQuote(quoteId){
+  const p=getCurrentKickoffProject(); if(!p)return;
+  const quote=(p.kickoff?.quotes||[]).find(q=>q.id===quoteId); if(!quote)return;
+  if(!confirm(`Remove ${quote.name||'this quote'} from the kickoff?`))return;
+  await deleteQuoteAssetsByKeys(quote.pages||[]);
+  p.kickoff.quotes=(p.kickoff.quotes||[]).filter(q=>q.id!==quoteId); putProject(p,state.currentKickoffOwner||state.user.username); await renderKickoffQuotes(); toast("Quote removed.");
+}
+async function archiveFamilyToKoehn(familyId,ownerUsername){
+  if(ownerKey(ownerUsername)!==ownerKey(state.user.username)&&!isAdmin())return toast("You can only archive your own projects.");
+  const all=getProjectsForUser(ownerUsername,{includeDeleted:true});
+  const family=all.filter(p=>(p.familyId||p.id)===familyId); if(!family.length)return toast("Project not found.");
+  const latest=[...family].sort((a,b)=>(b.version||0)-(a.version||0))[0];
+  const ok=confirm(`Archive ${latest.projectName||'this project'}?\n\nA .koehn archive file will download, then this project and its kickoff quote snapshots will be removed from the active workspace. Import the .koehn file later to restore it.`);
+  if(!ok)return;
+  const menuBtn=$(`[data-archive-family="${CSS.escape(familyId)}"]`); if(menuBtn)menuBtn.disabled=true;
+  try{
+    const assets=await getFamilyQuoteAssets(familyId);
+    const packedAssets=[];
+    for(let i=0;i<assets.length;i++){
+      const a=assets[i]; packedAssets.push({key:a.key,familyId:a.familyId,quoteId:a.quoteId,pageIndex:a.pageIndex,name:a.name,mime:a.mime,width:a.width,height:a.height,createdAt:a.createdAt,data:await blobToBase64(a.blob)});
+    }
+    const terms=[...new Set(family.map(p=>p.disclaimerId).filter(Boolean))].map(id=>getDisclaimer(id)).filter(Boolean);
+    const payload={schema:"koehn-project-archive",version:1,createdAt:nowIso(),ownerUsername,projectName:latest.projectName||"Project",familyId,projects:family,termsAndConditions:terms,assets:packedAssets,assetPolicy:{sourcePdfsRetained:false,quoteStorage:"compressed-page-snapshots"}};
+    const archiveBlob=await gzipJsonBlob(payload);
+    const fname=`${safeFilePart(latest.projectNumber||latest.projectName||'Project')}_${safeFilePart(latest.projectName||'Archive')}.koehn`;
+    downloadBlob(archiveBlob,fname);
+    // Once the portable project archive is constructed successfully, remove the
+    // active workspace copy and its local quote-page assets.
+    saveProjectsForUser(ownerUsername,all.filter(p=>(p.familyId||p.id)!==familyId));
+    await deleteFamilyQuoteAssets(familyId);
+    refreshDashboardNav();renderProjects();toast(`Archived to ${fname}.`);
+  }catch(err){toast(err?.message||"Could not create the project archive.");}
+  finally{if(menuBtn)menuBtn.disabled=false;}
+}
+async function importKoehnProjectArchive(file){
+  if(!file)return;
+  try{
+    const payload=await readKoehnArchiveFile(file);
+    const originalOwner=String(payload.ownerUsername||"");
+    let targetOwner=state.user.username;
+    if(isAdmin()&&originalOwner&&getUserRecord(originalOwner))targetOwner=originalOwner;
+    const incoming=payload.projects.map(raw=>normalizeProject({...raw,ownerUsername:targetOwner,archived:false},targetOwner));
+    const familyId=incoming[0]?.familyId||incoming[0]?.id; if(!familyId)throw new Error("Archive has no project family ID.");
+    let existing=getProjectsForUser(targetOwner,{includeDeleted:true});
+    const collision=existing.some(p=>(p.familyId||p.id)===familyId);
+    if(collision&&!confirm("This project already exists in the workspace. Replace the existing copy with the archived copy?"))return;
+    if(collision){existing=existing.filter(p=>(p.familyId||p.id)!==familyId);await deleteFamilyQuoteAssets(familyId);}
+    (payload.termsAndConditions||[]).forEach(term=>{if(term?.id&&!getDisclaimers().some(d=>d.id===term.id)){const allTerms=getDisclaimers();allTerms.push(term);saveDisclaimers(allTerms);}});
+    saveProjectsForUser(targetOwner,[...incoming,...existing]);
+    for(const a of payload.assets||[]){
+      if(!a?.key||!a?.data)continue;
+      await putQuoteAsset({key:a.key,familyId:a.familyId||familyId,quoteId:a.quoteId,pageIndex:a.pageIndex,name:a.name,mime:a.mime||"image/webp",blob:base64ToBlob(a.data,a.mime||"image/webp"),width:a.width,height:a.height,createdAt:a.createdAt||nowIso()});
+    }
+    state.dashboardMode="active";refreshDashboardNav();renderProjects();toast(`Imported ${payload.projectName||'project'} from .koehn archive.`);
+  }catch(err){toast(err?.message||"Could not import that .koehn archive.");}
 }
 
 function reviseProject(projectId, ownerUsername){
@@ -538,13 +741,6 @@ function reviseProject(projectId, ownerUsername){
   const all=getProjectsForUser(ownerUsername,{includeDeleted:true}).map(p=>p.familyId===revised.familyId?{...p,archived:false}:p);
   all.unshift(revised); saveProjectsForUser(ownerUsername,all);
   refreshDashboardNav(); toast(`${versionLabel(revised)} created from ${versionLabel(sourceLatest)}.`); openProject(revised.id,ownerUsername);
-}
-function toggleFamilyArchive(familyId,ownerUsername){
-  if(ownerKey(ownerUsername)!==ownerKey(state.user.username)&&!isAdmin())return;
-  const all=getProjectsForUser(ownerUsername,{includeDeleted:true}); const family=all.filter(p=>p.familyId===familyId); if(!family.length)return;
-  const archive=!family.every(p=>p.archived);
-  const next=all.map(p=>p.familyId===familyId?{...p,archived:archive,updatedAt:nowIso()}:p); saveProjectsForUser(ownerUsername,next);
-  refreshDashboardNav(); renderProjects(); toast(archive?"Proposal archived.":"Proposal restored to Active.");
 }
 function toggleProjectLock(projectId,ownerUsername){
   if(ownerKey(ownerUsername)!==ownerKey(state.user.username)&&!isAdmin())return;
@@ -1699,6 +1895,10 @@ $("#adminPanelBtn").addEventListener("click",openAdminDialog);$("#adminPopoverBt
 $("#closeAdminDialog").addEventListener("click",closeAdminDialog);$("#newDisclaimerBtn").addEventListener("click",newDisclaimer);$("#saveDisclaimerBtn").addEventListener("click",saveDisclaimerFromAdmin);$("#deleteDisclaimerBtn").addEventListener("click",deleteDisclaimerFromAdmin);$$('.admin-tab-btn').forEach(b=>b.addEventListener('click',()=>activateAdminTab(b.dataset.adminTab)));
 $("#adminDownloadBackupBtn").addEventListener("click",downloadDataBackup);$("#adminRestoreBackupBtn").addEventListener("click",triggerRestoreBackup);
 $("#newProjectBtn").addEventListener("click",openNewProjectDialog);$("#emptyNewProjectBtn").addEventListener("click",openNewProjectDialog);$("#newProjectForm").addEventListener("submit",handleNewProject);$("#closeNewProjectDialog")?.addEventListener("click",()=>$("#newProjectDialog").close());$("#cancelNewProjectDialog")?.addEventListener("click",()=>$("#newProjectDialog").close());$("#newProjectDialog")?.addEventListener("click",e=>{if(e.target===$("#newProjectDialog"))$("#newProjectDialog").close();});$("#projectSearch").addEventListener("input",renderProjects);$("#projectSort").addEventListener("change",renderProjects);$$('.project-nav-btn').forEach(b=>b.addEventListener('click',()=>setDashboardMode(b.dataset.projectView)));$("#adminUserFilter").addEventListener("change",()=>{state.adminUserFilter=$("#adminUserFilter").value;renderProjects();});
+$("#importProjectArchiveBtn")?.addEventListener("click",()=>$("#projectArchiveFileInput")?.click());
+$("#projectArchiveFileInput")?.addEventListener("change",async e=>{const file=e.target.files?.[0];e.target.value="";if(file)await importKoehnProjectArchive(file);});
+$("#addKickoffQuoteBtn")?.addEventListener("click",()=>$("#kickoffQuoteFileInput")?.click());
+$("#kickoffQuoteFileInput")?.addEventListener("change",async e=>{const file=e.target.files?.[0];e.target.value="";if(file)await handleKickoffQuoteUpload(file);});
 $("#backToDashboard").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#sidebarBack").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#kickoffBackBtn").addEventListener("click",()=>enterDashboard());$("#exportPdfBtn").addEventListener("click",exportPdf);$("#deleteProjectBtn").addEventListener("click",handleVersionDeleteRestore);
 $("#divisionSearch").addEventListener("input",filterDivisionNav);$("#expandAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.add('open')));$("#collapseAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.remove('open')));
 $("#previewToggle").addEventListener("click",()=>togglePreview());$("#closePreviewBtn").addEventListener("click",()=>togglePreview(false));$$('.tab-btn').forEach(b=>b.addEventListener('click',()=>activateTab(b.dataset.tab)));
