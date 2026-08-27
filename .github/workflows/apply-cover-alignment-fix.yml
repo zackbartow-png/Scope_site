@@ -1,0 +1,38 @@
+name: Apply cover alignment fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-cover-alignment-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Left-align proposal cover values
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('app.js')
+          text = path.read_text(encoding='utf-8')
+          old = "const coverAlign=proposalType==='standard'?'center':'left';"
+          new = "const coverAlign='left';"
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'Expected exactly one cover alignment rule, found {count}.')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+      - name: Remove temporary workflow and commit fix
+        run: |
+          rm .github/workflows/apply-cover-alignment-fix.yml
+          git config user.name "Scope Builder maintenance"
+          git config user.email "actions@users.noreply.github.com"
+          git add app.js .github/workflows/apply-cover-alignment-fix.yml
+          git commit -m "Align proposal cover values with icons"
+          git push origin HEAD:main
