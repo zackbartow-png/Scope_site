@@ -157,6 +157,9 @@ function base64ToBlob(base64,mime="application/octet-stream"){
 function humanBytes(bytes=0){
   const n=Number(bytes)||0; if(n<1024)return `${n} B`; if(n<1024*1024)return `${(n/1024).toFixed(1)} KB`; return `${(n/(1024*1024)).toFixed(n>=10*1024*1024?1:2)} MB`;
 }
+function cleanPdfFilenameText(value=""){
+  return String(value||"").replace(/[()\-]/g," ").replace(/[\\/:*?"<>|]/g," ").replace(/\s+/g," ").trim();
+}
 function canvasToCompressedBlob(canvas){
   return new Promise(resolve=>{
     canvas.toBlob(b=>{if(b)return resolve({blob:b,mime:"image/webp"});canvas.toBlob(j=>resolve({blob:j,mime:"image/jpeg"}),"image/jpeg",0.88);},"image/webp",0.84);
@@ -384,6 +387,7 @@ function normalizeProject(p, ownerUsername="") {
   p.kickoff = {...(p.kickoff||{})};
   p.kickoff.quotes = Array.isArray(p.kickoff.quotes) ? p.kickoff.quotes.map(q=>({...q,pages:Array.isArray(q.pages)?q.pages:[],divisionId:q.divisionId||null})) : [];
   p.kickoff.divisions = Array.isArray(p.kickoff.divisions) ? p.kickoff.divisions.map(d=>({id:d.id||uid(),number:String(d.number||""),description:String(d.description||""),subcontractor:String(d.subcontractor||""),budget:String(d.budget||""),notesHtml:sanitizeScopeHtml(d.notesHtml||plainTextToRichHtml(d.notes||"")),sourceDivisionNumber:d.sourceDivisionNumber||"",proposalReferenceNumber:d.proposalReferenceNumber||d.sourceDivisionNumber||""})) : [];
+  p.kickoff.pageOrder = Array.isArray(p.kickoff.pageOrder) ? p.kickoff.pageOrder.map(String) : [];
   p.kickoff.projectInfo = {...(p.kickoff.projectInfo||{})};
   p.kickoff.projectInfo.maps = {enabled:false,wide:true,close:true,street:false,wideZoom:12,closeZoom:17,streetHeading:0,streetPitch:0,streetFov:90,wideSnapshot:"",closeSnapshot:"",streetSnapshot:"",...(p.kickoff.projectInfo.maps||{})};
   p.ownerUsername = p.ownerUsername || ownerUsername || "";
@@ -1082,6 +1086,78 @@ function proposalDivisionBudget(p,n){
   const basic=String(p.summary?.basicDivisions?.[n]?.amount||"").trim(); if(basic)return basic;
   return "";
 }
+function kickoffPageToken(type,id){return `${type}:${id}`;}
+function defaultKickoffPageOrder(k){
+  const out=[];
+  (k.divisions||[]).forEach(d=>{
+    out.push(kickoffPageToken('division',d.id));
+    (k.quotes||[]).filter(q=>q.divisionId===d.id).forEach(q=>out.push(kickoffPageToken('quote',q.id)));
+  });
+  (k.quotes||[]).filter(q=>!q.divisionId).forEach(q=>out.push(kickoffPageToken('quote',q.id)));
+  return out;
+}
+function normalizedKickoffPageOrder(k){
+  const valid=new Set([
+    ...(k.divisions||[]).map(d=>kickoffPageToken('division',d.id)),
+    ...(k.quotes||[]).map(q=>kickoffPageToken('quote',q.id))
+  ]);
+  const out=[],seen=new Set();
+  (Array.isArray(k.pageOrder)?k.pageOrder:[]).forEach(token=>{
+    token=String(token||'');
+    if(valid.has(token)&&!seen.has(token)){out.push(token);seen.add(token);}
+  });
+  defaultKickoffPageOrder(k).forEach(token=>{if(valid.has(token)&&!seen.has(token)){out.push(token);seen.add(token);}});
+  return out;
+}
+function applyKickoffPageOrder(k,order,{reassociateQuotes=true}={}){
+  const validDiv=new Map((k.divisions||[]).map(d=>[d.id,d]));
+  const validQuote=new Map((k.quotes||[]).map(q=>[q.id,q]));
+  const cleaned=[],seen=new Set();
+  (order||[]).forEach(token=>{
+    token=String(token||'');
+    const [type,id]=token.split(':');
+    const valid=type==='division'?validDiv.has(id):type==='quote'?validQuote.has(id):false;
+    if(valid&&!seen.has(token)){cleaned.push(token);seen.add(token);}
+  });
+  defaultKickoffPageOrder(k).forEach(token=>{if(!seen.has(token)){cleaned.push(token);seen.add(token);}});
+  k.pageOrder=cleaned;
+  const orderedDivisions=cleaned.filter(t=>t.startsWith('division:')).map(t=>validDiv.get(t.slice(9))).filter(Boolean);
+  const orderedIds=new Set(orderedDivisions.map(d=>d.id));
+  k.divisions=[...orderedDivisions,...(k.divisions||[]).filter(d=>!orderedIds.has(d.id))];
+  if(reassociateQuotes){
+    let currentDivisionId=null;
+    cleaned.forEach(token=>{
+      if(token.startsWith('division:'))currentDivisionId=token.slice(9);
+      else if(token.startsWith('quote:')){const q=validQuote.get(token.slice(6));if(q)q.divisionId=currentDivisionId||null;}
+    });
+  }
+  return cleaned;
+}
+function insertKickoffPageToken(k,token,afterDivisionId=null){
+  const order=normalizedKickoffPageOrder(k).filter(t=>t!==token);
+  if(afterDivisionId){
+    const divToken=kickoffPageToken('division',afterDivisionId);
+    let idx=order.indexOf(divToken);
+    if(idx>=0){
+      idx++;
+      while(idx<order.length&&order[idx].startsWith('quote:'))idx++;
+      order.splice(idx,0,token);
+    }else order.push(token);
+  }else order.push(token);
+  applyKickoffPageOrder(k,order,{reassociateQuotes:false});
+}
+function moveKickoffPageToken(token,delta){
+  if(document.querySelector('.kickoff-division-card'))collectKickoffDivisionsFromDom();
+  const p=getCurrentKickoffProject();if(!p)return;
+  mutateKickoff(k=>{
+    const order=normalizedKickoffPageOrder(k),i=order.indexOf(token),j=i+delta;
+    if(i<0||j<0||j>=order.length)return;
+    [order[i],order[j]]=[order[j],order[i]];
+    applyKickoffPageOrder(k,order,{reassociateQuotes:false});
+  });
+  renderKickoffDivisions();renderKickoffPageOrder();renderKickoffQuotes();scheduleKickoffPdfPreview(220);
+}
+
 function addKickoffDivision(sourceNumber=""){
   const p=getCurrentKickoffProject(); if(!p)return;
   let division={id:uid(),number:"",description:"",subcontractor:"",budget:"",notesHtml:"",sourceDivisionNumber:"",proposalReferenceNumber:""};
@@ -1089,7 +1165,7 @@ function addKickoffDivision(sourceNumber=""){
     const source=p.divisions[sourceNumber];
     division={...division,number:sourceNumber,description:source.title||"",budget:proposalDivisionBudget(p,sourceNumber),notesHtml:normalizedDivisionRichHtml(source),sourceDivisionNumber:sourceNumber,proposalReferenceNumber:sourceNumber};
   }
-  mutateKickoff(k=>{k.divisions=Array.isArray(k.divisions)?k.divisions:[];k.divisions.push(division);});
+  mutateKickoff(k=>{k.divisions=Array.isArray(k.divisions)?k.divisions:[];k.divisions.push(division);insertKickoffPageToken(k,kickoffPageToken('division',division.id),null);});
   renderKickoffDivisions();renderKickoffPageOrder();activateKickoffTab('divisions');
   requestAnimationFrame(()=>$( `[data-kickoff-division-id="${CSS.escape(division.id)}"] input[data-kickoff-division-field="number"]` )?.focus());
 }
@@ -1106,7 +1182,7 @@ function collectKickoffDivisionsFromDom(){
   renderKickoffPageOrder();
 }
 function moveKickoffDivision(id,delta){
-  mutateKickoff(k=>{const arr=k.divisions||[],i=arr.findIndex(d=>d.id===id),j=i+delta;if(i<0||j<0||j>=arr.length)return;[arr[i],arr[j]]=[arr[j],arr[i]];});
+  mutateKickoff(k=>{const arr=k.divisions||[],i=arr.findIndex(d=>d.id===id),j=i+delta;if(i<0||j<0||j>=arr.length)return;[arr[i],arr[j]]=[arr[j],arr[i]];k.pageOrder=defaultKickoffPageOrder(k);});
   renderKickoffDivisions();renderKickoffPageOrder();scheduleKickoffPdfPreview(250);
 }
 function removeKickoffDivision(id){
@@ -1115,7 +1191,7 @@ function removeKickoffDivision(id){
   const linked=(p.kickoff.quotes||[]).filter(q=>q.divisionId===id);
   if(linked.length)return toast("Remove or reassign the quote PDFs attached to this division first.");
   if(!confirm(`Remove ${d.number||''} ${d.description||'this division'} from the kickoff?`))return;
-  mutateKickoff(k=>k.divisions=(k.divisions||[]).filter(x=>x.id!==id));renderKickoffDivisions();renderKickoffPageOrder();scheduleKickoffPdfPreview(250);
+  mutateKickoff(k=>{k.divisions=(k.divisions||[]).filter(x=>x.id!==id);k.pageOrder=normalizedKickoffPageOrder(k);});renderKickoffDivisions();renderKickoffPageOrder();scheduleKickoffPdfPreview(250);
 }
 function kickoffFormatSelection(editor,command){
   if(!editor)return;editor.focus();document.execCommand(command,false,null);
@@ -1195,35 +1271,47 @@ function renderKickoffDivisions(){
 function renderKickoffPageOrder(){
   const wrap=$("#kickoffPageOrder"); if(!wrap)return;
   const p=getCurrentKickoffProject(); if(!p)return;
-  const rows=[]; let page=1;
-  rows.push({page:page++,title:'Project Kickoff Overview',sub:'Project information'});
-  if(p.kickoff.projectInfo?.maps?.enabled){
-    const maps=p.kickoff.projectInfo.maps||{};
+  const k=p.kickoff||{},rows=[]; let page=1;
+  rows.push({page:page++,title:'Project Kickoff Overview',sub:'Project information',fixed:true});
+  if(k.projectInfo?.maps?.enabled){
+    const maps=k.projectInfo.maps||{};
     if(maps.wide||maps.close){
       const names=[maps.wide?'Wide View':'',maps.close?'Close-Up View':''].filter(Boolean).join(' + ');
-      rows.push({page:page++,title:`Project Location – ${names}`,sub:'Map screenshots'});
+      rows.push({page:page++,title:`Project Location – ${names}`,sub:'Map screenshots',fixed:true});
     }
-    if(maps.street)rows.push({page:page++,title:'Project Location – Street View',sub:'Screenshot'});
+    if(maps.street)rows.push({page:page++,title:'Project Location – Street View',sub:'Screenshot',fixed:true});
   }
-  (p.kickoff.divisions||[]).forEach(d=>{
-    rows.push({page:page++,title:`${d.number?d.number+' - ':''}${d.description||'Untitled Division'}`,sub:`Division page · ${d.subcontractor||'No subcontractor entered'}`});
-    (p.kickoff.quotes||[]).filter(q=>q.divisionId===d.id).forEach(q=>{rows.push({page:page,title:q.name||'Quote',sub:`Quote PDF · ${q.pageCount||q.pages?.length||0} page(s)`});page+=Number(q.pageCount||q.pages?.length||1);});
+  const divisions=new Map((k.divisions||[]).map(d=>[d.id,d]));
+  const quotes=new Map((k.quotes||[]).map(q=>[q.id,q]));
+  const order=normalizedKickoffPageOrder(k);
+  order.forEach((token,index)=>{
+    if(token.startsWith('division:')){
+      const d=divisions.get(token.slice(9));if(!d)return;
+      rows.push({page:page++,title:`${d.number?d.number+' - ':''}${d.description||'Untitled Division'}`,sub:`Division page · ${d.subcontractor||'No subcontractor entered'}`,token,type:'division',index});
+    }else if(token.startsWith('quote:')){
+      const q=quotes.get(token.slice(6));if(!q)return;
+      const count=Math.max(1,Number(q.pageCount||q.pages?.length||1));
+      const startPage=page,endPage=page+count-1;
+      const d=divisions.get(q.divisionId);
+      rows.push({page:startPage,pageLabel:count>1?`${startPage}–${endPage}`:String(startPage),title:q.name||'Quote',sub:`Quote PDF · ${count} page${count===1?'':'s'}${d?` · linked to ${d.number?d.number+' - ':''}${d.description||'Division'}`:' · unassigned'}`,token,type:'quote',quoteId:q.id,index});
+      page+=count;
+    }
   });
-  (p.kickoff.quotes||[]).filter(q=>!q.divisionId).forEach(q=>{rows.push({page:page,title:q.name||'Quote',sub:`Unassigned quote · ${q.pageCount||q.pages?.length||0} page(s)`});page+=Number(q.pageCount||q.pages?.length||1);});
-  wrap.innerHTML=rows.map(r=>`<div class="kickoff-page-order-row"><span class="kickoff-page-order-index">${r.page}</span><div><strong>${esc(r.title)}</strong><span>${esc(r.sub)}</span></div></div>`).join('');
+  wrap.innerHTML=rows.map(r=>{
+    const pageLabel=r.pageLabel||String(r.page);
+    if(r.fixed)return `<div class="kickoff-page-order-row fixed"><span class="kickoff-page-order-index">${esc(pageLabel)}</span><div class="kickoff-page-order-copy"><strong>${esc(r.title)}</strong><span>${esc(r.sub)}</span></div><div class="kickoff-page-order-fixed">Fixed</div></div>`;
+    const first=r.index===0,last=r.index===order.length-1;
+    return `<div class="kickoff-page-order-row" data-kickoff-page-token="${esc(r.token)}"><span class="kickoff-page-order-index">${esc(pageLabel)}</span><div class="kickoff-page-order-copy"><strong>${esc(r.title)}</strong><span>${esc(r.sub)}</span></div><div class="kickoff-page-order-actions"><button class="btn btn-secondary btn-small" type="button" data-kickoff-page-up="${esc(r.token)}" ${first?'disabled':''} title="Move up">↑</button><button class="btn btn-secondary btn-small" type="button" data-kickoff-page-down="${esc(r.token)}" ${last?'disabled':''} title="Move down">↓</button>${r.type==='quote'?`<button class="btn btn-danger btn-small kickoff-page-remove-pdf" type="button" data-remove-kickoff-quote="${esc(r.quoteId)}">Remove PDF</button>`:''}</div></div>`;
+  }).join('');
+  $$('[data-kickoff-page-up]',wrap).forEach(b=>b.addEventListener('click',()=>moveKickoffPageToken(b.dataset.kickoffPageUp,-1)));
+  $$('[data-kickoff-page-down]',wrap).forEach(b=>b.addEventListener('click',()=>moveKickoffPageToken(b.dataset.kickoffPageDown,1)));
+  $$('[data-remove-kickoff-quote]',wrap).forEach(b=>b.addEventListener('click',()=>removeKickoffQuote(b.dataset.removeKickoffQuote)));
 }
 async function renderKickoffQuotes(){
+  // Quote PDFs are managed inline in Quotes & Page Order. Keep this element only
+  // as a lightweight upload/progress area so there is not a duplicate quote list.
   const list=$("#kickoffQuoteList"); if(!list)return;
-  const p=getCurrentKickoffProject(); const quotes=p?.kickoff?.quotes||[];
-  if(!quotes.length){list.innerHTML='<div class="kickoff-quote-empty">No quote PDFs added yet. Uploaded PDFs are converted to compact page snapshots and the original PDF is not retained.</div>';return;}
-  const divisions=new Map((p.kickoff.divisions||[]).map(d=>[d.id,d]));
-  list.innerHTML=quotes.map(q=>{
-    const savings=q.originalBytes>0?Math.max(0,Math.round((1-(q.compressedBytes||0)/q.originalBytes)*100)):0;
-    const d=divisions.get(q.divisionId);
-    const where=d?`After ${d.number?d.number+' - ':''}${d.description||'Division'}`:'Unassigned / end of book';
-    return `<div class="kickoff-quote-item"><div><strong>${esc(q.name||'Quote')}</strong><div class="kickoff-quote-meta"><span class="quote-association">${esc(where)}</span> · ${Number(q.pageCount||q.pages?.length||0)} page${Number(q.pageCount||q.pages?.length||0)===1?'':'s'} · stored ${humanBytes(q.compressedBytes||0)}${q.originalBytes?` from ${humanBytes(q.originalBytes)}${savings?` · ${savings}% smaller`:''}`:''}</div></div><button type="button" class="kickoff-quote-remove" data-remove-kickoff-quote="${esc(q.id)}">Remove</button></div>`;
-  }).join('');
-  $$('[data-remove-kickoff-quote]',list).forEach(b=>b.addEventListener('click',()=>removeKickoffQuote(b.dataset.removeKickoffQuote)));
+  if(!list.classList.contains('kickoff-processing-active'))list.innerHTML='';
 }
 async function handleKickoffQuoteUpload(file){
   if(!file)return;
@@ -1236,7 +1324,7 @@ async function handleKickoffQuoteUpload(file){
   if(list)list.innerHTML='<div class="kickoff-processing">Converting quote to compact page snapshots…</div>';
   try{
     const converted=await convertKickoffPdfToSnapshots(file,familyId,quoteId,(n,total)=>{if(list)list.innerHTML=`<div class="kickoff-processing">Converting page ${n} of ${total}…</div>`;});
-    mutateKickoff(k=>{k.quotes=Array.isArray(k.quotes)?k.quotes:[];k.quotes.push({id:quoteId,name:file.name,pageCount:converted.pageCount,pages:converted.pageKeys,originalBytes:converted.originalBytes,compressedBytes:converted.compressedBytes,storageFormat:"compressed-page-snapshots",divisionId:targetDivisionId,createdAt:nowIso()});});
+    mutateKickoff(k=>{k.quotes=Array.isArray(k.quotes)?k.quotes:[];k.quotes.push({id:quoteId,name:file.name,pageCount:converted.pageCount,pages:converted.pageKeys,originalBytes:converted.originalBytes,compressedBytes:converted.compressedBytes,storageFormat:"compressed-page-snapshots",divisionId:targetDivisionId,createdAt:nowIso()});insertKickoffPageToken(k,kickoffPageToken('quote',quoteId),targetDivisionId);});
     toast(`Quote stored as ${converted.pageCount} compressed page snapshot${converted.pageCount===1?'':'s'}.`);
   }catch(err){
     try{const partial=(await getFamilyQuoteAssets(familyId)).filter(a=>a.quoteId===quoteId);await deleteQuoteAssetsByKeys(partial.map(a=>a.key));}catch{}
@@ -1248,7 +1336,7 @@ async function removeKickoffQuote(quoteId){
   const quote=(p.kickoff?.quotes||[]).find(q=>q.id===quoteId); if(!quote)return;
   if(!confirm(`Remove ${quote.name||'this quote'} from the kickoff?`))return;
   await deleteQuoteAssetsByKeys(quote.pages||[]);
-  mutateKickoff(k=>k.quotes=(k.quotes||[]).filter(q=>q.id!==quoteId));await renderKickoffQuotes();renderKickoffPageOrder();scheduleKickoffPdfPreview(250);toast("Quote removed.");
+  mutateKickoff(k=>{k.quotes=(k.quotes||[]).filter(q=>q.id!==quoteId);k.pageOrder=normalizedKickoffPageOrder(k);});await renderKickoffQuotes();renderKickoffPageOrder();scheduleKickoffPdfPreview(250);toast("Quote removed.");
 }
 
 async function archiveFamilyToKoehn(familyId,ownerUsername){
@@ -2174,14 +2262,18 @@ async function buildKickoffPdf(options={}){
       }catch{doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);doc.text('Stored quote snapshot could not be rendered.',contentX,qy+.3);}
     }
   }
-  for(const d of k.divisions||[]){drawDivisionNotes(d);for(const q of (k.quotes||[]).filter(q=>q.divisionId===d.id))await addQuotePages(q);}
-  for(const q of (k.quotes||[]).filter(q=>!q.divisionId))await addQuotePages(q);
+  const kickoffDivisionsById=new Map((k.divisions||[]).map(d=>[d.id,d]));
+  const kickoffQuotesById=new Map((k.quotes||[]).map(q=>[q.id,q]));
+  for(const token of normalizedKickoffPageOrder(k)){
+    if(token.startsWith('division:')){const d=kickoffDivisionsById.get(token.slice(9));if(d)drawDivisionNotes(d);}
+    else if(token.startsWith('quote:')){const q=kickoffQuotesById.get(token.slice(6));if(q)await addQuotePages(q);}
+  }
 
   // Add the familiar page numbering after the final page count is known.
   const total=doc.getNumberOfPages();
   for(let i=1;i<=total;i++){doc.setPage(i);doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...text);doc.text(`PAGE ${i} OF ${total}`,pageW-right,10.62,{align:'right'});doc.setDrawColor(...orange);doc.setLineWidth(.022);doc.line(pageW-right-.50,10.73,pageW-right,10.73);}
   if(previewOnly)return doc;
-  const safe=safeFilePart(p.projectNumber||p.projectName||'Project');doc.save(`${safe}_Kickoff.pdf`);toast('Kickoff PDF exported.');return doc;
+  const kickoffName=cleanPdfFilenameText(p.projectName||'Project');doc.save(`${kickoffName||'Project'} Kickoff.pdf`);toast('Kickoff PDF exported.');return doc;
 }
 function scheduleKickoffPdfPreview(delay=520){
   clearTimeout(state.kickoffPreviewTimer);
@@ -2459,6 +2551,11 @@ async function exportPdf(options={}) {
         current.push({...entryBase,items:[remaining[0]],cont});pages.push(current);current=[];y=topY;remaining=remaining.slice(1);cont=true;
       }
     };
+    const introText=String(p.introNote||'').replace(/\r/g,'');
+    if(introText.trim()){
+      const introItems=introText.split('\n').map(line=>line.trim()?{text:line,runs:[],bullet:false,indentIn:0}:{text:'',runs:[],bullet:false,blank:true,indentIn:0});
+      addSplittable({type:'intro',title:'PROPOSAL NOTES'},introItems,{fontSize:minPdfFont,leading:bodyLeading});
+    }
     active.forEach(d=>addSplittable({type:'division',number:d.number,title:d.title},scopeItemsFromRichHtml(d.richText,d.text),{fontSize:bodyFont,leading:bodyLeading}));
     const extras=[
       {title:'CLARIFICATIONS',value:p.clarifications,rich:p.clarificationsRichText,on:p.sectionEnabled?.clarifications},
@@ -2703,7 +2800,7 @@ async function exportPdf(options={}) {
   drawCover();
   layout.forEach((entries,idx)=>{
     doc.addPage('letter','portrait');const pageNum=idx+2;drawInteriorHeader(pageNum,totalPages);let y=topY;
-    entries.forEach(entry=>{if(entry.type==='division')y=drawDivisionCard(entry,y);else if(entry.type==='simple'||entry.type==='alternate')y=drawSimpleCard(entry,y);else if(entry.type==='selections')y=drawSelections(y);else if(entry.type==='closing')drawClosing(y);});
+    entries.forEach(entry=>{if(entry.type==='division')y=drawDivisionCard(entry,y);else if(entry.type==='simple'||entry.type==='alternate'||entry.type==='intro')y=drawSimpleCard(entry,y);else if(entry.type==='selections')y=drawSelections(y);else if(entry.type==='closing')drawClosing(y);});
   });
   summaryPages.forEach((pageData,idx)=>{
     doc.addPage('letter','portrait');const pageNum=2+layout.length+idx;
@@ -2711,9 +2808,8 @@ async function exportPdf(options={}) {
   });
 
   if(previewOnly)return doc;
-  const safe=(p.projectName||'Scope').replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'');
-  const versionSuffix=rev?`_${rev}`:'';
-  doc.save(`${safe||'Scope'}_Proposal${versionSuffix}.pdf`);
+  const proposalNumber=cleanPdfFilenameText(p.projectNumber||'');
+  doc.save(`Proposal${proposalNumber?` ${proposalNumber}`:''}.pdf`);
   setSaveStatus("All changes saved");toast("PDF exported.");
 }
 

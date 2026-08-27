@@ -150,7 +150,6 @@
           <button class="kickoff-tab-btn active" data-kickoff-tab="info" type="button">Project Info</button>
           <button class="kickoff-tab-btn" data-kickoff-tab="divisions" type="button">Divisions</button>
           <button class="kickoff-tab-btn" data-kickoff-tab="documents" type="button">Quotes &amp; Pages</button>
-          <button class="kickoff-tab-btn" data-kickoff-tab="preview" type="button">PDF Preview</button>
         </div>
 
         <section id="kickoffInfoTab" class="kickoff-tab-panel active">
@@ -223,21 +222,14 @@
 
         <section id="kickoffDocumentsTab" class="kickoff-tab-panel">
           <div class="kickoff-section-heading kickoff-section-heading-split">
-            <div><h2>Quotes &amp; Page Order</h2><p>Uploaded quote PDFs are stored as compact page snapshots. Quotes attached to a division print immediately after that division page.</p></div>
+            <div><h2>Quotes &amp; Page Order</h2><p>Reorder division and quote pages here. Division order automatically follows on the Divisions tab and in the exported kickoff PDF.</p></div>
             <button id="addKickoffQuoteBtn" class="btn btn-primary" type="button">+ Add Unassigned Quote PDF</button>
           </div>
           <div id="kickoffPageOrder" class="kickoff-page-order"></div>
           <div id="kickoffQuoteList" class="kickoff-quote-list"></div>
         </section>
 
-        <section id="kickoffPreviewTab" class="kickoff-tab-panel">
-          <div class="kickoff-section-heading kickoff-section-heading-split">
-            <div><h2>Kickoff PDF Preview</h2><p>US Letter preview of the current kickoff book, including division pages and uploaded quote snapshots.</p></div>
-            <button id="refreshKickoffPreviewBtn" class="btn btn-secondary" type="button">Refresh Preview</button>
-          </div>
-          <div id="kickoffPdfPreviewStatus" class="kickoff-pdf-preview-status">Building kickoff preview…</div>
-          <div id="kickoffPdfPreviewPages" class="kickoff-pdf-preview-pages"></div>
-        </section>
+
           </div>
           <aside id="kickoffLivePreviewPane" class="kickoff-live-preview-pane" aria-label="Live kickoff PDF preview">
             <div class="kickoff-live-preview-head">
