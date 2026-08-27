@@ -24,24 +24,25 @@
     </div>
     <div class="auth-form-panel">
       <div class="auth-card">
-        <div class="prototype-badge">Prototype · local account storage</div>
+        <div class="prototype-badge" id="authBackendBadge">Secure company login</div>
         <h2 id="authTitle">Sign in</h2>
         <p id="authSubtitle">Continue working on saved scope packages.</p>
         <form id="authForm">
-          <label>Username
-            <input id="authUsername" autocomplete="username" required placeholder="Enter username" />
+          <label>Email
+            <input id="authUsername" type="email" autocomplete="username" required placeholder="name@company.com" />
           </label>
           <label>Password
             <input id="authPassword" type="password" autocomplete="current-password" required placeholder="Enter password" />
           </label>
           <button class="btn btn-primary btn-full" type="submit" id="authSubmit">Sign in</button>
         </form>
-        <button class="text-btn" id="toggleAuthMode" type="button">Create an account</button>
+        <button class="text-btn hidden" id="toggleAuthMode" type="button">Create an account</button>
+        <button class="text-btn" id="forgotPasswordBtn" type="button">Forgot password?</button>
         <div class="auth-backup-row">
           <span>Opening a newer prototype build?</span>
           <button class="text-btn" id="restoreBackupAuthBtn" type="button">Restore Scope Builder Backup</button>
         </div>
-        <p class="auth-note">Projects are stored in a versioned local workspace. Before moving to a different prototype file/build, download a backup and restore it here. The production hosted version will use permanent server storage.</p>
+        <p class="auth-note" id="authStorageNote">Sign in with the email address assigned by your Scope Builder administrator.</p>
       </div>
     </div>
   </section>
@@ -522,7 +523,7 @@
       <div class="admin-tabs">
         <button class="admin-tab-btn active" data-admin-tab="disclaimers" type="button">Terms &amp; Conditions</button>
         <button class="admin-tab-btn" data-admin-tab="offices" type="button">Offices</button>
-        <button class="admin-tab-btn" data-admin-tab="users" type="button">User Roles</button>
+        <button class="admin-tab-btn" data-admin-tab="users" type="button">Users</button>
         <button class="admin-tab-btn" data-admin-tab="backup" type="button">Data Backup</button>
       </div>
       <section id="adminDisclaimersTab" class="admin-tab-panel active">
@@ -563,10 +564,14 @@
       </section>
       <section id="adminUsersTab" class="admin-tab-panel">
         <div class="admin-section-head">
-          <div><h3>User Access Levels</h3><p>Admins can manage Terms &amp; Conditions wording and user roles. Employees can create projects, select approved Terms &amp; Conditions, and export proposals.</p></div>
+          <div><h3>User Management</h3><p>Create employees by email, manage access levels, and send secure password resets.</p></div>
+        </div>
+        <div id="adminInvitePanel" class="admin-invite-panel">
+          <label>Employee Email<input id="adminInviteEmail" type="email" placeholder="employee@company.com" autocomplete="off" /></label>
+          <button id="adminInviteUserBtn" class="btn btn-primary" type="button">Send Invite</button>
         </div>
         <div id="adminUsersList" class="admin-users-list"></div>
-        <p class="admin-note">Roles are included in the full Admin workspace backup. The production version will move authentication and permissions to the server/database.</p>
+        <p class="admin-note" id="adminUsersNote">New invited users are Employees by default. Admins can promote another user to Admin. Password reset links are sent to the user's email; temporary passwords require the user to choose a new password at next sign-in.</p>
       </section>
       <section id="adminBackupTab" class="admin-tab-panel">
         <div class="admin-section-head">
@@ -585,12 +590,28 @@
     </div>
   </dialog>
 
+  <dialog id="passwordChangeDialog" class="modal password-change-modal">
+    <form id="passwordChangeForm" class="modal-card password-change-card">
+      <div class="modal-header">
+        <div><span class="eyebrow">Account security</span><h2 id="passwordChangeTitle">Create New Password</h2></div>
+      </div>
+      <p id="passwordChangeMessage">Enter a new password for your Scope Builder account.</p>
+      <label>New Password<input id="newAccountPassword" type="password" autocomplete="new-password" minlength="12" required placeholder="Minimum 12 characters" /></label>
+      <label>Confirm Password<input id="confirmAccountPassword" type="password" autocomplete="new-password" minlength="12" required placeholder="Re-enter password" /></label>
+      <div class="modal-actions">
+        <button id="cancelPasswordChangeBtn" class="btn btn-secondary" type="button">Cancel</button>
+        <button class="btn btn-primary" type="submit">Save Password</button>
+      </div>
+    </form>
+  </dialog>
+
   <input id="backupFileInput" type="file" accept=".ksb,.json,application/json" hidden />
   <input id="projectArchiveFileInput" type="file" accept=".koehn,application/octet-stream,application/json" hidden />
   <input id="kickoffQuoteFileInput" type="file" accept="application/pdf,.pdf" hidden />
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="app.js"></script>
 </body>
 </html>

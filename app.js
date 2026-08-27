@@ -46,6 +46,15 @@ const DEFAULT_DISCLAIMERS = [
   }
 ];
 
+let authClient = null;
+let authBackendConfigured = false;
+let authBackendConfig = null;
+const DIRECT_SUPABASE_CONFIG = {
+  supabaseUrl: "https://hqkxxyqfdxbeocleglps.supabase.co",
+  supabasePublishableKey: "sb_publishable_rjCbtjPD-UN-nCCdbSKweQ_pVuqCezK"
+};
+let passwordChangeReason = "";
+
 const state = { user: null, currentProjectId: null, currentProjectOwner: null, currentKickoffProjectId: null, currentKickoffOwner: null, currentKickoffTab: "info", kickoffQuoteTargetDivisionId: null, kickoffSaveTimer: null, kickoffPreviewTimer: null, kickoffPreviewToken: 0, kickoffPreviewRendering: false, kickoffPreviewPending: false, kickoffPreviewBlobUrl: null, authMode: "login", saveTimer: null, previewOpen: true, previewRenderTimer: null, previewRenderToken: 0, previewRendering: false, previewPending: false, previewBlobUrl: null, adminDisclaimerId: null, dashboardMode: "active", adminUserFilter: "all" };
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
@@ -609,17 +618,71 @@ function showAuth() { $("#authView").classList.remove("hidden"); $("#appView").c
 function showApp() { $("#authView").classList.add("hidden"); $("#appView").classList.remove("hidden"); }
 
 function updateAuthMode() {
+  if(authBackendConfigured){
+    state.authMode="login";
+    $("#authTitle").textContent = "Sign in";
+    $("#authSubtitle").textContent = "Use your company email and Scope Builder password.";
+    $("#authSubmit").textContent = "Sign in";
+    $("#toggleAuthMode").classList.add("hidden");
+    $("#forgotPasswordBtn").classList.remove("hidden");
+    $("#authBackendBadge").textContent="Secure company login";
+    $("#authStorageNote").textContent="Accounts are created by a Scope Builder Admin. If you forgot your password, a reset link can be sent to your email.";
+    return;
+  }
   const register = state.authMode === "register";
-  $("#authTitle").textContent = register ? "Create account" : "Sign in";
-  $("#authSubtitle").textContent = register ? "Create an account in this Scope Builder workspace." : "Continue working on saved scope packages.";
+  $("#authTitle").textContent = register ? "Create local prototype account" : "Sign in";
+  $("#authSubtitle").textContent = register ? "Temporary local mode is active because the secure backend is not configured." : "Continue working in this browser's local prototype workspace.";
   $("#authSubmit").textContent = register ? "Create account" : "Sign in";
-  $("#toggleAuthMode").textContent = register ? "Already have an account? Sign in" : "Create an account";
+  $("#toggleAuthMode").textContent = register ? "Already have an account? Sign in" : "Create a local account";
+  $("#toggleAuthMode").classList.remove("hidden");
+  $("#forgotPasswordBtn").classList.add("hidden");
+  $("#authBackendBadge").textContent="Prototype · local fallback mode";
+  $("#authStorageNote").textContent="Secure authentication has not been connected yet. This fallback keeps the existing browser workspace usable until Supabase environment variables are added in Vercel.";
 }
 
+function remoteUserRecord(user){
+  return {id:user.id,username:user.email||"",email:user.email||"",role:user.role==="admin"?"admin":"employee",createdAt:user.createdAt||user.created_at||nowIso(),lastSignInAt:user.lastSignInAt||user.last_sign_in_at||null,authProvider:"supabase",mustChangePassword:Boolean(user.mustChangePassword??user.must_change_password)};
+}
+async function supabaseFunctionFetch(functionName,options={}){
+  if(!authClient||!authBackendConfig)throw new Error("Secure authentication is not connected.");
+  const {data:{session}}=await authClient.auth.getSession();
+  if(!session?.access_token)throw new Error("Your session has expired. Please sign in again.");
+  const headers={...(options.headers||{}),Authorization:`Bearer ${session.access_token}`,apikey:authBackendConfig.supabasePublishableKey};
+  if(options.body&&!headers["Content-Type"])headers["Content-Type"]="application/json";
+  const url=`${authBackendConfig.supabaseUrl}/functions/v1/${functionName}`;
+  const res=await fetch(url,{...options,headers});
+  const payload=await res.json().catch(()=>({}));
+  if(!res.ok)throw new Error(payload.error||"The server request failed.");
+  return payload;
+}
+async function hydrateRemoteUser(session){
+  if(!session?.user)return null;
+  const {data:profile,error}=await authClient.from('profiles').select('id,email,display_name,role,status,must_change_password,created_at,last_seen_at').eq('id',session.user.id).single();
+  if(error)throw error;
+  if(profile.status==='disabled'){await authClient.auth.signOut();throw new Error('This Scope Builder account is disabled.');}
+  const record=remoteUserRecord({id:session.user.id,email:session.user.email||profile.email,role:profile.role,createdAt:profile.created_at,lastSignInAt:session.user.last_sign_in_at,mustChangePassword:profile.must_change_password});
+  saveUserRecord(record);
+  state.user=record;
+  authClient.from('profiles').update({last_seen_at:new Date().toISOString()}).eq('id',session.user.id).then(()=>{});
+  return record;
+}
+function authRedirectUrl(mode=""){const base=`${location.origin}${location.pathname}`;return mode?`${base}?auth=${encodeURIComponent(mode)}`:base;}
 async function handleAuthSubmit(e) {
   e.preventDefault();
   const username=$("#authUsername").value.trim(), password=$("#authPassword").value;
   if (!username || !password) return;
+  if(authBackendConfigured){
+    $("#authSubmit").disabled=true;
+    try{
+      const {data,error}=await authClient.auth.signInWithPassword({email:username,password});
+      if(error)throw error;
+      const record=await hydrateRemoteUser(data.session);
+      if(record?.mustChangePassword){showPasswordChangeDialog("required");return;}
+      enterDashboard();
+    }catch(err){console.error(err);toast("Email or password is incorrect.");}
+    finally{$("#authSubmit").disabled=false;}
+    return;
+  }
   const hash=await hashPassword(password);
   if (state.authMode === "register") {
     if (getUserRecord(username)) return toast("That username already exists in this workspace.");
@@ -637,6 +700,69 @@ function restoreSession() {
   const username=localStorage.getItem(sessionKey()); if (!username) return showAuth();
   const record=getUserRecord(username); if (!record) return showAuth();
   state.user=normalizeUser(record); enterDashboard();
+}
+async function initializeAuthentication(){
+  try{
+    const cfg=DIRECT_SUPABASE_CONFIG;
+    if(cfg?.supabaseUrl&&cfg.supabasePublishableKey&&window.supabase?.createClient){
+      authBackendConfigured=true; authBackendConfig=cfg;
+      authClient=window.supabase.createClient(cfg.supabaseUrl,cfg.supabasePublishableKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+      updateAuthMode();
+      authClient.auth.onAuthStateChange((event,session)=>{
+        if(event==='PASSWORD_RECOVERY'){
+          if(session)hydrateRemoteUser(session).catch(console.error);
+          showPasswordChangeDialog("recovery");
+        }else if(event==='SIGNED_OUT'){
+          state.user=null;showAuth();
+        }else if(event==='USER_UPDATED'&&session){
+          hydrateRemoteUser(session).then(record=>{if(record&&!record.mustChangePassword&&$("#passwordChangeDialog")?.open)$("#passwordChangeDialog").close();}).catch(console.error);
+        }
+      });
+      const {data:{session}}=await authClient.auth.getSession();
+      if(session){
+        const record=await hydrateRemoteUser(session);
+        const authFlow=new URLSearchParams(location.search).get('auth');
+        if(record?.mustChangePassword||authFlow==='invite'){showAuth();showPasswordChangeDialog("required");}
+        else if(authFlow==='recovery'){showAuth();showPasswordChangeDialog("recovery");}
+        else enterDashboard();
+      }else showAuth();
+      return;
+    }
+  }catch(err){console.error('Secure backend initialization failed.',err);}
+  authBackendConfigured=false;authClient=null;updateAuthMode();showAuth();
+}
+async function handleForgotPassword(){
+  if(!authBackendConfigured||!authClient)return;
+  const email=$("#authUsername").value.trim();
+  if(!email){toast("Enter your email address first.");$("#authUsername").focus();return;}
+  try{await authClient.auth.resetPasswordForEmail(email,{redirectTo:authRedirectUrl('recovery')});}catch(err){console.error(err);}
+  toast("If that email has an account, a password reset link was sent.");
+}
+function showPasswordChangeDialog(reason="recovery"){
+  passwordChangeReason=reason;
+  const required=reason==='required';
+  $("#passwordChangeTitle").textContent=required?"Password Change Required":"Create New Password";
+  $("#passwordChangeMessage").textContent=required?"Your administrator issued a temporary password. Create your own password before continuing.":"Enter a new password for your Scope Builder account.";
+  $("#cancelPasswordChangeBtn").classList.toggle("hidden",required);
+  $("#newAccountPassword").value="";$("#confirmAccountPassword").value="";
+  if(!$("#passwordChangeDialog").open)$("#passwordChangeDialog").showModal();
+}
+async function saveNewAccountPassword(e){
+  e.preventDefault();if(!authClient)return;
+  const password=$("#newAccountPassword").value,confirmPassword=$("#confirmAccountPassword").value;
+  if(password.length<12)return toast("Use at least 12 characters.");
+  if(password!==confirmPassword)return toast("Passwords do not match.");
+  try{
+    const {error}=await authClient.auth.updateUser({password});
+    if(error)throw error;
+    const {error:profileError}=await authClient.rpc('complete_password_change');
+    if(profileError)throw profileError;
+    $("#passwordChangeDialog").close();
+    if(new URLSearchParams(location.search).has("auth"))history.replaceState({},"",location.pathname);
+    const {data:{session}}=await authClient.auth.getSession();
+    if(session)await hydrateRemoteUser(session);
+    enterDashboard();toast("Password updated.");
+  }catch(err){console.error(err);toast(err.message||"Could not update password.");}
 }
 function refreshRoleUi() {
   const admin=isAdmin();
@@ -2919,7 +3045,7 @@ function handleVersionDeleteRestore(){
 }
 
 // Admin disclaimer library
-function openAdminDialog(){if(!isAdmin())return toast("Admin access required.");if(state.currentProjectId)saveEditorProject();renderAdminDisclaimers();renderAdminUsers();populateOfficeSettings();$("#adminDialog").showModal();}
+function openAdminDialog(){if(!isAdmin())return toast("Admin access required.");if(state.currentProjectId)saveEditorProject();renderAdminDisclaimers();renderAdminUsers();populateOfficeSettings();$("#adminInvitePanel")?.classList.toggle("hidden",!authBackendConfigured);if($("#adminUsersNote"))$("#adminUsersNote").textContent=authBackendConfigured?"New invited users are Employees by default. Admins can promote another user to Admin. Password reset links are sent to the user’s email; temporary passwords require a password change at next sign-in.":"Secure Supabase login is unavailable in this browser session.";$("#adminDialog").showModal();}
 function closeAdminDialog(){$("#adminDialog").close();}
 function activateAdminTab(name){$$('.admin-tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===name));$$('.admin-tab-panel').forEach(p=>p.classList.remove('active'));$(`#admin${name[0].toUpperCase()+name.slice(1)}Tab`).classList.add('active');}
 function renderAdminDisclaimers(){const items=getDisclaimers(),list=$("#disclaimerList");list.innerHTML="";if(!state.adminDisclaimerId||!items.some(d=>d.id===state.adminDisclaimerId))state.adminDisclaimerId=items[0]?.id||null;items.forEach(d=>{const b=document.createElement('button');b.type='button';b.className=`disclaimer-list-item ${d.id===state.adminDisclaimerId?'active':''}`;b.dataset.disclaimerAdminId=d.id;b.innerHTML=`<strong>${esc(d.name)}</strong><span>${esc(d.text)}</span>`;list.appendChild(b);});$$('[data-disclaimer-admin-id]').forEach(b=>b.addEventListener('click',()=>{state.adminDisclaimerId=b.dataset.disclaimerAdminId;renderAdminDisclaimers();}));const d=items.find(x=>x.id===state.adminDisclaimerId);$("#disclaimerEditId").value=d?.id||"";$("#disclaimerEditName").value=d?.name||"";$("#disclaimerEditText").value=d?.text||"";$("#deleteDisclaimerBtn").disabled=items.length<=1||!d;}
@@ -2927,8 +3053,48 @@ function newDisclaimer(){state.adminDisclaimerId=null;$("#disclaimerEditId").val
 function saveDisclaimerFromAdmin(){if(!isAdmin())return;const name=$("#disclaimerEditName").value.trim(),textValue=$("#disclaimerEditText").value.trim();if(!name||!textValue)return toast("Enter both a Terms & Conditions name and text.");let items=getDisclaimers(),id=$("#disclaimerEditId").value||uid(),idx=items.findIndex(d=>d.id===id);const item={id,name,text:textValue};if(idx>=0)items[idx]=item;else items.push(item);saveDisclaimers(items);state.adminDisclaimerId=id;renderAdminDisclaimers();refreshProjectDisclaimerAfterAdmin();toast("Terms & Conditions saved.");}
 function deleteDisclaimerFromAdmin(){if(!isAdmin())return;let items=getDisclaimers();if(items.length<=1)return toast("Keep at least one Terms & Conditions version in the library.");const id=$("#disclaimerEditId").value;if(!id)return;const d=items.find(x=>x.id===id);if(!confirm(`Delete Terms & Conditions “${d?.name||'this disclaimer'}”?`))return;items=items.filter(x=>x.id!==id);saveDisclaimers(items);state.adminDisclaimerId=items[0]?.id||null;renderAdminDisclaimers();refreshProjectDisclaimerAfterAdmin();toast("Terms & Conditions deleted.");}
 function refreshProjectDisclaimerAfterAdmin(){if(!state.currentProjectId)return;const p=getCurrentProject();if(!p)return;const all=getDisclaimers();if(!all.some(d=>d.id===p.disclaimerId))p.disclaimerId=all[0]?.id||"";putProject(p);renderDisclaimerSelect(p);$("#projectDisclaimerSelect").value=p.disclaimerId;updateSelectedDisclaimerPreview();updatePreview();}
-function renderAdminUsers(){const wrap=$("#adminUsersList");wrap.innerHTML="";getAllUsers().forEach(u=>{u=normalizeUser(u);const row=document.createElement('div');row.className='admin-user-row';row.innerHTML=`<div><strong>${esc(u.username)}${u.username.toLowerCase()===state.user.username.toLowerCase()?' · You':''}</strong><span>Created ${esc(fmtTime(u.createdAt))}</span></div><select class="admin-role-select" data-role-user="${esc(u.username)}"><option value="employee" ${u.role==='employee'?'selected':''}>Employee</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select>`;wrap.appendChild(row);});$$('.admin-role-select').forEach(sel=>sel.addEventListener('change',()=>changeUserRole(sel.dataset.roleUser,sel.value,sel)));}
+async function renderAdminUsers(){
+  const wrap=$("#adminUsersList");wrap.innerHTML="";
+  if(authBackendConfigured){
+    wrap.innerHTML='<div class="admin-note">Loading users…</div>';
+    try{
+      const payload=await supabaseFunctionFetch('scope-admin-users');wrap.innerHTML="";
+      (payload.users||[]).forEach(u=>{
+        const record=remoteUserRecord(u);saveUserRecord(record);
+        const row=document.createElement('div');row.className='admin-user-row secure-user';
+        const you=state.user?.id===u.id||String(state.user?.username||'').toLowerCase()===String(u.email||'').toLowerCase();
+        row.innerHTML=`<div class="user-meta"><strong>${esc(u.email)}${you?' · You':''}</strong><span>${u.last_sign_in_at?'Active account':'Invitation pending'}${u.last_sign_in_at?` · Last sign in ${esc(fmtTime(u.last_sign_in_at))}`:''}</span></div><select class="admin-role-select" data-role-id="${esc(u.id)}" data-role-email="${esc(u.email)}"><option value="employee" ${u.role==='employee'?'selected':''}>Employee</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select><div class="admin-user-actions"><button class="btn btn-secondary admin-send-reset" type="button" data-user-email="${esc(u.email)}">Reset Email</button><button class="btn btn-secondary admin-temp-password" type="button" data-user-id="${esc(u.id)}" data-user-email="${esc(u.email)}">Temp Password</button></div>`;
+        wrap.appendChild(row);
+      });
+      $$('.admin-role-select',wrap).forEach(sel=>sel.addEventListener('change',()=>changeRemoteUserRole(sel.dataset.roleId,sel.dataset.roleEmail,sel.value,sel)));
+      $$('.admin-send-reset',wrap).forEach(btn=>btn.addEventListener('click',()=>adminSendPasswordReset(btn.dataset.userEmail)));
+      $$('.admin-temp-password',wrap).forEach(btn=>btn.addEventListener('click',()=>adminSetTemporaryPassword(btn.dataset.userId,btn.dataset.userEmail)));
+      refreshDashboardNav();
+    }catch(err){console.error(err);wrap.innerHTML=`<div class="admin-note">${esc(err.message||'Could not load users.')}</div>`;}
+    return;
+  }
+  getAllUsers().forEach(u=>{u=normalizeUser(u);const row=document.createElement('div');row.className='admin-user-row';row.innerHTML=`<div><strong>${esc(u.username)}${u.username.toLowerCase()===state.user.username.toLowerCase()?' · You':''}</strong><span>Created ${esc(fmtTime(u.createdAt))}</span></div><select class="admin-role-select" data-role-user="${esc(u.username)}"><option value="employee" ${u.role==='employee'?'selected':''}>Employee</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select>`;wrap.appendChild(row);});$$('.admin-role-select').forEach(sel=>sel.addEventListener('change',()=>changeUserRole(sel.dataset.roleUser,sel.value,sel)));
+}
 function changeUserRole(username,role,selectEl){if(!isAdmin())return;const stored=getUserRecord(username);if(!stored)return;const record=normalizeUser(stored);const admins=getAllUsers().filter(u=>normalizeUser(u).role==='admin');if(record.role==='admin'&&role==='employee'&&admins.length<=1){selectEl.value='admin';return toast("At least one Admin account is required.");}record.role=role;saveUserRecord(record);if(username.toLowerCase()===state.user.username.toLowerCase()){state.user=record;refreshRoleUi();if(!isAdmin()){closeAdminDialog();toast("Your role is now Employee.");return;}}renderAdminUsers();toast(`${username} is now ${role === 'admin' ? 'an Admin' : 'an Employee'}.`);}
+async function inviteRemoteUser(){
+  if(!authBackendConfigured)return toast("Secure backend is not configured.");
+  const input=$("#adminInviteEmail"),email=input.value.trim().toLowerCase();if(!email)return toast("Enter an employee email.");
+  $("#adminInviteUserBtn").disabled=true;
+  try{await supabaseFunctionFetch('scope-admin-invite',{method:'POST',body:JSON.stringify({email,redirectTo:authRedirectUrl('invite')})});input.value='';await renderAdminUsers();toast(`Invitation sent to ${email}.`);}catch(err){console.error(err);toast(err.message||"Could not send invitation.");}finally{$("#adminInviteUserBtn").disabled=false;}
+}
+async function changeRemoteUserRole(userId,email,role,selectEl){
+  try{await supabaseFunctionFetch('scope-admin-role',{method:'POST',body:JSON.stringify({userId,role})});if(String(state.user?.id||'')===userId){const {data:{session}}=await authClient.auth.getSession();if(session)await hydrateRemoteUser(session);refreshRoleUi();if(!isAdmin()){closeAdminDialog();toast("Your role is now Employee.");return;}}await renderAdminUsers();toast(`${email} is now ${role==='admin'?'an Admin':'an Employee'}.`);}catch(err){console.error(err);selectEl.value=role==='admin'?'employee':'admin';toast(err.message||"Could not change role.");}
+}
+async function adminSendPasswordReset(email){
+  if(!authClient)return;try{await authClient.auth.resetPasswordForEmail(email,{redirectTo:authRedirectUrl('recovery')});}catch(err){console.error(err);}toast(`If the account is active, a reset link was sent to ${email}.`);
+}
+function generateTemporaryPassword(){const chars='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';const bytes=new Uint32Array(16);crypto.getRandomValues(bytes);return [...bytes].map(n=>chars[n%chars.length]).join('');}
+async function adminSetTemporaryPassword(userId,email){
+  const generated=generateTemporaryPassword();const value=prompt(`Temporary password for ${email}:
+
+Edit it if desired, then copy it before clicking OK. The user will be required to change it at next sign-in.`,generated);if(value===null)return;if(value.length<12)return toast("Temporary password must be at least 12 characters.");
+  try{await supabaseFunctionFetch('scope-admin-temp-password',{method:'POST',body:JSON.stringify({userId,password:value})});toast("Temporary password set. Make sure you copied it before closing the prompt.");await renderAdminUsers();}catch(err){console.error(err);toast(err.message||"Could not set temporary password.");}
+}
 
 // Portable data backup / restore for moving between prototype builds
 function buildBackupPayload() {
@@ -3068,16 +3234,19 @@ async function requestPersistentBrowserStorage() {
 
 // Event wiring
 $("#authForm").addEventListener("submit",handleAuthSubmit);
-$("#toggleAuthMode").addEventListener("click",()=>{state.authMode=state.authMode==='login'?'register':'login';updateAuthMode();});
+$("#toggleAuthMode").addEventListener("click",()=>{if(authBackendConfigured)return;state.authMode=state.authMode==='login'?'register':'login';updateAuthMode();});
+$("#forgotPasswordBtn")?.addEventListener("click",handleForgotPassword);
+$("#passwordChangeForm")?.addEventListener("submit",saveNewAccountPassword);
+$("#cancelPasswordChangeBtn")?.addEventListener("click",()=>{if(passwordChangeReason!=="required")$("#passwordChangeDialog").close();});
 $("#restoreBackupAuthBtn").addEventListener("click",triggerRestoreBackup);
 $("#downloadBackupBtn").addEventListener("click",downloadDataBackup);
 $("#restoreBackupBtn").addEventListener("click",triggerRestoreBackup);
 $("#backupFileInput").addEventListener("change",e=>restoreDataBackup(e.target.files?.[0]));
-$("#logoutBtn").addEventListener("click",()=>{localStorage.removeItem(sessionKey());state.user=null;$("#userMenuPopover").classList.add('hidden');showAuth();});
+$("#logoutBtn").addEventListener("click",async()=>{if(authBackendConfigured&&authClient){await authClient.auth.signOut();}else localStorage.removeItem(sessionKey());state.user=null;$("#userMenuPopover").classList.add('hidden');showAuth();});
 $("#userMenuBtn").addEventListener("click",()=>$("#userMenuPopover").classList.toggle('hidden'));
 $("#adminPanelBtn").addEventListener("click",openAdminDialog);$("#adminPopoverBtn").addEventListener("click",()=>{$("#userMenuPopover").classList.add('hidden');openAdminDialog();});
 $("#closeAdminDialog").addEventListener("click",closeAdminDialog);$("#newDisclaimerBtn").addEventListener("click",newDisclaimer);$("#saveDisclaimerBtn").addEventListener("click",saveDisclaimerFromAdmin);$("#deleteDisclaimerBtn").addEventListener("click",deleteDisclaimerFromAdmin);$$('.admin-tab-btn').forEach(b=>b.addEventListener('click',()=>activateAdminTab(b.dataset.adminTab)));
-$("#adminDownloadBackupBtn").addEventListener("click",downloadDataBackup);$("#adminRestoreBackupBtn").addEventListener("click",triggerRestoreBackup);
+$("#adminDownloadBackupBtn").addEventListener("click",downloadDataBackup);$("#adminRestoreBackupBtn").addEventListener("click",triggerRestoreBackup);$("#adminInviteUserBtn")?.addEventListener("click",inviteRemoteUser);
 $("#newProjectBtn").addEventListener("click",openNewProjectDialog);$("#emptyNewProjectBtn").addEventListener("click",openNewProjectDialog);$("#newProjectForm").addEventListener("submit",handleNewProject);$("#closeNewProjectDialog")?.addEventListener("click",()=>$("#newProjectDialog").close());$("#cancelNewProjectDialog")?.addEventListener("click",()=>$("#newProjectDialog").close());$("#newProjectDialog")?.addEventListener("click",e=>{if(e.target===$("#newProjectDialog"))$("#newProjectDialog").close();});$("#projectSearch").addEventListener("input",renderProjects);$("#projectSort").addEventListener("change",renderProjects);$$('.project-nav-btn').forEach(b=>b.addEventListener('click',()=>setDashboardMode(b.dataset.projectView)));$("#adminUserFilter").addEventListener("change",()=>{state.adminUserFilter=$("#adminUserFilter").value;renderProjects();});
 $("#importProjectArchiveBtn")?.addEventListener("click",()=>$("#projectArchiveFileInput")?.click());
 $("#projectArchiveFileInput")?.addEventListener("change",async e=>{const file=e.target.files?.[0];e.target.value="";if(file)await importKoehnProjectArchive(file);});
@@ -3149,4 +3318,4 @@ document.addEventListener("change",e=>{if(e.target.matches('[data-section-enable
 document.addEventListener('click',e=>{if(!e.target.closest('.project-card-actions'))$$('.project-menu').forEach(x=>x.classList.add('hidden'));});
 window.addEventListener('beforeunload',()=>{if(state.currentProjectId)saveEditorProject();if(state.currentKickoffProjectId){saveKickoffInfoFromForm();if(document.querySelector('.kickoff-division-card'))collectKickoffDivisionsFromDom();}});
 
-updateAuthMode();readDataStore();restoreSession();
+readDataStore();initializeAuthentication();
