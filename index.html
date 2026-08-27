@@ -83,7 +83,7 @@
           <p>Create, revise, and export client-ready scope documents while keeping every project organized by CSI division.</p>
         </div>
         <div class="dashboard-hero-actions">
-          <button id="importProjectArchiveBtn" class="btn btn-secondary btn-lg" type="button">Import .koehn Archive</button>
+          <button id="importProjectArchiveBtn" class="btn btn-secondary btn-lg" type="button">Import Archive</button>
           <button id="newProjectBtn" class="btn btn-primary btn-lg">+ New Scope Project</button>
         </div>
       </section>
@@ -171,7 +171,6 @@
                 <label class="map-check"><input id="kickoffWideMapEnabled" type="checkbox" checked> Wide View</label>
                 <label class="map-check"><input id="kickoffCloseMapEnabled" type="checkbox" checked> Close-Up View</label>
                 <button id="refreshKickoffMapsBtn" class="btn btn-secondary" type="button">Refresh Map Views</button>
-                <button id="testKickoffMapsBtn" class="btn btn-secondary" type="button">Test Maps API</button>
                 <button id="prepareKickoffMapsBtn" class="btn btn-primary" type="button">Prepare Maps for PDF</button>
                 <div class="kickoff-map-preview-grid">
                   <div class="kickoff-map-preview">
@@ -187,8 +186,7 @@
                 </div>
                 <input id="kickoffWideMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
                 <input id="kickoffCloseMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
-                <p id="kickoffMapExportNote" class="kickoff-map-note">For the hosted site, paste the raw Google keys into <strong>maps-config.txt</strong> after the equals signs—no quotes required. Click <strong>Test Maps API</strong> to verify the browser map, address geocoding, and PDF/static map capture. <strong>config.js</strong> and the Admin Static Maps field remain supported as fallbacks.</p>
-                <p id="kickoffMapsDiagnostics" class="kickoff-map-note">Maps API status has not been tested yet.</p>
+                <p id="kickoffMapExportNote" class="kickoff-map-note">For the hosted site, paste the raw Google keys into <strong>maps-config.txt</strong> after the equals signs—no quotes required. Use <strong>Prepare Maps for PDF</strong> to save the pinned Wide and Close-Up views for export. <strong>config.js</strong> and the Admin Static Maps field remain supported as fallbacks.</p>
               </div>
             </div>
 

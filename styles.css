@@ -86,6 +86,9 @@ textarea { resize: vertical; line-height: 1.5; }
 .project-client { color: #777b80; font-size: 13px; min-height: 20px; }
 .project-meta { display: flex; justify-content: space-between; color: #96999d; font-size: 11px; border-top: 1px solid #eff0f1; padding-top: 16px; margin-top: 20px; }
 .project-open { border: 0; background: transparent; color: var(--orange-dark); font-weight: 800; padding: 4px 0; }
+
+.project-kickoff-btn { border:1px solid #b9d8bf; background:#edf7ef; color:#3d7a49; border-radius:8px; padding:7px 10px; font-size:10px; font-weight:800; line-height:1; }
+.project-kickoff-btn:hover { background:#e2f2e5; border-color:#9fc9a8; }
 .empty-state { text-align: center; padding: 74px 20px; border: 1px dashed #cfd2d5; border-radius: 16px; background: rgba(255,255,255,.5); }
 .empty-icon { font-size: 48px; color: var(--orange); }
 .empty-state h3 { margin-bottom: 8px; }
@@ -619,3 +622,5 @@ body { min-height: 100%; overflow-y: auto; }
 .kickoff-map-actions .text-btn { font-size:9px; }
 #kickoffMapsDiagnostics.ready{color:#267347;font-weight:700}
 #kickoffMapsDiagnostics.error{color:#a63d31;font-weight:700}
+
+.kickoff-map-preview img { display:block; width:100%; height:245px; object-fit:contain; object-position:center; background:#f3f4f4; }

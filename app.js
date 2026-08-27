@@ -656,6 +656,7 @@ function renderProjects() {
         </div>
         <div class="project-card-actions">
           <button class="project-open" data-open-project="${p.id}" data-owner="${esc(f.owner)}">Open →</button>
+          ${familyAccepted?`<button class="project-kickoff-btn" data-kickoff-project="${p.id}" data-owner="${esc(f.owner)}" type="button">Kickoff</button>`:''}
           <button class="project-menu-btn" data-project-menu="${p.id}" data-owner="${esc(f.owner)}" aria-label="Project options">⋮</button>
           <div class="project-menu hidden" data-menu-panel="${p.id}">
             ${adminRecovery?`<button type="button" data-restore-family="${f.familyId}" data-owner="${esc(f.owner)}">Restore Project</button>`:`
@@ -1595,7 +1596,7 @@ async function quoteBlobToJpegDataUrl(blob){
 }
 function kickoffStaticMapUrl(address,zoom,key){
   const marker=`color:0xf36f21|${String(address||'').trim()}`;
-  const params=new URLSearchParams({center:String(address||''),zoom:String(zoom),size:'640x420',scale:'2',maptype:'roadmap',markers:marker,key:String(key||'')});
+  const params=new URLSearchParams({center:String(address||''),zoom:String(zoom),size:'640x300',scale:'2',maptype:'roadmap',markers:marker,key:String(key||'')});
   return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
 }
 function kickoffRichLinesFromHtml(html=""){
@@ -1669,7 +1670,16 @@ async function buildKickoffPdf(options={}){
       doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);doc.text(view.label,contentX+.14,mapY+.24);
       let mapData=view.label==='WIDE VIEW'?String(maps.wideSnapshot||''):String(maps.closeSnapshot||'');
       if(!mapData&&key&&addr){try{mapData=await imageToDataUrl(kickoffStaticMapUrl(addr,view.zoom,key));}catch{mapData=null;}}
-      if(mapData){const imgY=mapY+.36,imgH=h-.48;const fmt=mapData.startsWith('data:image/jpeg')?'JPEG':'PNG';doc.addImage(mapData,fmt,contentX+.12,imgY,contentW-.24,imgH,undefined,'FAST');}
+      if(mapData){
+        const boxX=contentX+.12,boxY=mapY+.36,boxW=contentW-.24,boxH=h-.48;
+        const fmt=mapData.startsWith('data:image/jpeg')?'JPEG':'PNG';
+        let drawX=boxX,drawY=boxY,drawW=boxW,drawH=boxH;
+        try{
+          const props=doc.getImageProperties(mapData),iw=Number(props?.width)||0,ih=Number(props?.height)||0;
+          if(iw>0&&ih>0){const scale=Math.min(boxW/iw,boxH/ih);drawW=iw*scale;drawH=ih*scale;drawX=boxX+(boxW-drawW)/2;drawY=boxY+(boxH-drawH)/2;}
+        }catch{}
+        doc.addImage(mapData,fmt,drawX,drawY,drawW,drawH,undefined,'FAST');
+      }
       else{doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);const msg='Map image not prepared. In Kickoff → Project Info, click Prepare Maps for PDF or upload a Google Maps screenshot for this view.';doc.text(doc.splitTextToSize(msg,contentW-.46),contentX+.22,mapY+h/2,{lineHeightFactor:1.2});}
       mapY+=h+.18;
     }
@@ -2394,7 +2404,6 @@ $("#exportKickoffPdfBtn")?.addEventListener('click',()=>buildKickoffPdf({preview
 $("#refreshKickoffPreviewBtn")?.addEventListener('click',()=>scheduleKickoffPdfPreview(10));
 $("#refreshKickoffMapsBtn")?.addEventListener('click',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();scheduleKickoffPdfPreview(250);});
 $("#prepareKickoffMapsBtn")?.addEventListener('click',prepareKickoffMapsForPdf);
-$("#testKickoffMapsBtn")?.addEventListener('click',runKickoffMapsDiagnostics);
 $("#uploadKickoffWideMapBtn")?.addEventListener('click',()=>$("#kickoffWideMapFileInput")?.click());
 $("#uploadKickoffCloseMapBtn")?.addEventListener('click',()=>$("#kickoffCloseMapFileInput")?.click());
 $("#kickoffWideMapFileInput")?.addEventListener('change',async e=>{const file=e.target.files?.[0];e.target.value='';if(file)await saveKickoffMapUpload('wide',file);});
