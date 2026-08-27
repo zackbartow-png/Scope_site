@@ -46,7 +46,7 @@ const DEFAULT_DISCLAIMERS = [
   }
 ];
 
-const state = { user: null, currentProjectId: null, currentProjectOwner: null, currentKickoffProjectId: null, currentKickoffOwner: null, currentKickoffTab: "info", kickoffQuoteTargetDivisionId: null, kickoffSaveTimer: null, kickoffPreviewTimer: null, kickoffPreviewToken: 0, kickoffPreviewRendering: false, kickoffPreviewPending: false, authMode: "login", saveTimer: null, previewOpen: true, previewRenderTimer: null, previewRenderToken: 0, previewRendering: false, previewPending: false, adminDisclaimerId: null, dashboardMode: "active", adminUserFilter: "all" };
+const state = { user: null, currentProjectId: null, currentProjectOwner: null, currentKickoffProjectId: null, currentKickoffOwner: null, currentKickoffTab: "info", kickoffQuoteTargetDivisionId: null, kickoffSaveTimer: null, kickoffPreviewTimer: null, kickoffPreviewToken: 0, kickoffPreviewRendering: false, kickoffPreviewPending: false, kickoffPreviewBlobUrl: null, authMode: "login", saveTimer: null, previewOpen: true, previewRenderTimer: null, previewRenderToken: 0, previewRendering: false, previewPending: false, previewBlobUrl: null, adminDisclaimerId: null, dashboardMode: "active", adminUserFilter: "all" };
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 
@@ -735,7 +735,7 @@ function activateKickoffTab(name){
   $$('.kickoff-tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.kickoffTab===name));
   $$('.kickoff-tab-panel').forEach(panel=>panel.classList.remove('active'));
   const panel=$(`#kickoff${name[0].toUpperCase()+name.slice(1)}Tab`); if(panel)panel.classList.add('active');
-  if(name==='preview')scheduleKickoffPdfPreview(40);
+  if(name==='preview'){ if(state.kickoffPreviewBlobUrl)syncKickoffNativePreview(state.kickoffPreviewBlobUrl); else scheduleKickoffPdfPreview(40); }
 }
 function populateKickoffBuilder(p){
   if(!p)return;
@@ -1469,65 +1469,51 @@ function togglePreview(open) {
   $("#previewToggle").textContent=state.previewOpen?"Hide Preview":"PDF Preview";
   if(state.previewOpen)schedulePdfPreview(40);
 }
-function schedulePdfPreview(delay=700){
+function schedulePdfPreview(delay=520){
   clearTimeout(state.previewRenderTimer);
   if(!state.previewOpen||!state.currentProjectId)return;
   state.previewRenderTimer=setTimeout(renderLivePdfPreview,delay);
 }
+function setNativePdfFrame(container,url,title){
+  if(!container)return;
+  let frame=container.querySelector('iframe.native-pdf-preview-frame');
+  if(!frame){
+    frame=document.createElement('iframe');
+    frame.className='native-pdf-preview-frame';
+    frame.title=title||'PDF preview';
+    frame.setAttribute('loading','eager');
+    container.replaceChildren(frame);
+  }
+  // Native browser PDF viewers render vector text/graphics and are substantially
+  // faster and clearer than rasterizing every page through PDF.js.
+  frame.src=`${url}#toolbar=0&navpanes=0&view=FitH`;
+}
 async function renderLivePdfPreview(){
   if(!state.previewOpen||!state.currentProjectId)return;
   if(state.previewRendering){state.previewPending=true;return;}
-  const scroller=$("#pdfPreviewScroll"), pagesWrap=$("#pdfPreviewPages"), status=$("#pdfPreviewStatus");
-  if(!scroller||!pagesWrap)return;
+  const pagesWrap=$("#pdfPreviewPages"),status=$("#pdfPreviewStatus");
+  if(!pagesWrap)return;
   state.previewRendering=true;state.previewPending=false;
   const token=++state.previewRenderToken;
-  const maxScroll=Math.max(1,scroller.scrollHeight-scroller.clientHeight);
-  const scrollRatio=scroller.scrollTop/maxScroll;
   if(status){status.textContent="Updating live PDF…";status.classList.remove("hidden");}
   try{
     const doc=await exportPdf({preview:true});
     if(!doc||token!==state.previewRenderToken)return;
-    const buffer=doc.output('arraybuffer');
-    if(!window.pdfjsLib)throw new Error('PDF preview renderer did not load.');
-    if(window.pdfjsLib.GlobalWorkerOptions)window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    const pdf=await window.pdfjsLib.getDocument({data:buffer}).promise;
-    if(token!==state.previewRenderToken)return;
-    const available=Math.max(250,Math.min(440,scroller.clientWidth-28));
-    // A 1x preview is dramatically faster and is still sharp enough for the live side pane.
-    const dpr=1;
-    const fragment=document.createDocumentFragment();
-    for(let i=1;i<=pdf.numPages;i++){
-      if(token!==state.previewRenderToken)return;
-      const page=await pdf.getPage(i);
-      const base=page.getViewport({scale:1});
-      const cssScale=available/base.width;
-      const renderViewport=page.getViewport({scale:cssScale*dpr});
-      const canvas=document.createElement('canvas');
-      canvas.className='pdf-preview-canvas';
-      canvas.width=Math.ceil(renderViewport.width);canvas.height=Math.ceil(renderViewport.height);
-      canvas.style.width=`${Math.round(base.width*cssScale)}px`;
-      canvas.style.height=`${Math.round(base.height*cssScale)}px`;
-      canvas.setAttribute('aria-label',`Proposal preview page ${i} of ${pdf.numPages}`);
-      const sheet=document.createElement('div');sheet.className='pdf-preview-sheet';
-      const pageTag=document.createElement('div');pageTag.className='pdf-preview-page-tag';pageTag.textContent=`Page ${i} of ${pdf.numPages}`;
-      sheet.append(canvas,pageTag);fragment.appendChild(sheet);
-      await page.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport:renderViewport}).promise;
-      // Yield briefly so typing/scrolling stays responsive while long proposals render.
-      if(i%2===0)await new Promise(r=>setTimeout(r,0));
-    }
-    if(token!==state.previewRenderToken)return;
-    pagesWrap.replaceChildren(fragment);
+    const blob=doc.output('blob');
+    const url=URL.createObjectURL(blob);
+    if(token!==state.previewRenderToken){URL.revokeObjectURL(url);return;}
+    const oldUrl=state.previewBlobUrl;
+    state.previewBlobUrl=url;
+    setNativePdfFrame(pagesWrap,url,'Live proposal PDF preview');
     if(status)status.classList.add('hidden');
-    requestAnimationFrame(()=>{
-      const newMax=Math.max(0,scroller.scrollHeight-scroller.clientHeight);
-      scroller.scrollTop=Math.min(newMax,newMax*scrollRatio);
-    });
+    // Give the iframe time to switch away from the old blob before releasing it.
+    if(oldUrl)setTimeout(()=>URL.revokeObjectURL(oldUrl),2500);
   }catch(err){
     console.error(err);
     if(token===state.previewRenderToken&&status){status.textContent="Live preview unavailable. Export PDF still uses the locked template.";status.classList.remove("hidden");}
   }finally{
     state.previewRendering=false;
-    if(state.previewPending){state.previewPending=false;schedulePdfPreview(220);}
+    if(state.previewPending){state.previewPending=false;schedulePdfPreview(180);}
   }
 }
 
@@ -1768,48 +1754,47 @@ async function buildKickoffPdf(options={}){
   if(previewOnly)return doc;
   const safe=safeFilePart(p.projectNumber||p.projectName||'Project');doc.save(`${safe}_Kickoff.pdf`);toast('Kickoff PDF exported.');return doc;
 }
-function scheduleKickoffPdfPreview(delay=700){
+function scheduleKickoffPdfPreview(delay=520){
   clearTimeout(state.kickoffPreviewTimer);
   if(!state.currentKickoffProjectId)return;
   state.kickoffPreviewTimer=setTimeout(renderKickoffPdfPreview,delay);
 }
-async function renderKickoffPdfPages(pdf,wrap,token,{maxWidth=360,dpr=1}={}){
-  if(!wrap)return;
-  const available=Math.min(maxWidth,Math.max(250,wrap.clientWidth||maxWidth));
-  const fragment=document.createDocumentFragment();
-  for(let i=1;i<=pdf.numPages;i++){
-    if(token!==state.kickoffPreviewToken)return false;
-    const page=await pdf.getPage(i),base=page.getViewport({scale:1}),cssScale=available/base.width,viewport=page.getViewport({scale:cssScale*dpr});
-    const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);canvas.style.width=`${Math.round(base.width*cssScale)}px`;canvas.style.height=`${Math.round(base.height*cssScale)}px`;
-    const sheet=document.createElement('div');sheet.className='kickoff-pdf-preview-sheet';const tag=document.createElement('span');tag.className='kickoff-pdf-preview-tag';tag.textContent=`Page ${i} of ${pdf.numPages}`;sheet.append(canvas,tag);fragment.appendChild(sheet);
-    await page.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport}).promise;
-    if(i%2===0)await new Promise(r=>setTimeout(r,0));
-  }
-  if(token!==state.kickoffPreviewToken)return false;wrap.replaceChildren(fragment);return true;
+function syncKickoffNativePreview(url){
+  const liveWrap=$("#kickoffLivePreviewPages"),tabWrap=$("#kickoffPdfPreviewPages");
+  if(liveWrap)setNativePdfFrame(liveWrap,url,'Live kickoff PDF preview');
+  if(tabWrap&&state.currentKickoffTab==='preview')setNativePdfFrame(tabWrap,url,'Kickoff PDF preview');
 }
 async function renderKickoffPdfPreview(){
   if(!state.currentKickoffProjectId)return;
   if(state.kickoffPreviewRendering){state.kickoffPreviewPending=true;return;}
-  const liveWrap=$("#kickoffLivePreviewPages"),liveStatus=$("#kickoffLivePreviewStatus"),liveScroll=$("#kickoffLivePreviewScroll");
+  const liveWrap=$("#kickoffLivePreviewPages"),liveStatus=$("#kickoffLivePreviewStatus");
   const tabWrap=$("#kickoffPdfPreviewPages"),tabStatus=$("#kickoffPdfPreviewStatus");
   if(!liveWrap&&!tabWrap)return;
-  state.kickoffPreviewRendering=true;state.kickoffPreviewPending=false;const token=++state.kickoffPreviewToken;
-  const liveMax=Math.max(1,(liveScroll?.scrollHeight||1)-(liveScroll?.clientHeight||0));const liveRatio=(liveScroll?.scrollTop||0)/liveMax;
+  state.kickoffPreviewRendering=true;state.kickoffPreviewPending=false;
+  const token=++state.kickoffPreviewToken;
   if(liveStatus){liveStatus.textContent='Updating kickoff PDF…';liveStatus.classList.remove('hidden');}
   if(state.currentKickoffTab==='preview'&&tabStatus){tabStatus.textContent='Updating kickoff PDF…';tabStatus.classList.remove('hidden');}
   try{
-    const doc=await buildKickoffPdf({preview:true});if(!doc||token!==state.kickoffPreviewToken)return;
-    if(!window.pdfjsLib)throw new Error('Preview renderer unavailable.');
-    if(window.pdfjsLib.GlobalWorkerOptions)window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    const pdf=await window.pdfjsLib.getDocument({data:doc.output('arraybuffer')}).promise;if(token!==state.kickoffPreviewToken)return;
-    if(liveWrap){await renderKickoffPdfPages(pdf,liveWrap,token,{maxWidth:350,dpr:1});if(liveStatus)liveStatus.classList.add('hidden');requestAnimationFrame(()=>{if(!liveScroll)return;const max=Math.max(0,liveScroll.scrollHeight-liveScroll.clientHeight);liveScroll.scrollTop=Math.min(max,max*liveRatio);});}
-    if(state.currentKickoffTab==='preview'&&tabWrap){await renderKickoffPdfPages(pdf,tabWrap,token,{maxWidth:760,dpr:1.15});if(tabStatus)tabStatus.classList.add('hidden');}
+    const doc=await buildKickoffPdf({preview:true});
+    if(!doc||token!==state.kickoffPreviewToken)return;
+    const blob=doc.output('blob');
+    const url=URL.createObjectURL(blob);
+    if(token!==state.kickoffPreviewToken){URL.revokeObjectURL(url);return;}
+    const oldUrl=state.kickoffPreviewBlobUrl;
+    state.kickoffPreviewBlobUrl=url;
+    syncKickoffNativePreview(url);
+    if(liveStatus)liveStatus.classList.add('hidden');
+    if(tabStatus&&state.currentKickoffTab==='preview')tabStatus.classList.add('hidden');
+    if(oldUrl)setTimeout(()=>URL.revokeObjectURL(oldUrl),2500);
   }catch(err){
     console.error(err);
-    if(token===state.kickoffPreviewToken){if(liveStatus){liveStatus.textContent='Kickoff preview unavailable. Export PDF is still available.';liveStatus.classList.remove('hidden');}if(tabStatus&&state.currentKickoffTab==='preview'){tabStatus.textContent='Kickoff preview unavailable. Try Export Kickoff PDF.';tabStatus.classList.remove('hidden');}}
+    if(token===state.kickoffPreviewToken){
+      if(liveStatus){liveStatus.textContent='Kickoff preview unavailable. Export PDF is still available.';liveStatus.classList.remove('hidden');}
+      if(tabStatus&&state.currentKickoffTab==='preview'){tabStatus.textContent='Kickoff preview unavailable. Try Export Kickoff PDF.';tabStatus.classList.remove('hidden');}
+    }
   }finally{
     state.kickoffPreviewRendering=false;
-    if(state.kickoffPreviewPending){state.kickoffPreviewPending=false;scheduleKickoffPdfPreview(220);}
+    if(state.kickoffPreviewPending){state.kickoffPreviewPending=false;scheduleKickoffPdfPreview(180);}
   }
 }
 
