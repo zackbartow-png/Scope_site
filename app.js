@@ -409,6 +409,27 @@ function normalizeProject(p, ownerUsername="") {
     if(!Object.prototype.hasOwnProperty.call(p,richKey) || !String(p[richKey]||"").trim()) p[richKey]=plainTextToRichHtml(p[field]||"");
     else p[richKey]=sanitizeScopeHtml(p[richKey]);
   });
+  // V7.33: proposal alternates are independent scope cards, like CSI divisions.
+  // Existing projects that used the legacy single Alternates box are migrated into
+  // one Alternate 01 card so no scope is lost.
+  if(!Array.isArray(p.alternateScopes)){
+    const legacyPlain=String(p.alternates||"");
+    const legacyRich=sanitizeScopeHtml(p.alternatesRichText||plainTextToRichHtml(legacyPlain));
+    p.alternateScopes=(legacyPlain.trim()||String(legacyRich||"").replace(/<[^>]*>/g,"").trim())
+      ? [{id:uid(),title:"Alternate 01",enabled:p.sectionEnabled?.alternates!==false,text:legacyPlain,richText:legacyRich}]
+      : [];
+  }else{
+    p.alternateScopes=p.alternateScopes.map((a,index)=>{
+      const text=String(a?.text||"");
+      return {
+        id:a?.id||uid(),
+        title:String(a?.title||`Alternate ${String(index+1).padStart(2,"0")}`),
+        enabled:a?.enabled!==false,
+        text,
+        richText:sanitizeScopeHtml(a?.richText||plainTextToRichHtml(text))
+      };
+    });
+  }
   p.priceItems = Array.isArray(p.priceItems) ? p.priceItems.map(i=>({...i})) : [];
   let baseBid=p.priceItems.find(i=>i?.isBaseBid || String(i?.name||"").trim().toLowerCase()==="base bid");
   if(!baseBid){ baseBid={id:`base-bid-${p.familyId||p.id||uid()}`,name:"Base Bid",description:"",price:"",isBaseBid:true}; p.priceItems.unshift(baseBid); }
@@ -517,7 +538,7 @@ function makeProject(name="Untitled Project", client="", projectNumber="", estim
     id, familyId:id, version:0, parentRevisionId:null, archived:false, locked:false, deletedByUser:false, accepted:false, acceptedAt:null, estimatingOffice, officeContact, proposalType,
     createdAt: nowIso(), updatedAt: nowIso(), projectName: name, projectNumber, clientName: client,
     attention: "", projectAddress: "", proposalDate: dateValue, preparedBy: "", documentTitle: "Proposal", introNote: "",
-    clarifications: "", clarificationsRichText:"", exclusions: "", exclusionsRichText:"", alternates: "", alternatesRichText:"", priceItems: [{id:`base-bid-${id}`,name:"Base Bid",description:"",price:"",isBaseBid:true}], disclaimerId: getDisclaimers()[0]?.id || "",
+    clarifications: "", clarificationsRichText:"", exclusions: "", exclusionsRichText:"", alternates: "", alternatesRichText:"", alternateScopes:[], priceItems: [{id:`base-bid-${id}`,name:"Base Bid",description:"",price:"",isBaseBid:true}], disclaimerId: getDisclaimers()[0]?.id || "",
     summary: {mode:"none",basicNote:"",basicDivisions:{},basicOverhead:{enabled:false,label:"Overhead",amount:""},divisionCosts:{},extraRows:[],customDivisions:[]},
     sectionEnabled: { clarifications:true, exclusions:true, alternates:true, clientSelections:true }, divisions, company: {...DEFAULT_COMPANY}
   }, state.user?.username || "");
@@ -1322,7 +1343,7 @@ function openProject(id, ownerUsername=state.user?.username) {
   $("#projectVersionBadge").textContent=versionLabel(p); $("#projectVersionBadge").classList.toggle("base",(p.version||0)===0);
   $("#projectOwnerBadge").textContent=ownerKey(state.currentProjectOwner)===ownerKey(state.user.username)?"":`Owner: ${state.currentProjectOwner}`;
   $("#projectOwnerBadge").classList.toggle("hidden",ownerKey(state.currentProjectOwner)===ownerKey(state.user.username));
-  renderDivisionUI(p); renderPriceItems(p); renderDisclaimerSelect(p); populateEditor(p); renderSummaryEditor(p); applyProjectLockUi(p); updateSelectedDisclaimerPreview(); updatePreview(); activateTab("info");
+  renderDivisionUI(p); renderAlternateScopes(p); renderPriceItems(p); renderDisclaimerSelect(p); populateEditor(p); renderSummaryEditor(p); applyProjectLockUi(p); updateSelectedDisclaimerPreview(); updatePreview(); activateTab("info");
 }
 
 function applyProjectLockUi(p){
@@ -1334,7 +1355,9 @@ function applyProjectLockUi(p){
     const companyEmployee=el.hasAttribute('data-company')&&!isAdmin();
     el.disabled=locked||companyEmployee;
   });
-  $$('#editorView .rich-division-editor, #editorView .rich-closeout-editor').forEach(el=>el.setAttribute('contenteditable',locked?'false':'true'));
+  $$('#editorView .rich-division-editor, #editorView .rich-closeout-editor, #editorView .rich-alternate-editor').forEach(el=>el.setAttribute('contenteditable',locked?'false':'true'));
+  const addAltScope=$('#addAlternateScopeBtn'); if(addAltScope)addAltScope.disabled=locked;
+  $$('.alternate-delete-btn, .alternate-order-btn').forEach(b=>b.disabled=locked);
   $$('#editorView .scope-format-btn').forEach(el=>el.disabled=locked);
   $("#addPriceItemBtn").disabled=locked;
   $$('.remove-price-item').forEach(b=>b.disabled=locked);
@@ -1388,6 +1411,77 @@ function renderDivisionUI(p) {
   });
   $$('[data-nav-division]').forEach(btn=>btn.addEventListener('click',()=>{ activateTab("scope"); const card=$(`[data-division="${btn.dataset.navDivision}"]`);card.classList.add('open');card.scrollIntoView({behavior:'smooth',block:'center'}); }));
   filterDivisionNav();
+}
+
+function renderAlternateScopes(p){
+  const wrap=$("#alternateScopeCards"),empty=$("#alternateScopeEmpty");
+  if(!wrap)return;
+  wrap.innerHTML="";
+  const items=Array.isArray(p.alternateScopes)?p.alternateScopes:[];
+  items.forEach((a,index)=>{
+    const card=document.createElement("article");
+    card.className=`alternate-scope-card ${a.enabled!==false?'enabled':''} open`;
+    card.dataset.alternateId=a.id;
+    const plain=String(a.text||"");
+    const lines=plain.trim()?plain.replace(/\r/g,"").split("\n").length:0;
+    card.innerHTML=`<div class="alternate-scope-card-head">
+      <div class="alternate-badge">A${index+1}</div>
+      <div><input class="alternate-title-input" value="${esc(a.title||`Alternate ${String(index+1).padStart(2,'0')}`)}" aria-label="Alternate title"><div class="alternate-scope-sub">${lines?`${lines} scope line${lines===1?'':'s'} entered`:'No scope entered'}</div></div>
+      <label class="switch-label"><input type="checkbox" class="alternate-enabled" ${a.enabled!==false?'checked':''}><span class="switch"></span>Include</label>
+      <button type="button" class="alternate-order-btn" data-alt-move="up" title="Move alternate up">↑</button>
+      <button type="button" class="alternate-order-btn" data-alt-move="down" title="Move alternate down">↓</button>
+      <button type="button" class="alternate-delete-btn" title="Delete alternate">×</button>
+    </div>
+    <div class="alternate-scope-card-body">
+      <div class="division-format-toolbar" role="toolbar" aria-label="Alternate text formatting"><button type="button" class="scope-format-btn alt-format-btn" data-format="bold" title="Bold (Ctrl+B)"><strong>B</strong></button><button type="button" class="scope-format-btn alt-format-btn" data-format="italic" title="Italic (Ctrl+I)"><em>I</em></button><button type="button" class="scope-format-btn alt-format-btn" data-format="underline" title="Underline (Ctrl+U)"><span class="format-u">U</span></button></div>
+      <div class="rich-alternate-editor" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" data-placeholder="Enter the scope for this alternate…">${sanitizeScopeHtml(a.richText||plainTextToRichHtml(a.text||""))}</div>
+      <div class="paste-helper"><span>Each alternate prints in its own proposal box. Manual line breaks, blank lines, indentation, and B/I/U formatting are preserved.</span><span>Auto-saved</span></div>
+    </div>`;
+    wrap.appendChild(card);
+  });
+  if(empty)empty.classList.toggle('hidden',items.length>0);
+
+  $$('.alternate-scope-card-head',wrap).forEach(head=>head.addEventListener('click',e=>{
+    if(e.target.closest('input,button,label'))return;
+    head.closest('.alternate-scope-card')?.classList.toggle('open');
+  }));
+  $$('.alternate-enabled',wrap).forEach(cb=>cb.addEventListener('change',e=>{e.target.closest('.alternate-scope-card')?.classList.toggle('enabled',e.target.checked);scheduleSave();updatePreview();}));
+  $$('.alternate-title-input',wrap).forEach(input=>input.addEventListener('input',()=>{scheduleSave();updatePreview();}));
+  $$('.rich-alternate-editor',wrap).forEach(editor=>{
+    editor.addEventListener('input',e=>{
+      const card=e.target.closest('.alternate-scope-card'),plain=richEditorPlainText(e.target),lines=plain.trim()?plain.replace(/\r/g,'').split('\n').length:0;
+      const sub=$('.alternate-scope-sub',card);if(sub)sub.textContent=lines?`${lines} scope line${lines===1?'':'s'} entered`:'No scope entered';
+      scheduleSave();updatePreview();
+    });
+    editor.addEventListener('paste',e=>{e.preventDefault();const html=e.clipboardData?.getData('text/html')||'',text=e.clipboardData?.getData('text/plain')||'';if(html){document.execCommand('insertHTML',false,sanitizeScopeHtml(html));}else document.execCommand('insertText',false,text);});
+  });
+  $$('.alt-format-btn',wrap).forEach(btn=>{
+    btn.addEventListener('mousedown',e=>e.preventDefault());
+    btn.addEventListener('click',()=>{const card=btn.closest('.alternate-scope-card'),editor=$('.rich-alternate-editor',card);if(!editor||editor.getAttribute('contenteditable')==='false')return;editor.focus();try{document.execCommand('styleWithCSS',false,false);}catch{}document.execCommand(btn.dataset.format,false,null);editor.dispatchEvent(new Event('input',{bubbles:true}));});
+  });
+  $$('[data-alt-move]',wrap).forEach(btn=>btn.addEventListener('click',()=>{
+    const card=btn.closest('.alternate-scope-card'),cards=$$('.alternate-scope-card',wrap),idx=cards.indexOf(card),dir=btn.dataset.altMove==='up'?-1:1,target=idx+dir;
+    if(target<0||target>=cards.length)return;
+    const current=collectEditorProject();if(!current)return;
+    const arr=current.alternateScopes||[];[arr[idx],arr[target]]=[arr[target],arr[idx]];current.alternateScopes=arr;putProject(current,state.currentProjectOwner);renderAlternateScopes(current);applyProjectLockUi(current);updatePreview();
+  }));
+  $$('.alternate-delete-btn',wrap).forEach(btn=>btn.addEventListener('click',()=>{
+    const current=collectEditorProject();if(!current)return;const id=btn.closest('.alternate-scope-card')?.dataset.alternateId;current.alternateScopes=(current.alternateScopes||[]).filter(a=>a.id!==id);putProject(current,state.currentProjectOwner);renderAlternateScopes(current);applyProjectLockUi(current);updatePreview();
+  }));
+}
+function addAlternateScope(){
+  const p=collectEditorProject();if(!p||p.locked||p.deletedByUser)return;
+  p.alternateScopes=Array.isArray(p.alternateScopes)?p.alternateScopes:[];
+  const index=p.alternateScopes.length+1;
+  p.alternateScopes.push({id:uid(),title:`Alternate ${String(index).padStart(2,'0')}`,enabled:true,text:'',richText:''});
+  putProject(p,state.currentProjectOwner);renderAlternateScopes(p);applyProjectLockUi(p);updatePreview();
+  const card=$$('.alternate-scope-card').at(-1);if(card){card.classList.add('open');card.scrollIntoView({behavior:'smooth',block:'center'});setTimeout(()=>$('.alternate-title-input',card)?.focus(),220);}
+}
+function collectAlternateScopes(){
+  return $$('.alternate-scope-card').map((card,index)=>{
+    const editor=$('.rich-alternate-editor',card),text=richEditorPlainText(editor);
+    return {id:card.dataset.alternateId||uid(),title:$('.alternate-title-input',card)?.value.trim()||`Alternate ${String(index+1).padStart(2,'0')}`,enabled:$('.alternate-enabled',card)?.checked!==false,text,richText:sanitizeScopeHtml(editor?.innerHTML||plainTextToRichHtml(text))};
+  });
 }
 
 function renderPriceItems(p) {
@@ -1623,6 +1717,7 @@ function collectEditorProject() {
   p.sectionEnabled=p.sectionEnabled||{}; $$('[data-section-enabled]').forEach(el=>p.sectionEnabled[el.dataset.sectionEnabled]=el.checked);
   $$('.rich-closeout-editor').forEach(el=>{ const field=el.dataset.closeoutField; p[field]=richEditorPlainText(el); p[`${field}RichText`]=sanitizeScopeHtml(el.innerHTML||plainTextToRichHtml(p[field])); });
   p.priceItems=collectPriceItems();
+  p.alternateScopes=collectAlternateScopes();
   $$('.division-card').forEach(card=>{ const n=card.dataset.division,def=CSI_DIVISIONS.find(x=>x[0]===n)[1],editor=$('.rich-division-editor',card); p.divisions[n]=p.divisions[n]||{number:n,title:def,text:"",richText:""}; p.divisions[n].number=n; p.divisions[n].title=$('.division-title-input',card).value.trim()||def; p.divisions[n].enabled=$('.division-enabled',card).checked; p.divisions[n].text=richEditorPlainText(editor); p.divisions[n].richText=sanitizeScopeHtml(editor?.innerHTML||plainTextToRichHtml(p.divisions[n].text)); });
   collectSummaryEditor(p);
   return p;
@@ -1864,15 +1959,32 @@ function kickoffStaticMapUrl(address,zoom,key,size='640x320'){
 }
 function kickoffRichLinesFromHtml(html=""){
   const safe=sanitizeScopeHtml(html||'');const root=document.createElement('div');root.innerHTML=safe;let lines=[[]];
-  const newLine=()=>{if(lines[lines.length-1].length)lines.push([]);};
+  // Always create a logical line when the editor contains a manual line break.
+  // Consecutive empty editor blocks therefore survive as true blank PDF lines.
+  const newLine=()=>lines.push([]);
   const addText=(value,style)=>{String(value||'').split(/\n/).forEach((part,i)=>{if(i)newLine();if(part)lines[lines.length-1].push({text:part,bold:Boolean(style.bold),italic:Boolean(style.italic),underline:Boolean(style.underline)});});};
   const walk=(node,style={bold:false,italic:false,underline:false})=>{
     if(node.nodeType===Node.TEXT_NODE){addText(node.nodeValue,style);return;}if(node.nodeType!==Node.ELEMENT_NODE)return;
     const tag=node.tagName.toLowerCase();if(tag==='br'){newLine();return;}const next={...style};if(tag==='b'||tag==='strong')next.bold=true;if(tag==='i'||tag==='em')next.italic=true;if(tag==='u')next.underline=true;
-    if(tag==='div'||tag==='p'){if(lines[lines.length-1].length)newLine();[...node.childNodes].forEach(ch=>walk(ch,next));newLine();return;}[...node.childNodes].forEach(ch=>walk(ch,next));
+    if(tag==='div'||tag==='p'){
+      if(lines[lines.length-1].length)newLine();
+      const before=lines.length;
+      [...node.childNodes].forEach(ch=>walk(ch,next));
+      // A non-empty block needs a boundary before the next block. An empty
+      // <div><br></div> already created that boundary and represents one blank line.
+      if(lines[lines.length-1].length)newLine();
+      else if(lines.length===before)newLine();
+      return;
+    }
+    [...node.childNodes].forEach(ch=>walk(ch,next));
   };
   [...root.childNodes].forEach(ch=>walk(ch));
-  return lines.map(runs=>{const out=[];runs.forEach(run=>{if(!run.text)return;const prev=out[out.length-1];if(prev&&prev.bold===run.bold&&prev.italic===run.italic&&prev.underline===run.underline)prev.text+=run.text;else out.push({...run});});if(out.length)out[0].text=out[0].text.replace(/^\s+/,'');if(out.length)out[out.length-1].text=out[out.length-1].text.replace(/\s+$/,'');return out.filter(r=>r.text);}).filter(r=>r.some(x=>x.text.trim()));
+  const cleaned=lines.map(runs=>{const out=[];runs.forEach(run=>{if(!run.text)return;const prev=out[out.length-1];if(prev&&prev.bold===run.bold&&prev.italic===run.italic&&prev.underline===run.underline)prev.text+=run.text;else out.push({...run});});if(out.length)out[0].text=out[0].text.replace(/^\s+/,'');if(out.length)out[out.length-1].text=out[out.length-1].text.replace(/\s+$/,'');return out.filter(r=>r.text);});
+  // Remove only the editor's trailing cursor line. Keep all intentional blanks
+  // between text lines so the PDF visually matches the kickoff editor.
+  while(cleaned.length&&!cleaned[cleaned.length-1].some(x=>x.text.trim()))cleaned.pop();
+  while(cleaned.length&&!cleaned[0].some(x=>x.text.trim()))cleaned.shift();
+  return cleaned;
 }
 function kickoffPlainTextFromHtml(html=""){return kickoffRichLinesFromHtml(html).map(r=>r.map(x=>x.text).join('')).join('\n');}
 async function buildKickoffPdf(options={}){
@@ -1971,14 +2083,18 @@ async function buildKickoffPdf(options={}){
     let dy=drawDivisionHeader(d);const richLines=kickoffRichLinesFromHtml(d.notesHtml||'');
     if(!richLines.length){doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);doc.text('No kickoff notes entered.',contentX+.08,dy+.16);return;}
     for(const richLine of richLines){
+      // An empty logical line is an intentional blank line in the kickoff editor.
+      if(!richLine.length){
+        if(dy+.24>bottom){dy=drawDivisionHeader(d,'DIVISION KICKOFF (CONT.)');}
+        dy+=.22;
+        continue;
+      }
       const wrapped=wrapKickoffRuns(richLine,contentW-.18);
       for(const line of wrapped){
         if(dy+.24>bottom){dy=drawDivisionHeader(d,'DIVISION KICKOFF (CONT.)');}
         drawKickoffRunLine(line,contentX+.08,dy+.16);dy+=.22;
       }
-      // Preserve each manual Enter/paragraph as a separate visual line instead of
-      // concatenating the next sentence directly onto the previous one.
-      dy+=.07;
+      dy+=.02;
     }
   }
   async function addQuotePages(q){
@@ -2276,10 +2392,15 @@ async function exportPdf(options={}) {
     active.forEach(d=>addSplittable({type:'division',number:d.number,title:d.title},scopeItemsFromRichHtml(d.richText,d.text),{fontSize:bodyFont,leading:bodyLeading}));
     const extras=[
       {title:'CLARIFICATIONS',value:p.clarifications,rich:p.clarificationsRichText,on:p.sectionEnabled?.clarifications},
-      {title:'EXCLUSIONS',value:p.exclusions,rich:p.exclusionsRichText,on:p.sectionEnabled?.exclusions},
-      {title:'ALTERNATES',value:p.alternates,rich:p.alternatesRichText,on:p.sectionEnabled?.alternates}
+      {title:'EXCLUSIONS',value:p.exclusions,rich:p.exclusionsRichText,on:p.sectionEnabled?.exclusions}
     ].filter(item=>item.on&&String(item.value||'').trim());
     extras.forEach(item=>addSplittable({type:'simple',title:item.title},scopeItemsFromRichHtml(item.rich,item.value),{fontSize:minPdfFont,leading:bodyLeading}));
+    // Each proposal alternate is intentionally its own independent card, matching
+    // the division-card workflow instead of combining all alternates together.
+    (p.alternateScopes||[]).filter(a=>a.enabled!==false&&String(a.text||'').trim()).forEach((a,index)=>{
+      const title=String(a.title||`Alternate ${String(index+1).padStart(2,'0')}`).trim().toUpperCase();
+      addSplittable({type:'simple',title},scopeItemsFromRichHtml(a.richText,a.text),{fontSize:minPdfFont,leading:bodyLeading});
+    });
 
     if(p.sectionEnabled?.clientSelections&&p.priceItems.some(i=>(i.name||'').trim()||(i.price||'').trim())){
       const h=selectionHeight(p.priceItems.filter(i=>(i.name||'').trim()||(i.price||'').trim()));
@@ -2715,6 +2836,7 @@ $("#backToDashboard").addEventListener("click",()=>{saveEditorProject();enterDas
 $("#divisionSearch").addEventListener("input",filterDivisionNav);$("#expandAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.add('open')));$("#collapseAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.remove('open')));
 $("#previewToggle").addEventListener("click",()=>togglePreview());$("#closePreviewBtn").addEventListener("click",()=>togglePreview(false));$$('.tab-btn').forEach(b=>b.addEventListener('click',()=>activateTab(b.dataset.tab)));
 $("#projectTitleInline").addEventListener("input",()=>{scheduleSave();updatePreview();});$("#addPriceItemBtn").addEventListener("click",addPriceItem);
+$("#addAlternateScopeBtn")?.addEventListener("click",addAlternateScope);
 $("#summaryMode").addEventListener("change",()=>{const p=collectEditorProject();if(p)renderSummaryEditor(p);scheduleSave();updatePreview();});
 $("#addTopCustomDivisionBtn")?.addEventListener("click",()=>addCustomAdvancedDivision("__start__"));
 $("#addSummaryRowBtn").addEventListener("click",addAdvancedSummaryRow);
