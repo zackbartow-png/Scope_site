@@ -3290,7 +3290,7 @@ function handleVersionDeleteRestore(){
 }
 
 // Admin disclaimer library
-function openAdminDialog(){if(!isAdmin())return toast("Admin access required.");if(state.currentProjectId)saveEditorProject();renderAdminDisclaimers();renderAdminUsers();populateOfficeSettings();$("#adminInvitePanel")?.classList.toggle("hidden",!authBackendConfigured);if($("#adminUsersNote"))$("#adminUsersNote").textContent=authBackendConfigured?"New invited users are Employees by default. Admins can promote another user to Admin. Password reset links are sent to the user’s email; temporary passwords require a password change at next sign-in.":"Secure Supabase login is unavailable in this browser session.";$("#adminDialog").showModal();}
+function openAdminDialog(){if(!isAdmin())return toast("Admin access required.");if(state.currentProjectId)saveEditorProject();renderAdminDisclaimers();renderAdminUsers();populateOfficeSettings();$("#adminInvitePanel")?.classList.toggle("hidden",!authBackendConfigured);$("#adminCreateUserPanel")?.classList.toggle("hidden",!authBackendConfigured);if($("#adminUsersNote"))$("#adminUsersNote").textContent=authBackendConfigured?"Admins can create active Employee accounts with a temporary password or use email invitations. Temporary-password users must choose a new password at first sign-in. Admins can promote another user to Admin, send password resets, or remove users while preserving company project history.":"Secure Supabase login is unavailable in this browser session.";$("#adminDialog").showModal();}
 function closeAdminDialog(){$("#adminDialog").close();}
 function activateAdminTab(name){$$('.admin-tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===name));$$('.admin-tab-panel').forEach(p=>p.classList.remove('active'));$(`#admin${name[0].toUpperCase()+name.slice(1)}Tab`).classList.add('active');}
 function renderAdminDisclaimers(){const items=getDisclaimers(),list=$("#disclaimerList");list.innerHTML="";if(!state.adminDisclaimerId||!items.some(d=>d.id===state.adminDisclaimerId))state.adminDisclaimerId=items[0]?.id||null;items.forEach(d=>{const b=document.createElement('button');b.type='button';b.className=`disclaimer-list-item ${d.id===state.adminDisclaimerId?'active':''}`;b.dataset.disclaimerAdminId=d.id;b.innerHTML=`<strong>${esc(d.name)}</strong><span>${esc(d.text)}</span>`;list.appendChild(b);});$$('[data-disclaimer-admin-id]').forEach(b=>b.addEventListener('click',()=>{state.adminDisclaimerId=b.dataset.disclaimerAdminId;renderAdminDisclaimers();}));const d=items.find(x=>x.id===state.adminDisclaimerId);$("#disclaimerEditId").value=d?.id||"";$("#disclaimerEditName").value=d?.name||"";$("#disclaimerEditText").value=d?.text||"";$("#deleteDisclaimerBtn").disabled=items.length<=1||!d;}
@@ -3322,6 +3322,27 @@ async function renderAdminUsers(){
   getAllUsers().forEach(u=>{u=normalizeUser(u);const row=document.createElement('div');row.className='admin-user-row';row.innerHTML=`<div><strong>${esc(u.username)}${u.username.toLowerCase()===state.user.username.toLowerCase()?' · You':''}</strong><span>Created ${esc(fmtTime(u.createdAt))}</span></div><select class="admin-role-select" data-role-user="${esc(u.username)}"><option value="employee" ${u.role==='employee'?'selected':''}>Employee</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin</option></select>`;wrap.appendChild(row);});$$('.admin-role-select').forEach(sel=>sel.addEventListener('change',()=>changeUserRole(sel.dataset.roleUser,sel.value,sel)));
 }
 function changeUserRole(username,role,selectEl){if(!isAdmin())return;const stored=getUserRecord(username);if(!stored)return;const record=normalizeUser(stored);const admins=getAllUsers().filter(u=>normalizeUser(u).role==='admin');if(record.role==='admin'&&role==='employee'&&admins.length<=1){selectEl.value='admin';return toast("At least one Admin account is required.");}record.role=role;saveUserRecord(record);if(username.toLowerCase()===state.user.username.toLowerCase()){state.user=record;refreshRoleUi();if(!isAdmin()){closeAdminDialog();toast("Your role is now Employee.");return;}}renderAdminUsers();toast(`${username} is now ${role === 'admin' ? 'an Admin' : 'an Employee'}.`);}
+async function createRemoteUserWithTempPassword(){
+  if(!authBackendConfigured)return toast("Secure backend is not configured.");
+  const email=$("#adminCreateEmail")?.value.trim().toLowerCase()||"";
+  const password=$("#adminCreatePassword")?.value||"";
+  if(!email||!email.includes("@"))return toast("Enter a valid employee email.");
+  if(password.length<12)return toast("Temporary password must be at least 12 characters.");
+  const btn=$("#adminCreateUserBtn");if(btn)btn.disabled=true;
+  try{
+    await supabaseFunctionFetch('scope-admin-create-user',{method:'POST',body:JSON.stringify({email,password})});
+    $("#adminCreateEmail").value="";$("#adminCreatePassword").value="";
+    await renderAdminUsers();
+    toast(`Employee account created for ${email}.`);
+  }catch(err){console.error(err);toast(err.message||"Could not create employee account.");}
+  finally{if(btn)btn.disabled=false;}
+}
+function generateAdminTemporaryPassword(){
+  const input=$("#adminCreatePassword");if(!input)return;
+  input.value=generateTemporaryPassword();input.focus();input.select();
+  toast("Temporary password generated. Copy it before creating the user.");
+}
+
 async function inviteRemoteUser(){
   if(!authBackendConfigured)return toast("Secure backend is not configured.");
   const input=$("#adminInviteEmail"),email=input.value.trim().toLowerCase();if(!email)return toast("Enter an employee email.");
@@ -3504,7 +3525,7 @@ $("#logoutBtn").addEventListener("click",async()=>{if(authBackendConfigured&&aut
 $("#userMenuBtn").addEventListener("click",()=>$("#userMenuPopover").classList.toggle('hidden'));
 $("#adminPanelBtn").addEventListener("click",openAdminDialog);$("#adminPopoverBtn").addEventListener("click",()=>{$("#userMenuPopover").classList.add('hidden');openAdminDialog();});
 $("#closeAdminDialog").addEventListener("click",closeAdminDialog);$("#newDisclaimerBtn").addEventListener("click",newDisclaimer);$("#saveDisclaimerBtn").addEventListener("click",saveDisclaimerFromAdmin);$("#deleteDisclaimerBtn").addEventListener("click",deleteDisclaimerFromAdmin);$$('.admin-tab-btn').forEach(b=>b.addEventListener('click',()=>activateAdminTab(b.dataset.adminTab)));
-$("#adminDownloadBackupBtn").addEventListener("click",downloadDataBackup);$("#adminRestoreBackupBtn").addEventListener("click",triggerRestoreBackup);$("#adminInviteUserBtn")?.addEventListener("click",inviteRemoteUser);
+$("#adminDownloadBackupBtn").addEventListener("click",downloadDataBackup);$("#adminRestoreBackupBtn").addEventListener("click",triggerRestoreBackup);$("#adminCreateUserBtn")?.addEventListener("click",createRemoteUserWithTempPassword);$("#adminGeneratePasswordBtn")?.addEventListener("click",generateAdminTemporaryPassword);$("#adminInviteUserBtn")?.addEventListener("click",inviteRemoteUser);
 $("#newProjectBtn").addEventListener("click",openNewProjectDialog);$("#emptyNewProjectBtn").addEventListener("click",openNewProjectDialog);$("#newProjectForm").addEventListener("submit",handleNewProject);$("#closeNewProjectDialog")?.addEventListener("click",()=>$("#newProjectDialog").close());$("#cancelNewProjectDialog")?.addEventListener("click",()=>$("#newProjectDialog").close());$("#newProjectDialog")?.addEventListener("click",e=>{if(e.target===$("#newProjectDialog"))$("#newProjectDialog").close();});$("#projectSearch").addEventListener("input",renderProjects);$("#projectSort").addEventListener("change",renderProjects);$$('.project-nav-btn').forEach(b=>b.addEventListener('click',()=>setDashboardMode(b.dataset.projectView)));$("#adminUserFilter").addEventListener("change",()=>{state.adminUserFilter=$("#adminUserFilter").value;renderProjects();});
 $("#importProjectArchiveBtn")?.addEventListener("click",()=>$("#projectArchiveFileInput")?.click());
 $("#projectArchiveFileInput")?.addEventListener("change",async e=>{const file=e.target.files?.[0];e.target.value="";if(file)await importKoehnProjectArchive(file);});

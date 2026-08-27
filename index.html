@@ -566,9 +566,16 @@
         <div class="admin-section-head">
           <div><h3>User Management</h3><p>Create employees by email, manage access levels, and send secure password resets.</p></div>
         </div>
+        <div id="adminCreateUserPanel" class="admin-invite-panel">
+          <label>Employee Email<input id="adminCreateEmail" type="email" placeholder="employee@company.com" autocomplete="off" /></label>
+          <label>Temporary Password<input id="adminCreatePassword" type="text" minlength="12" placeholder="Minimum 12 characters" autocomplete="off" /></label>
+          <button id="adminGeneratePasswordBtn" class="btn btn-secondary" type="button">Generate Password</button>
+          <button id="adminCreateUserBtn" class="btn btn-primary" type="button">Create User</button>
+        </div>
+        <p class="admin-note">Create User activates the Employee immediately without sending email. The employee must change the temporary password at first sign-in.</p>
         <div id="adminInvitePanel" class="admin-invite-panel">
-          <label>Employee Email<input id="adminInviteEmail" type="email" placeholder="employee@company.com" autocomplete="off" /></label>
-          <button id="adminInviteUserBtn" class="btn btn-primary" type="button">Send Invite</button>
+          <label>Email Invite (optional)<input id="adminInviteEmail" type="email" placeholder="employee@company.com" autocomplete="off" /></label>
+          <button id="adminInviteUserBtn" class="btn btn-secondary" type="button">Send Email Invite</button>
         </div>
         <div id="adminUsersList" class="admin-users-list"></div>
         <p class="admin-note" id="adminUsersNote">New invited users are Employees by default. Admins can promote another user to Admin. Remove User permanently removes login access and transfers that user's projects to the Admin performing the removal so company history is retained. Password reset links are sent to the user's email; temporary passwords require the user to choose a new password at next sign-in.</p>
