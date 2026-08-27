@@ -2340,14 +2340,14 @@ async function exportPdf(options={}) {
       });
     });
   }
-  function cardHeight(items,{fontSize=bodyFont,leading=bodyLeading,division=true}={}){
+  function cardHeight(items,{fontSize=bodyFont,leading=bodyLeading,division=true,titleGap=0}={}){
     let bodyH=0;
     items.forEach(i=>{
       if(itemBlank(i)){bodyH+=leading*.72;return;}
       bodyH+=Math.max(1,wrapItem(i,fontSize).length)*leading+.055;
     });
-    const heading=.43,bottom=.20;
-    return Math.max(.76,heading+bodyH+bottom);
+    const heading=.43+titleGap,bottom=.20;
+    return Math.max(.76+titleGap,heading+bodyH+bottom);
   }
   function fitItems(items,available,opts){
     const fit=[];
@@ -2355,10 +2355,12 @@ async function exportPdf(options={}) {
     return [fit,items.slice(fit.length)];
   }
   function selectionItemHeight(item){
-    doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);
+    const fontSize=item.isBaseBid?14:minPdfFont;
+    const leading=fontSize/72*1.22;
+    doc.setFont('helvetica','bold');doc.setFontSize(fontSize);
     const maxW=item.isBaseBid?contentW-1.30:contentW-1.55;
     const nameLines=doc.splitTextToSize(item.name||'Selection item',maxW).length;
-    return Math.max(.30,nameLines*.215+.09);
+    return Math.max(item.isBaseBid?.36:.30,nameLines*leading+.09);
   }
   function selectionMetrics(items){
     doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);
@@ -2399,7 +2401,7 @@ async function exportPdf(options={}) {
     // the division-card workflow instead of combining all alternates together.
     (p.alternateScopes||[]).filter(a=>a.enabled!==false&&String(a.text||'').trim()).forEach((a,index)=>{
       const title=String(a.title||`Alternate ${String(index+1).padStart(2,'0')}`).trim().toUpperCase();
-      addSplittable({type:'simple',title},scopeItemsFromRichHtml(a.richText,a.text),{fontSize:minPdfFont,leading:bodyLeading});
+      addSplittable({type:'alternate',title},scopeItemsFromRichHtml(a.richText,a.text),{fontSize:minPdfFont,leading:bodyLeading,titleGap:.12});
     });
 
     if(p.sectionEnabled?.clientSelections&&p.priceItems.some(i=>(i.name||'').trim()||(i.price||'').trim())){
@@ -2435,9 +2437,11 @@ async function exportPdf(options={}) {
     return y+h+cardGap;
   }
   function drawSimpleCard(entry,y){
-    const opts={fontSize:minPdfFont,leading:bodyLeading};const h=cardHeight(entry.items,opts);drawCardBase(y,h);
+    const isAlternate=entry.type==='alternate';
+    const titleGap=isAlternate?.12:0;
+    const opts={fontSize:minPdfFont,leading:bodyLeading,titleGap};const h=cardHeight(entry.items,opts);drawCardBase(y,h);
     doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText(text);doc.text(`${entry.title}${entry.cont?' (CONT.)':''}`,contentX+.42,y+.28);
-    let cy=y+.50;doc.setFont('helvetica','normal');doc.setFontSize(opts.fontSize);
+    let cy=y+.50+titleGap;doc.setFont('helvetica','normal');doc.setFontSize(opts.fontSize);
     for(const item of entry.items){
       if(itemBlank(item)){cy+=opts.leading*.72;continue;}
       const lines=wrapItem(item,opts.fontSize),bullet=itemBullet(item),indent=itemIndent(item),x=(bullet?contentX+.58:contentX+.42)+indent;
@@ -2458,12 +2462,14 @@ async function exportPdf(options={}) {
     items.forEach((item,index)=>{
       const isBase=Boolean(item.isBaseBid),x=isBase?contentX+.42:contentX+.67;
       if(!isBase){doc.setDrawColor(70,73,76);doc.setLineWidth(.01);doc.rect(contentX+.43,cy-.12,.14,.14);}
-      doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText(text);
+      const itemFontSize=isBase?14:minPdfFont;
+      const itemLeading=itemFontSize/72*1.22;
+      doc.setFont('helvetica','bold');doc.setFontSize(itemFontSize);setText(text);
       const maxW=isBase?contentW-1.30:contentW-1.55;
       const nameLines=doc.splitTextToSize(item.name||'Selection item',maxW);
-      doc.text(nameLines,x,cy,{lineHeightFactor:1.2});
+      doc.text(nameLines,x,cy,{lineHeightFactor:1.22});
       doc.text(currencyText(item.price),pageW-right-.16,cy,{align:'right'});
-      cy+=Math.max(.30,nameLines.length*.215+.09);
+      cy+=Math.max(isBase?.36:.30,nameLines.length*itemLeading+.09);
       if(isBase&&metrics.hasAlternates){
         doc.setDrawColor(185,189,192);doc.setLineWidth(.012);doc.line(contentX+.42,cy-.16,pageW-right-.12,cy-.16);cy+=.10;
       }
@@ -2629,7 +2635,7 @@ async function exportPdf(options={}) {
   drawCover();
   layout.forEach((entries,idx)=>{
     doc.addPage('letter','portrait');const pageNum=idx+2;drawInteriorHeader(pageNum,totalPages);let y=topY;
-    entries.forEach(entry=>{if(entry.type==='division')y=drawDivisionCard(entry,y);else if(entry.type==='simple')y=drawSimpleCard(entry,y);else if(entry.type==='selections')y=drawSelections(y);else if(entry.type==='closing')drawClosing(y);});
+    entries.forEach(entry=>{if(entry.type==='division')y=drawDivisionCard(entry,y);else if(entry.type==='simple'||entry.type==='alternate')y=drawSimpleCard(entry,y);else if(entry.type==='selections')y=drawSelections(y);else if(entry.type==='closing')drawClosing(y);});
   });
   summaryPages.forEach((pageData,idx)=>{
     doc.addPage('letter','portrait');const pageNum=2+layout.length+idx;
