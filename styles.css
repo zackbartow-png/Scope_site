@@ -526,3 +526,88 @@ body { min-height: 100%; overflow-y: auto; }
 .kickoff-processing::before { content:""; width:14px; height:14px; border:2px solid #d9dcde; border-top-color:#f05a28; border-radius:50%; animation:ksb-spin .8s linear infinite; }
 @keyframes ksb-spin { to { transform:rotate(360deg); } }
 @media (max-width:700px){ .dashboard-hero-actions{width:100%;justify-content:flex-start}.kickoff-placeholder-head{flex-direction:column}.kickoff-quote-item{grid-template-columns:1fr} }
+
+/* V7.23 Kickoff Builder */
+.kickoff-builder-shell { max-width: 1120px; }
+.kickoff-topbar-left { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.kickoff-builder-head { display:flex; justify-content:space-between; align-items:flex-end; gap:22px; margin:6px 0 18px; padding:22px 24px; border:1px solid #dfe2e5; border-radius:14px; background:#fff; box-shadow:0 10px 24px rgba(25,28,30,.05); }
+.kickoff-builder-head h1 { margin:5px 0 5px; font:700 28px/1.15 Montserrat,sans-serif; color:#3f4347; }
+.kickoff-builder-subline { display:flex; gap:8px; flex-wrap:wrap; color:#7c8186; font-size:11px; }
+.kickoff-accepted-date { flex:0 0 auto; min-width:130px; text-align:right; }
+.kickoff-accepted-date span { display:block; font-size:9px; font-weight:800; letter-spacing:.08em; color:#7b8084; text-transform:uppercase; }
+.kickoff-accepted-date strong { display:block; margin-top:4px; color:#3d7a49; font-size:14px; }
+.kickoff-tabs { display:flex; gap:5px; overflow-x:auto; padding:0 2px 1px; border-bottom:1px solid #dfe2e5; margin-bottom:18px; }
+.kickoff-tab-btn { flex:0 0 auto; min-height:42px; padding:10px 15px; border:0; border-bottom:3px solid transparent; background:transparent; color:#73787d; font-size:11px; font-weight:800; cursor:pointer; }
+.kickoff-tab-btn.active { color:#2f3336; border-bottom-color:var(--orange); }
+.kickoff-tab-panel { display:none; }
+.kickoff-tab-panel.active { display:block; }
+.kickoff-section-heading { display:flex; align-items:flex-start; gap:18px; margin:0 0 14px; }
+.kickoff-section-heading h2 { margin:0 0 4px; color:#3f4347; font:700 20px/1.2 Montserrat,sans-serif; }
+.kickoff-section-heading p { margin:0; max-width:760px; color:#7d8287; font-size:11px; line-height:1.55; }
+.kickoff-section-heading-split { justify-content:space-between; }
+.kickoff-form-card { background:#fff; border:1px solid #dfe2e5; border-radius:13px; padding:22px; box-shadow:0 8px 20px rgba(25,28,30,.04); }
+.kickoff-form-grid { display:grid; gap:15px; }
+.kickoff-form-grid.two-col { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.kickoff-form-grid .full { grid-column:1/-1; }
+.kickoff-form-card label { display:grid; gap:6px; color:#60656a; font-size:10px; font-weight:800; }
+.kickoff-form-card input, .kickoff-form-card textarea, .kickoff-import-card select, .kickoff-division-card input { width:100%; border:1px solid #d7dade; border-radius:8px; background:#fff; color:#26292c; padding:10px 11px; font:500 12px/1.35 Inter,sans-serif; }
+.kickoff-form-card textarea { resize:vertical; }
+.kickoff-map-options { border:1px solid #e0e3e5; border-radius:11px; background:#fafafa; padding:14px; }
+.kickoff-map-option-head { display:flex; justify-content:space-between; align-items:center; gap:16px; }
+.kickoff-map-option-head > div { min-width:0; }
+.kickoff-map-option-head strong { display:block; color:#42464a; font-size:12px; }
+.kickoff-map-option-head span { display:block; margin-top:3px; color:#858a8e; font-size:10px; font-weight:500; line-height:1.4; }
+.kickoff-map-settings { margin-top:14px; }
+.kickoff-map-settings.hidden { display:none; }
+.kickoff-map-settings { display:grid; grid-template-columns:auto auto 1fr; gap:10px 14px; align-items:center; }
+.map-check { display:flex!important; grid-auto-flow:column; align-items:center; gap:7px!important; font-size:10px!important; }
+.map-check input { width:15px!important; height:15px; }
+.kickoff-map-preview-grid { grid-column:1/-1; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.kickoff-map-preview { border:1px solid #dadde0; border-radius:10px; overflow:hidden; background:#fff; }
+.kickoff-map-preview-label { padding:8px 10px; color:#555a5e; font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; border-bottom:1px solid #e3e5e7; }
+.kickoff-map-preview iframe { display:block; width:100%; height:245px; border:0; background:#f3f4f4; }
+.kickoff-map-note { grid-column:1/-1; margin:0; color:#858a8e; font-size:9px; line-height:1.45; }
+.maps-api-panel { margin-top:14px; }
+.kickoff-import-card { display:grid; grid-template-columns:minmax(0,1fr) minmax(300px,.7fr); gap:20px; align-items:center; border:1px solid #dfe2e5; border-radius:12px; padding:16px 18px; background:#fff; margin-bottom:14px; }
+.kickoff-import-card strong { display:block; color:#42464a; font-size:13px; margin:3px 0 4px; }
+.kickoff-import-card p { margin:0; color:#858a8e; font-size:10px; line-height:1.45; }
+.kickoff-import-actions { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+.kickoff-division-list { display:grid; gap:13px; }
+.kickoff-empty-state { display:grid; place-items:center; gap:5px; min-height:130px; border:1px dashed #ced2d5; border-radius:12px; color:#8a8f93; background:#fbfbfb; text-align:center; }
+.kickoff-empty-state strong { color:#5f6468; font-size:13px; }
+.kickoff-empty-state span { font-size:10px; }
+.kickoff-division-card { border:1px solid #dfe2e5; border-radius:13px; background:#fff; overflow:hidden; box-shadow:0 7px 18px rgba(25,28,30,.035); }
+.kickoff-division-card-head { display:grid; grid-template-columns:112px minmax(0,1.55fr) minmax(0,1fr) 170px auto; gap:10px; align-items:end; padding:15px 16px; background:#f7f7f6; border-bottom:1px solid #e0e3e5; }
+.kickoff-division-card-head label { display:grid; gap:5px; color:#74797d; font-size:8px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+.kickoff-division-card-head input { min-width:0; }
+.kickoff-division-card-body { padding:14px 16px 16px; }
+.kickoff-division-actions { display:flex; gap:6px; align-items:center; }
+.kickoff-division-actions button { min-width:34px; }
+.kickoff-notes-toolbar { display:flex; gap:5px; margin-bottom:7px; }
+.kickoff-rich-editor { min-height:170px; border:1px solid #d8dbde; border-radius:8px; padding:11px 12px; background:#fff; color:#272a2d; font-size:12px; line-height:1.48; outline:none; white-space:pre-wrap; overflow-wrap:anywhere; }
+.kickoff-rich-editor:focus { border-color:#adb2b6; box-shadow:0 0 0 2px rgba(243,111,33,.10); }
+.kickoff-rich-editor:empty::before { content:attr(data-placeholder); color:#9da1a5; }
+.kickoff-division-footer { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-top:11px; }
+.kickoff-source-note { color:#888d91; font-size:9px; }
+.kickoff-page-order { display:grid; gap:7px; margin-bottom:14px; }
+.kickoff-page-order-row { display:grid; grid-template-columns:34px minmax(0,1fr) auto; align-items:center; gap:10px; border:1px solid #e0e3e5; border-radius:9px; padding:10px 12px; background:#fff; }
+.kickoff-page-order-index { width:28px; height:28px; display:grid; place-items:center; border-radius:50%; background:#f2f3f3; color:#6b7074; font-size:9px; font-weight:800; }
+.kickoff-page-order-row strong { display:block; font-size:11px; color:#464a4e; }
+.kickoff-page-order-row span { display:block; margin-top:2px; color:#858a8e; font-size:9px; }
+.kickoff-quote-item .quote-association { color:#686d72; font-weight:700; }
+.kickoff-pdf-preview-status { padding:18px; border:1px dashed #d6d9dc; border-radius:10px; background:#fbfbfb; color:#858a8e; font-size:11px; }
+.kickoff-pdf-preview-pages { display:grid; gap:20px; margin-top:14px; justify-items:center; }
+.kickoff-pdf-preview-sheet { position:relative; max-width:100%; background:#fff; border:1px solid #d7dade; box-shadow:0 10px 24px rgba(25,28,30,.08); }
+.kickoff-pdf-preview-sheet canvas { display:block; max-width:100%; height:auto; }
+.kickoff-pdf-preview-tag { position:absolute; right:8px; bottom:8px; padding:4px 7px; border-radius:999px; background:rgba(33,37,40,.82); color:#fff; font-size:8px; }
+@media (max-width:900px){
+  .kickoff-builder-head{align-items:flex-start;flex-direction:column}.kickoff-accepted-date{text-align:left}
+  .kickoff-form-grid.two-col{grid-template-columns:1fr}.kickoff-form-grid .full{grid-column:auto}
+  .kickoff-map-preview-grid{grid-template-columns:1fr}.kickoff-map-settings{grid-template-columns:1fr}.kickoff-map-preview-grid,.kickoff-map-note{grid-column:auto}
+  .kickoff-import-card{grid-template-columns:1fr}.kickoff-import-actions{grid-template-columns:1fr}
+  .kickoff-division-card-head{grid-template-columns:1fr 1fr}.kickoff-division-actions{grid-column:1/-1;justify-content:flex-end}
+}
+@media (max-width:620px){
+  .kickoff-division-card-head{grid-template-columns:1fr}.kickoff-division-actions{grid-column:auto;justify-content:flex-start;flex-wrap:wrap}
+  .kickoff-section-heading-split{flex-direction:column}.kickoff-map-option-head{align-items:flex-start;flex-direction:column}
+}

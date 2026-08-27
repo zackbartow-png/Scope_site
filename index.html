@@ -126,30 +126,98 @@
 
 
     <main id="kickoffView" class="kickoff-view hidden">
-      <div class="kickoff-shell">
+      <div class="kickoff-shell kickoff-builder-shell">
         <div class="kickoff-topbar">
-          <button id="kickoffBackBtn" class="btn btn-secondary" type="button">← Back to Projects</button>
-          <span class="kickoff-accepted-badge">Accepted</span>
+          <div class="kickoff-topbar-left">
+            <button id="kickoffBackBtn" class="btn btn-secondary" type="button">← Back to Projects</button>
+            <span class="kickoff-accepted-badge">Accepted</span>
+          </div>
+          <button id="exportKickoffPdfBtn" class="btn btn-primary" type="button">Export Kickoff PDF</button>
         </div>
-        <section class="kickoff-card">
-          <span class="eyebrow">Project Kickoff</span>
-          <h1 id="kickoffProjectName">Project Name</h1>
-          <div class="kickoff-meta-grid">
-            <div><span>Client</span><strong id="kickoffClientName">Client</strong></div>
-            <div><span>Project Number</span><strong id="kickoffProjectNumber">Project Number</strong></div>
-            <div><span>Proposal Version</span><strong id="kickoffVersion">Original</strong></div>
-            <div><span>Accepted</span><strong id="kickoffAcceptedDate">—</strong></div>
+
+        <section class="kickoff-builder-head">
+          <div>
+            <span class="eyebrow">Project Kickoff Builder</span>
+            <h1 id="kickoffProjectName">Project Name</h1>
+            <div class="kickoff-builder-subline"><span id="kickoffClientName">Client</span><span>•</span><span id="kickoffProjectNumber">Project Number</span><span>•</span><span id="kickoffVersion">Original</span></div>
           </div>
-          <div class="kickoff-placeholder">
-            <div class="kickoff-placeholder-head">
-              <div>
-                <h2>Kickoff Builder</h2>
-                <p>Quote PDFs are converted immediately to compressed page snapshots for reliable storage and later PDF export. The original uploaded PDF is not retained.</p>
+          <div class="kickoff-accepted-date"><span>Accepted</span><strong id="kickoffAcceptedDate">—</strong></div>
+        </section>
+
+        <div class="kickoff-tabs" role="tablist" aria-label="Kickoff Builder sections">
+          <button class="kickoff-tab-btn active" data-kickoff-tab="info" type="button">Project Info</button>
+          <button class="kickoff-tab-btn" data-kickoff-tab="divisions" type="button">Divisions</button>
+          <button class="kickoff-tab-btn" data-kickoff-tab="documents" type="button">Quotes &amp; Pages</button>
+          <button class="kickoff-tab-btn" data-kickoff-tab="preview" type="button">PDF Preview</button>
+        </div>
+
+        <section id="kickoffInfoTab" class="kickoff-tab-panel active">
+          <div class="kickoff-section-heading">
+            <div><h2>Project Information</h2><p>Project-level information is carried into the kickoff book. Proposal information is prefilled where available and remains editable here.</p></div>
+          </div>
+          <div class="kickoff-form-card kickoff-form-grid two-col">
+            <label class="full">Project Overview<textarea data-kickoff-info="projectOverview" rows="6" placeholder="Describe the project, major building/site features, and overall construction intent."></textarea></label>
+            <label>Owner / Client<input data-kickoff-info="owner" placeholder="Owner / client" /></label>
+            <label>Contract Type<input data-kickoff-info="contractType" placeholder="Example: Lump Sum" /></label>
+            <label class="full">Owner Contacts<textarea data-kickoff-info="ownerContacts" rows="3" placeholder="Names, email addresses, phone numbers"></textarea></label>
+            <label class="full">Project Location<textarea data-kickoff-info="projectLocation" rows="2" placeholder="Project address"></textarea></label>
+
+            <div class="kickoff-map-options full">
+              <div class="kickoff-map-option-head">
+                <div><strong>Google Maps Location Views</strong><span>Optionally include a wide-area and close-up map with a pin at the project location.</span></div>
+                <label class="switch-label"><input id="kickoffMapsEnabled" type="checkbox"><span class="switch"></span>Include Maps</label>
               </div>
-              <button id="addKickoffQuoteBtn" class="btn btn-primary" type="button">+ Add Quote PDF</button>
+              <div id="kickoffMapSettings" class="kickoff-map-settings hidden">
+                <label class="map-check"><input id="kickoffWideMapEnabled" type="checkbox" checked> Wide View</label>
+                <label class="map-check"><input id="kickoffCloseMapEnabled" type="checkbox" checked> Close-Up View</label>
+                <button id="refreshKickoffMapsBtn" class="btn btn-secondary" type="button">Refresh Map Views</button>
+                <div class="kickoff-map-preview-grid">
+                  <div class="kickoff-map-preview"><div class="kickoff-map-preview-label">Wide View</div><iframe id="kickoffWideMapFrame" title="Wide Google Maps project view" loading="lazy"></iframe></div>
+                  <div class="kickoff-map-preview"><div class="kickoff-map-preview-label">Close-Up View</div><iframe id="kickoffCloseMapFrame" title="Close Google Maps project view" loading="lazy"></iframe></div>
+                </div>
+                <p id="kickoffMapExportNote" class="kickoff-map-note">Interactive map previews use Google Maps. To place map snapshots into the exported PDF, Admin can add a restricted Google Maps Static API key under Admin → Offices.</p>
+              </div>
             </div>
-            <div id="kickoffQuoteList" class="kickoff-quote-list"></div>
+
+            <label class="full">Design Team<textarea data-kickoff-info="designTeam" rows="4" placeholder="Company – Contact – Phone – Email"></textarea></label>
+            <label>Tax Status<input data-kickoff-info="taxStatus" placeholder="Example: Use Tax – 8.5%" /></label>
+            <label>Contract Value<input data-kickoff-info="contractValue" placeholder="$0.00" /></label>
+            <label>Target GP<input data-kickoff-info="targetGP" placeholder="Example: 10%" /></label>
+            <label>Start Date<input data-kickoff-info="startDate" type="date" /></label>
+            <label>End Date<input data-kickoff-info="endDate" type="date" /></label>
           </div>
+        </section>
+
+        <section id="kickoffDivisionsTab" class="kickoff-tab-panel">
+          <div class="kickoff-section-heading kickoff-section-heading-split">
+            <div><h2>Division Pages</h2><p>Build the kickoff book in working order. Every division page starts with Division, Subcontractor, and Budget, followed by the kickoff scope and coordination notes.</p></div>
+            <button id="addKickoffDivisionBtn" class="btn btn-primary" type="button">+ Blank Division</button>
+          </div>
+
+          <div class="kickoff-import-card">
+            <div><span class="eyebrow">Pull From Accepted Proposal</span><strong>Import a selected proposal division</strong><p>Copies the current division number, editable division title, proposal scope, and any available summary budget. Subcontractor remains blank.</p></div>
+            <div class="kickoff-import-actions"><select id="kickoffProposalDivisionSelect"><option value="">Select proposal division…</option></select><button id="importKickoffDivisionBtn" class="btn btn-secondary" type="button">Import Division</button></div>
+          </div>
+          <div id="kickoffDivisionList" class="kickoff-division-list"></div>
+          <div id="kickoffDivisionEmpty" class="kickoff-empty-state"><strong>No division pages yet.</strong><span>Add a blank division or import one from the accepted proposal.</span></div>
+        </section>
+
+        <section id="kickoffDocumentsTab" class="kickoff-tab-panel">
+          <div class="kickoff-section-heading kickoff-section-heading-split">
+            <div><h2>Quotes &amp; Page Order</h2><p>Uploaded quote PDFs are stored as compact page snapshots. Quotes attached to a division print immediately after that division page.</p></div>
+            <button id="addKickoffQuoteBtn" class="btn btn-primary" type="button">+ Add Unassigned Quote PDF</button>
+          </div>
+          <div id="kickoffPageOrder" class="kickoff-page-order"></div>
+          <div id="kickoffQuoteList" class="kickoff-quote-list"></div>
+        </section>
+
+        <section id="kickoffPreviewTab" class="kickoff-tab-panel">
+          <div class="kickoff-section-heading kickoff-section-heading-split">
+            <div><h2>Kickoff PDF Preview</h2><p>US Letter preview of the current kickoff book, including division pages and uploaded quote snapshots.</p></div>
+            <button id="refreshKickoffPreviewBtn" class="btn btn-secondary" type="button">Refresh Preview</button>
+          </div>
+          <div id="kickoffPdfPreviewStatus" class="kickoff-pdf-preview-status">Open this tab to build the preview.</div>
+          <div id="kickoffPdfPreviewPages" class="kickoff-pdf-preview-pages"></div>
         </section>
       </div>
     </main>
@@ -465,6 +533,11 @@
             <label>Phone<input data-office-setting="tulsa.phone" placeholder="Phone number" /></label>
           </section>
         </div>
+        <section class="office-settings-panel maps-api-panel">
+          <span class="eyebrow">Google Maps</span>
+          <label>Static Maps API Key<input data-map-setting="apiKey" type="password" placeholder="Optional – required only for map images in kickoff PDF exports" autocomplete="off" /></label>
+          <p class="admin-note">Use a Google Maps Static API key restricted to your hosted Scope Builder domain. Interactive builder previews do not require this key.</p>
+        </section>
         <p class="admin-note">New projects save the selected office contact information with the proposal. Changing the Estimating Office on a project refreshes that project to the latest saved office information.</p>
       </section>
       <section id="adminUsersTab" class="admin-tab-panel">

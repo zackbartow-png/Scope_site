@@ -46,7 +46,7 @@ const DEFAULT_DISCLAIMERS = [
   }
 ];
 
-const state = { user: null, currentProjectId: null, currentProjectOwner: null, currentKickoffProjectId: null, currentKickoffOwner: null, authMode: "login", saveTimer: null, previewOpen: true, previewRenderTimer: null, previewRenderToken: 0, adminDisclaimerId: null, dashboardMode: "active", adminUserFilter: "all" };
+const state = { user: null, currentProjectId: null, currentProjectOwner: null, currentKickoffProjectId: null, currentKickoffOwner: null, currentKickoffTab: "info", kickoffQuoteTargetDivisionId: null, kickoffSaveTimer: null, kickoffPreviewTimer: null, kickoffPreviewToken: 0, authMode: "login", saveTimer: null, previewOpen: true, previewRenderTimer: null, previewRenderToken: 0, adminDisclaimerId: null, dashboardMode: "active", adminUserFilter: "all" };
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 
@@ -224,7 +224,7 @@ const SESSION_KEY = "koehncs.scopeBuilder.session";
 const BACKUP_VERSION = 1;
 
 function blankDataStore() {
-  return { schemaVersion: 1, updatedAt: nowIso(), users: {}, projects: {}, disclaimers: DEFAULT_DISCLAIMERS.map(x=>({...x})), officeSettings: normalizeOfficeSettings() };
+  return { schemaVersion: 1, updatedAt: nowIso(), users: {}, projects: {}, disclaimers: DEFAULT_DISCLAIMERS.map(x=>({...x})), officeSettings: normalizeOfficeSettings(), mapsSettings:{apiKey:""} };
 }
 function readDataStore() {
   try {
@@ -235,6 +235,7 @@ function readDataStore() {
       data.projects = data.projects || {};
       data.disclaimers = Array.isArray(data.disclaimers) && data.disclaimers.length ? data.disclaimers : DEFAULT_DISCLAIMERS.map(x=>({...x}));
       data.officeSettings = normalizeOfficeSettings(data.officeSettings);
+      data.mapsSettings = {apiKey:String(data.mapsSettings?.apiKey||"")};
       return data;
     }
   } catch {}
@@ -306,6 +307,9 @@ function getDisclaimer(id) { const all=getDisclaimers(); return all.find(d=>d.id
 function getOfficeSettings() { return normalizeOfficeSettings(readDataStore().officeSettings); }
 function saveOfficeSettings(settings) { const data=readDataStore(); data.officeSettings=normalizeOfficeSettings(settings); writeDataStore(data); }
 function getOfficeContact(key="fredonia") { const offices=getOfficeSettings(); return {...(offices[key]||offices.fredonia)}; }
+function getMapSettings(){ const data=readDataStore(); return {apiKey:String(data.mapsSettings?.apiKey||"")}; }
+function saveMapSettings(settings){ const data=readDataStore(); data.mapsSettings={apiKey:String(settings?.apiKey||"")}; writeDataStore(data); }
+function cloneJson(value){ return JSON.parse(JSON.stringify(value)); }
 
 function normalizeProject(p, ownerUsername="") {
   // Backward-compatible project normalization. Existing projects become the
@@ -323,7 +327,10 @@ function normalizeProject(p, ownerUsername="") {
   p.accepted = Boolean(p.accepted);
   p.acceptedAt = p.acceptedAt || null;
   p.kickoff = {...(p.kickoff||{})};
-  p.kickoff.quotes = Array.isArray(p.kickoff.quotes) ? p.kickoff.quotes.map(q=>({...q,pages:Array.isArray(q.pages)?q.pages:[]})) : [];
+  p.kickoff.quotes = Array.isArray(p.kickoff.quotes) ? p.kickoff.quotes.map(q=>({...q,pages:Array.isArray(q.pages)?q.pages:[],divisionId:q.divisionId||null})) : [];
+  p.kickoff.divisions = Array.isArray(p.kickoff.divisions) ? p.kickoff.divisions.map(d=>({id:d.id||uid(),number:String(d.number||""),description:String(d.description||""),subcontractor:String(d.subcontractor||""),budget:String(d.budget||""),notesHtml:sanitizeScopeHtml(d.notesHtml||plainTextToRichHtml(d.notes||"")),sourceDivisionNumber:d.sourceDivisionNumber||""})) : [];
+  p.kickoff.projectInfo = {...(p.kickoff.projectInfo||{})};
+  p.kickoff.projectInfo.maps = {enabled:false,wide:true,close:true,wideZoom:12,closeZoom:17,...(p.kickoff.projectInfo.maps||{})};
   p.ownerUsername = p.ownerUsername || ownerUsername || "";
   p.divisions = p.divisions || Object.fromEntries(CSI_DIVISIONS.map(([n,t]) => [n,{number:n,title:t,enabled:false,text:""}]));
   CSI_DIVISIONS.forEach(([n,t]) => {
@@ -352,6 +359,18 @@ function normalizeProject(p, ownerUsername="") {
   if(!baseBid){ baseBid={id:`base-bid-${p.familyId||p.id||uid()}`,name:"Base Bid",description:"",price:"",isBaseBid:true}; p.priceItems.unshift(baseBid); }
   baseBid.isBaseBid=true; baseBid.name="Base Bid";
   p.priceItems=[baseBid,...p.priceItems.filter(i=>i!==baseBid).map(i=>({...i,isBaseBid:false}))];
+  const kickoffInfo=p.kickoff.projectInfo;
+  if(!Object.prototype.hasOwnProperty.call(kickoffInfo,"projectOverview"))kickoffInfo.projectOverview=p.introNote||"";
+  if(!Object.prototype.hasOwnProperty.call(kickoffInfo,"owner"))kickoffInfo.owner=p.clientName||"";
+  if(!Object.prototype.hasOwnProperty.call(kickoffInfo,"ownerContacts"))kickoffInfo.ownerContacts="";
+  if(!Object.prototype.hasOwnProperty.call(kickoffInfo,"projectLocation"))kickoffInfo.projectLocation=p.projectAddress||"";
+  if(!Object.prototype.hasOwnProperty.call(kickoffInfo,"designTeam"))kickoffInfo.designTeam=p.preparedBy?`Koehn Construction Services – ${p.preparedBy}`:"";
+  if(!Object.prototype.hasOwnProperty.call(kickoffInfo,"contractType"))kickoffInfo.contractType="Lump Sum";
+  if(!Object.prototype.hasOwnProperty.call(kickoffInfo,"taxStatus"))kickoffInfo.taxStatus="";
+  if(!Object.prototype.hasOwnProperty.call(kickoffInfo,"contractValue"))kickoffInfo.contractValue=baseBid?.price||"";
+  if(!Object.prototype.hasOwnProperty.call(kickoffInfo,"targetGP"))kickoffInfo.targetGP="";
+  if(!Object.prototype.hasOwnProperty.call(kickoffInfo,"startDate"))kickoffInfo.startDate="";
+  if(!Object.prototype.hasOwnProperty.call(kickoffInfo,"endDate"))kickoffInfo.endDate="";
   p.summary = p.summary || {};
   if(!["none","basic","advanced"].includes(p.summary.mode)) p.summary.mode="none";
   p.summary.basicNote = p.summary.basicNote || "";
@@ -500,7 +519,7 @@ function refreshRoleUi() {
   if (companyTabButton) companyTabButton.classList.toggle("hidden", !admin);
   const companyPanel = $("#companyTab");
   if (companyPanel) companyPanel.classList.toggle("role-hidden", !admin);
-  $$(`[data-company],[data-office-setting]`).forEach(el => el.disabled = !admin);
+  $$(`[data-company],[data-office-setting],[data-map-setting]`).forEach(el => el.disabled = !admin);
   if (!admin && companyTabButton?.classList.contains("active")) activateTab("info");
 }
 function enterDashboard() {
@@ -618,35 +637,201 @@ function openKickoff(projectId, ownerUsername){
   if(ownerKey(owner)!==ownerKey(state.user.username)&&!isAdmin())return toast("You can only create a kickoff for your own projects.");
   const familyId=source.familyId||source.id;
   const acceptedAt=source.acceptedAt||nowIso();
-  const updated=projects.map(p=>p.familyId===familyId?{...p,accepted:true,acceptedAt:p.acceptedAt||acceptedAt,updatedAt:nowIso()}:p);
+  const updated=projects.map(raw=>{
+    const p=normalizeProject({...raw},owner);
+    return p.familyId===familyId?{...p,accepted:true,acceptedAt:p.acceptedAt||acceptedAt,updatedAt:nowIso()}:p;
+  });
   saveProjectsForUser(owner,updated);
-  state.currentProjectId=null; state.currentProjectOwner=null; state.currentKickoffProjectId=source.id; state.currentKickoffOwner=owner;
-  const current=updated.find(p=>p.id===source.id)||source;
+  state.currentProjectId=null; state.currentProjectOwner=null; state.currentKickoffProjectId=source.id; state.currentKickoffOwner=owner; state.currentKickoffTab="info";
+  const current=normalizeProject(updated.find(p=>p.id===source.id)||source,owner);
+  // Seed kickoff data across the full project family so opening another revision
+  // returns to the same operational kickoff book.
+  saveKickoffFamilyData(current.kickoff);
   $("#dashboardView").classList.add("hidden"); $("#editorView").classList.add("hidden"); $("#kickoffView").classList.remove("hidden");
   $("#backToDashboard").classList.add("hidden"); $("#exportPdfBtn").classList.add("hidden");
-  $("#kickoffProjectName").textContent=current.projectName||"Untitled Project";
-  $("#kickoffClientName").textContent=current.clientName||"No client entered";
-  $("#kickoffProjectNumber").textContent=current.projectNumber||"No project number";
-  $("#kickoffVersion").textContent=versionLabel(current);
-  $("#kickoffAcceptedDate").textContent=fmtDate((current.acceptedAt||acceptedAt).slice(0,10));
-  renderKickoffQuotes();
+  populateKickoffBuilder(getCurrentKickoffProject()||current);
+  activateKickoffTab("info");
   refreshDashboardNav();
   toast("Project marked Accepted. Kickoff opened.");
 }
 
-
 function getCurrentKickoffProject(){
   if(!state.currentKickoffProjectId)return null;
   const owner=state.currentKickoffOwner||state.user?.username;
-  return getProjectsForUser(owner,{includeDeleted:true}).find(p=>p.id===state.currentKickoffProjectId)||null;
+  const raw=getProjectsForUser(owner,{includeDeleted:true}).find(p=>p.id===state.currentKickoffProjectId)||null;
+  return raw?normalizeProject(raw,owner):null;
+}
+function saveKickoffFamilyData(kickoff){
+  const current=getCurrentKickoffProject();
+  if(!current)return null;
+  const owner=state.currentKickoffOwner||state.user?.username;
+  const familyId=current.familyId||current.id;
+  const all=getProjectsForUser(owner,{includeDeleted:true});
+  const copy=cloneJson(kickoff||{});
+  const updated=all.map(p=>(p.familyId||p.id)===familyId?{...p,kickoff:cloneJson(copy),accepted:true,acceptedAt:p.acceptedAt||current.acceptedAt||nowIso(),updatedAt:nowIso()}:p);
+  saveProjectsForUser(owner,updated);
+  return normalizeProject(updated.find(p=>p.id===state.currentKickoffProjectId)||updated.find(p=>(p.familyId||p.id)===familyId),owner);
+}
+function mutateKickoff(mutator){
+  const p=getCurrentKickoffProject(); if(!p)return null;
+  const k=cloneJson(p.kickoff||{}); mutator(k,p); return saveKickoffFamilyData(k);
+}
+function activateKickoffTab(name){
+  state.currentKickoffTab=name;
+  $$('.kickoff-tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.kickoffTab===name));
+  $$('.kickoff-tab-panel').forEach(panel=>panel.classList.remove('active'));
+  const panel=$(`#kickoff${name[0].toUpperCase()+name.slice(1)}Tab`); if(panel)panel.classList.add('active');
+  if(name==='preview')scheduleKickoffPdfPreview(40);
+}
+function populateKickoffBuilder(p){
+  if(!p)return;
+  $("#kickoffProjectName").textContent=p.projectName||"Untitled Project";
+  $("#kickoffClientName").textContent=p.clientName||"No client entered";
+  $("#kickoffProjectNumber").textContent=p.projectNumber||"No project number";
+  $("#kickoffVersion").textContent=versionLabel(p);
+  $("#kickoffAcceptedDate").textContent=fmtDate((p.acceptedAt||nowIso()).slice(0,10));
+  const info=p.kickoff.projectInfo||{};
+  $$('[data-kickoff-info]').forEach(el=>el.value=info[el.dataset.kickoffInfo]??"");
+  $("#kickoffMapsEnabled").checked=Boolean(info.maps?.enabled);
+  $("#kickoffWideMapEnabled").checked=info.maps?.wide!==false;
+  $("#kickoffCloseMapEnabled").checked=info.maps?.close!==false;
+  $("#kickoffMapSettings").classList.toggle('hidden',!info.maps?.enabled);
+  renderKickoffMapPreviews();
+  renderKickoffProposalDivisionOptions(p);
+  renderKickoffDivisions();
+  renderKickoffQuotes();
+  renderKickoffPageOrder();
+}
+function scheduleKickoffSave(delay=250){
+  clearTimeout(state.kickoffSaveTimer);
+  state.kickoffSaveTimer=setTimeout(()=>{saveKickoffInfoFromForm(); if(state.currentKickoffTab==='preview')scheduleKickoffPdfPreview(250);},delay);
+}
+function saveKickoffInfoFromForm(){
+  const p=getCurrentKickoffProject(); if(!p)return;
+  mutateKickoff(k=>{
+    k.projectInfo=k.projectInfo||{};
+    $$('[data-kickoff-info]').forEach(el=>k.projectInfo[el.dataset.kickoffInfo]=el.value);
+    k.projectInfo.maps={...(k.projectInfo.maps||{}),enabled:Boolean($("#kickoffMapsEnabled")?.checked),wide:Boolean($("#kickoffWideMapEnabled")?.checked),close:Boolean($("#kickoffCloseMapEnabled")?.checked),wideZoom:12,closeZoom:17};
+  });
+  renderKickoffPageOrder();
+}
+function kickoffMapEmbedUrl(address,zoom){
+  const q=encodeURIComponent(String(address||"").trim());
+  return q?`https://www.google.com/maps?q=${q}&z=${Number(zoom)||14}&output=embed`:"about:blank";
+}
+function renderKickoffMapPreviews(){
+  const p=getCurrentKickoffProject(); if(!p)return;
+  const info=p.kickoff.projectInfo||{}; const enabled=Boolean($("#kickoffMapsEnabled")?.checked ?? info.maps?.enabled);
+  $("#kickoffMapSettings")?.classList.toggle('hidden',!enabled);
+  const addr=String($("[data-kickoff-info=projectLocation]")?.value||info.projectLocation||p.projectAddress||"").trim();
+  const wide=$("#kickoffWideMapFrame"), close=$("#kickoffCloseMapFrame");
+  if(wide)wide.src=enabled&&($("#kickoffWideMapEnabled")?.checked??true)?kickoffMapEmbedUrl(addr,12):"about:blank";
+  if(close)close.src=enabled&&($("#kickoffCloseMapEnabled")?.checked??true)?kickoffMapEmbedUrl(addr,17):"about:blank";
+}
+function renderKickoffProposalDivisionOptions(p=getCurrentKickoffProject()){
+  const select=$("#kickoffProposalDivisionSelect"); if(!select||!p)return;
+  const current=select.value;
+  const options=CSI_DIVISIONS.filter(([n])=>p.divisions?.[n]?.enabled).map(([n,t])=>`<option value="${esc(n)}">${esc(n)} - ${esc(p.divisions[n]?.title||t)}</option>`).join('');
+  select.innerHTML='<option value="">Select proposal division…</option>'+options;
+  if([...select.options].some(o=>o.value===current))select.value=current;
+}
+function proposalDivisionBudget(p,n){
+  const advanced=String(p.summary?.divisionCosts?.[n]?.amount||"").trim(); if(advanced)return advanced;
+  const basic=String(p.summary?.basicDivisions?.[n]?.amount||"").trim(); if(basic)return basic;
+  return "";
+}
+function addKickoffDivision(sourceNumber=""){
+  const p=getCurrentKickoffProject(); if(!p)return;
+  let division={id:uid(),number:"",description:"",subcontractor:"",budget:"",notesHtml:"",sourceDivisionNumber:""};
+  if(sourceNumber&&p.divisions?.[sourceNumber]){
+    const source=p.divisions[sourceNumber];
+    division={...division,number:sourceNumber,description:source.title||"",budget:proposalDivisionBudget(p,sourceNumber),notesHtml:normalizedDivisionRichHtml(source),sourceDivisionNumber:sourceNumber};
+  }
+  mutateKickoff(k=>{k.divisions=Array.isArray(k.divisions)?k.divisions:[];k.divisions.push(division);});
+  renderKickoffDivisions();renderKickoffPageOrder();activateKickoffTab('divisions');
+  requestAnimationFrame(()=>$( `[data-kickoff-division-id="${CSS.escape(division.id)}"] input[data-kickoff-division-field="number"]` )?.focus());
+}
+function collectKickoffDivisionsFromDom(){
+  const p=getCurrentKickoffProject(); if(!p)return;
+  const existing=new Map((p.kickoff.divisions||[]).map(d=>[d.id,d]));
+  const divisions=$$('.kickoff-division-card').map(card=>{
+    const id=card.dataset.kickoffDivisionId, old=existing.get(id)||{};
+    const get=f=>card.querySelector(`[data-kickoff-division-field="${f}"]`)?.value||"";
+    const editor=card.querySelector('.kickoff-rich-editor');
+    return {id,number:get('number'),description:get('description'),subcontractor:get('subcontractor'),budget:get('budget'),notesHtml:sanitizeScopeHtml(editor?.innerHTML||""),sourceDivisionNumber:old.sourceDivisionNumber||""};
+  });
+  mutateKickoff(k=>k.divisions=divisions);
+  renderKickoffPageOrder();
+}
+function moveKickoffDivision(id,delta){
+  mutateKickoff(k=>{const arr=k.divisions||[],i=arr.findIndex(d=>d.id===id),j=i+delta;if(i<0||j<0||j>=arr.length)return;[arr[i],arr[j]]=[arr[j],arr[i]];});
+  renderKickoffDivisions();renderKickoffPageOrder();scheduleKickoffPdfPreview(250);
+}
+function removeKickoffDivision(id){
+  const p=getCurrentKickoffProject(); if(!p)return;
+  const d=(p.kickoff.divisions||[]).find(x=>x.id===id); if(!d)return;
+  const linked=(p.kickoff.quotes||[]).filter(q=>q.divisionId===id);
+  if(linked.length)return toast("Remove or reassign the quote PDFs attached to this division first.");
+  if(!confirm(`Remove ${d.number||''} ${d.description||'this division'} from the kickoff?`))return;
+  mutateKickoff(k=>k.divisions=(k.divisions||[]).filter(x=>x.id!==id));renderKickoffDivisions();renderKickoffPageOrder();scheduleKickoffPdfPreview(250);
+}
+function kickoffFormatSelection(editor,command){
+  if(!editor)return;editor.focus();document.execCommand(command,false,null);
+  collectKickoffDivisionsFromDom();scheduleKickoffPdfPreview(350);
+}
+function renderKickoffDivisions(){
+  const list=$("#kickoffDivisionList"), empty=$("#kickoffDivisionEmpty"); if(!list)return;
+  const p=getCurrentKickoffProject(), divisions=p?.kickoff?.divisions||[];
+  empty?.classList.toggle('hidden',divisions.length>0);
+  list.innerHTML=divisions.map((d,index)=>`<section class="kickoff-division-card" data-kickoff-division-id="${esc(d.id)}">
+    <div class="kickoff-division-card-head">
+      <label>Division<input data-kickoff-division-field="number" value="${esc(d.number)}" placeholder="03" /></label>
+      <label>Description<input data-kickoff-division-field="description" value="${esc(d.description)}" placeholder="Structural Concrete" /></label>
+      <label>Subcontractor<input data-kickoff-division-field="subcontractor" value="${esc(d.subcontractor)}" placeholder="Subcontractor / vendor" /></label>
+      <label>Budget<input data-kickoff-division-field="budget" value="${esc(d.budget)}" placeholder="$0.00" /></label>
+      <div class="kickoff-division-actions"><button class="btn btn-secondary btn-small" data-kickoff-move-up="${esc(d.id)}" type="button" ${index===0?'disabled':''}>↑</button><button class="btn btn-secondary btn-small" data-kickoff-move-down="${esc(d.id)}" type="button" ${index===divisions.length-1?'disabled':''}>↓</button><button class="btn btn-danger btn-small" data-kickoff-remove-division="${esc(d.id)}" type="button">×</button></div>
+    </div>
+    <div class="kickoff-division-card-body">
+      <div class="kickoff-notes-toolbar"><button class="scope-format-btn" data-kickoff-format="bold" type="button"><strong>B</strong></button><button class="scope-format-btn" data-kickoff-format="italic" type="button"><em>I</em></button><button class="scope-format-btn" data-kickoff-format="underline" type="button"><span class="format-u">U</span></button></div>
+      <div class="kickoff-rich-editor" contenteditable="true" data-placeholder="Kickoff scope, coordination notes, quote clarifications, missed items, schedule notes…">${sanitizeScopeHtml(d.notesHtml||"")}</div>
+      <div class="kickoff-division-footer"><span class="kickoff-source-note">${d.sourceDivisionNumber?`Imported from Proposal Division ${esc(d.sourceDivisionNumber)}`:'Custom kickoff division'}</span><button class="btn btn-secondary" data-kickoff-add-quote="${esc(d.id)}" type="button">+ Add Quote After Division</button></div>
+    </div>
+  </section>`).join('');
+  $$('[data-kickoff-move-up]',list).forEach(b=>b.addEventListener('click',()=>moveKickoffDivision(b.dataset.kickoffMoveUp,-1)));
+  $$('[data-kickoff-move-down]',list).forEach(b=>b.addEventListener('click',()=>moveKickoffDivision(b.dataset.kickoffMoveDown,1)));
+  $$('[data-kickoff-remove-division]',list).forEach(b=>b.addEventListener('click',()=>removeKickoffDivision(b.dataset.kickoffRemoveDivision)));
+  $$('[data-kickoff-add-quote]',list).forEach(b=>b.addEventListener('click',()=>{state.kickoffQuoteTargetDivisionId=b.dataset.kickoffAddQuote;$("#kickoffQuoteFileInput")?.click();}));
+  $$('[data-kickoff-format]',list).forEach(b=>b.addEventListener('click',()=>kickoffFormatSelection(b.closest('.kickoff-division-card')?.querySelector('.kickoff-rich-editor'),b.dataset.kickoffFormat)));
+  $$('input[data-kickoff-division-field]',list).forEach(el=>el.addEventListener('input',()=>{clearTimeout(state.kickoffSaveTimer);state.kickoffSaveTimer=setTimeout(()=>{collectKickoffDivisionsFromDom();scheduleKickoffPdfPreview(400);},220);}));
+  $$('.kickoff-rich-editor',list).forEach(el=>{
+    el.addEventListener('input',()=>{clearTimeout(state.kickoffSaveTimer);state.kickoffSaveTimer=setTimeout(()=>{collectKickoffDivisionsFromDom();scheduleKickoffPdfPreview(400);},250);});
+    el.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&['b','i','u'].includes(e.key.toLowerCase())){e.preventDefault();const cmd={b:'bold',i:'italic',u:'underline'}[e.key.toLowerCase()];kickoffFormatSelection(el,cmd);}});
+    el.addEventListener('paste',e=>{e.preventDefault();document.execCommand('insertText',false,e.clipboardData?.getData('text/plain')||'');});
+  });
+}
+function renderKickoffPageOrder(){
+  const wrap=$("#kickoffPageOrder"); if(!wrap)return;
+  const p=getCurrentKickoffProject(); if(!p)return;
+  const rows=[]; let page=1;
+  rows.push({page:page++,title:'Project Kickoff Overview',sub:'Project information'});
+  if(p.kickoff.projectInfo?.maps?.enabled&&(p.kickoff.projectInfo.maps.wide||p.kickoff.projectInfo.maps.close))rows.push({page:page++,title:'Project Location',sub:'Google Maps views'});
+  (p.kickoff.divisions||[]).forEach(d=>{
+    rows.push({page:page++,title:`${d.number?d.number+' - ':''}${d.description||'Untitled Division'}`,sub:`Division page · ${d.subcontractor||'No subcontractor entered'}`});
+    (p.kickoff.quotes||[]).filter(q=>q.divisionId===d.id).forEach(q=>{rows.push({page:page,title:q.name||'Quote',sub:`Quote PDF · ${q.pageCount||q.pages?.length||0} page(s)`});page+=Number(q.pageCount||q.pages?.length||1);});
+  });
+  (p.kickoff.quotes||[]).filter(q=>!q.divisionId).forEach(q=>{rows.push({page:page,title:q.name||'Quote',sub:`Unassigned quote · ${q.pageCount||q.pages?.length||0} page(s)`});page+=Number(q.pageCount||q.pages?.length||1);});
+  wrap.innerHTML=rows.map(r=>`<div class="kickoff-page-order-row"><span class="kickoff-page-order-index">${r.page}</span><div><strong>${esc(r.title)}</strong><span>${esc(r.sub)}</span></div></div>`).join('');
 }
 async function renderKickoffQuotes(){
   const list=$("#kickoffQuoteList"); if(!list)return;
   const p=getCurrentKickoffProject(); const quotes=p?.kickoff?.quotes||[];
-  if(!quotes.length){list.innerHTML='<div class="kickoff-quote-empty">No quote PDFs added yet. Uploaded PDFs will be converted to compact page snapshots and the original PDF will not be retained.</div>';return;}
+  if(!quotes.length){list.innerHTML='<div class="kickoff-quote-empty">No quote PDFs added yet. Uploaded PDFs are converted to compact page snapshots and the original PDF is not retained.</div>';return;}
+  const divisions=new Map((p.kickoff.divisions||[]).map(d=>[d.id,d]));
   list.innerHTML=quotes.map(q=>{
     const savings=q.originalBytes>0?Math.max(0,Math.round((1-(q.compressedBytes||0)/q.originalBytes)*100)):0;
-    return `<div class="kickoff-quote-item"><div><strong>${esc(q.name||'Quote')}</strong><div class="kickoff-quote-meta">${Number(q.pageCount||q.pages?.length||0)} page${Number(q.pageCount||q.pages?.length||0)===1?'':'s'} · stored ${humanBytes(q.compressedBytes||0)}${q.originalBytes?` from ${humanBytes(q.originalBytes)}${savings?` · ${savings}% smaller`:''}`:''}</div></div><button type="button" class="kickoff-quote-remove" data-remove-kickoff-quote="${esc(q.id)}">Remove</button></div>`;
+    const d=divisions.get(q.divisionId);
+    const where=d?`After ${d.number?d.number+' - ':''}${d.description||'Division'}`:'Unassigned / end of book';
+    return `<div class="kickoff-quote-item"><div><strong>${esc(q.name||'Quote')}</strong><div class="kickoff-quote-meta"><span class="quote-association">${esc(where)}</span> · ${Number(q.pageCount||q.pages?.length||0)} page${Number(q.pageCount||q.pages?.length||0)===1?'':'s'} · stored ${humanBytes(q.compressedBytes||0)}${q.originalBytes?` from ${humanBytes(q.originalBytes)}${savings?` · ${savings}% smaller`:''}`:''}</div></div><button type="button" class="kickoff-quote-remove" data-remove-kickoff-quote="${esc(q.id)}">Remove</button></div>`;
   }).join('');
   $$('[data-remove-kickoff-quote]',list).forEach(b=>b.addEventListener('click',()=>removeKickoffQuote(b.dataset.removeKickoffQuote)));
 }
@@ -654,29 +839,28 @@ async function handleKickoffQuoteUpload(file){
   if(!file)return;
   if(file.type!=="application/pdf"&&!/\.pdf$/i.test(file.name||""))return toast("Please select a PDF quote.");
   const p=getCurrentKickoffProject(); if(!p)return toast("Open a kickoff project first.");
-  const familyId=p.familyId||p.id, quoteId=uid();
+  const familyId=p.familyId||p.id, quoteId=uid(), targetDivisionId=state.kickoffQuoteTargetDivisionId||null; state.kickoffQuoteTargetDivisionId=null;
   const list=$("#kickoffQuoteList"), addBtn=$("#addKickoffQuoteBtn");
   if(addBtn)addBtn.disabled=true;
+  activateKickoffTab('documents');
   if(list)list.innerHTML='<div class="kickoff-processing">Converting quote to compact page snapshots…</div>';
   try{
     const converted=await convertKickoffPdfToSnapshots(file,familyId,quoteId,(n,total)=>{if(list)list.innerHTML=`<div class="kickoff-processing">Converting page ${n} of ${total}…</div>`;});
-    const current=getCurrentKickoffProject(); if(!current)throw new Error("Kickoff project is no longer open.");
-    current.kickoff=current.kickoff||{quotes:[]}; current.kickoff.quotes=Array.isArray(current.kickoff.quotes)?current.kickoff.quotes:[];
-    current.kickoff.quotes.push({id:quoteId,name:file.name,pageCount:converted.pageCount,pages:converted.pageKeys,originalBytes:converted.originalBytes,compressedBytes:converted.compressedBytes,storageFormat:"compressed-page-snapshots",createdAt:nowIso()});
-    putProject(current,state.currentKickoffOwner||state.user.username);
+    mutateKickoff(k=>{k.quotes=Array.isArray(k.quotes)?k.quotes:[];k.quotes.push({id:quoteId,name:file.name,pageCount:converted.pageCount,pages:converted.pageKeys,originalBytes:converted.originalBytes,compressedBytes:converted.compressedBytes,storageFormat:"compressed-page-snapshots",divisionId:targetDivisionId,createdAt:nowIso()});});
     toast(`Quote stored as ${converted.pageCount} compressed page snapshot${converted.pageCount===1?'':'s'}.`);
   }catch(err){
     try{const partial=(await getFamilyQuoteAssets(familyId)).filter(a=>a.quoteId===quoteId);await deleteQuoteAssetsByKeys(partial.map(a=>a.key));}catch{}
     toast(err?.message||"Could not convert that quote PDF.");
-  }finally{if(addBtn)addBtn.disabled=false;await renderKickoffQuotes();}
+  }finally{if(addBtn)addBtn.disabled=false;await renderKickoffQuotes();renderKickoffPageOrder();scheduleKickoffPdfPreview(300);}
 }
 async function removeKickoffQuote(quoteId){
   const p=getCurrentKickoffProject(); if(!p)return;
   const quote=(p.kickoff?.quotes||[]).find(q=>q.id===quoteId); if(!quote)return;
   if(!confirm(`Remove ${quote.name||'this quote'} from the kickoff?`))return;
   await deleteQuoteAssetsByKeys(quote.pages||[]);
-  p.kickoff.quotes=(p.kickoff.quotes||[]).filter(q=>q.id!==quoteId); putProject(p,state.currentKickoffOwner||state.user.username); await renderKickoffQuotes(); toast("Quote removed.");
+  mutateKickoff(k=>k.quotes=(k.quotes||[]).filter(q=>q.id!==quoteId));await renderKickoffQuotes();renderKickoffPageOrder();scheduleKickoffPdfPreview(250);toast("Quote removed.");
 }
+
 async function archiveFamilyToKoehn(familyId,ownerUsername){
   if(ownerKey(ownerUsername)!==ownerKey(state.user.username)&&!isAdmin())return toast("You can only archive your own projects.");
   const all=getProjectsForUser(ownerUsername,{includeDeleted:true});
@@ -1074,12 +1258,17 @@ function refreshSummaryForDivisionChanges(){
 function populateOfficeSettings(){
   const offices=getOfficeSettings();
   $$('[data-office-setting]').forEach(el=>{ const [key,field]=el.dataset.officeSetting.split('.'); el.value=offices[key]?.[field]??""; });
+  const maps=getMapSettings();
+  $$('[data-map-setting]').forEach(el=>{el.value=maps[el.dataset.mapSetting]??"";});
 }
 function collectAndSaveOfficeSettings(){
   if(!isAdmin())return;
   const offices=getOfficeSettings();
   $$('[data-office-setting]').forEach(el=>{ const [key,field]=el.dataset.officeSetting.split('.'); if(offices[key])offices[key][field]=el.value; });
   saveOfficeSettings(offices);
+  const maps=getMapSettings();
+  $$('[data-map-setting]').forEach(el=>maps[el.dataset.mapSetting]=el.value);
+  saveMapSettings(maps);
   const current=getCurrentProject();
   if(current && !current.locked && !current.deletedByUser){
     const key=current.estimatingOffice||"fredonia";
@@ -1249,6 +1438,132 @@ function scopeItemsFromRichHtml(html="",fallbackText="") {
   });
 }
 function hexToRgb(hex) { const h=hex.replace('#','');const n=parseInt(h.length===3?h.split('').map(c=>c+c).join(''):h,16);return[(n>>16)&255,(n>>8)&255,n&255]; }
+
+function blobToDataUrl(blob){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result||""));r.onerror=()=>reject(r.error);r.readAsDataURL(blob);});}
+async function quoteBlobToJpegDataUrl(blob){
+  const url=URL.createObjectURL(blob);
+  try{
+    const img=await new Promise((resolve,reject)=>{const im=new Image();im.onload=()=>resolve(im);im.onerror=reject;im.src=url;});
+    const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d',{alpha:false}).drawImage(img,0,0);
+    return c.toDataURL('image/jpeg',0.92);
+  }finally{URL.revokeObjectURL(url);}
+}
+function kickoffStaticMapUrl(address,zoom,key){
+  const marker=`color:0xf36f21|${String(address||'').trim()}`;
+  const params=new URLSearchParams({center:String(address||''),zoom:String(zoom),size:'640x420',scale:'2',maptype:'roadmap',markers:marker,key:String(key||'')});
+  return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+}
+function kickoffPlainTextFromHtml(html=""){
+  const d=document.createElement('div');d.innerHTML=sanitizeScopeHtml(html||'');return String(d.innerText||'').replace(/\r/g,'').trim();
+}
+async function buildKickoffPdf(options={}){
+  const previewOnly=Boolean(options.preview);
+  saveKickoffInfoFromForm();
+  if(document.querySelector('.kickoff-division-card'))collectKickoffDivisionsFromDom();
+  const p=getCurrentKickoffProject(); if(!p)return null;
+  if(!window.jspdf){toast('PDF library did not load.');return null;}
+  const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'in',format:'letter',orientation:'portrait',compress:true});
+  const pageW=8.5,pageH=11,contentX=1.12,right=.48,contentW=pageW-contentX-right,bottom=10.18;
+  const orange=hexToRgb(p.company.orange||DEFAULT_COMPANY.orange),charcoal=[47,52,56],text=[28,30,32],muted=[105,110,114],border=[218,221,223],light=[249,249,248];
+  let bgData=null;try{bgData=await imageToDataUrl('assets/marketing/marketing-blank.png');}catch{}
+  const k=p.kickoff||{},info=k.projectInfo||{};
+  let firstPage=true;
+  function background(){if(bgData)doc.addImage(bgData,'PNG',0,0,pageW,pageH,undefined,'FAST');else{doc.setFillColor(255,255,255);doc.rect(0,0,pageW,pageH,'F');}}
+  function newPage(title,subtitle=''){
+    if(firstPage)firstPage=false;else doc.addPage('letter','portrait');
+    background();doc.setTextColor(...charcoal);doc.setFont('helvetica','bold');doc.setFontSize(20);doc.text(title,contentX,1.28);
+    if(subtitle){doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);doc.text(doc.splitTextToSize(subtitle,contentW),contentX,1.54);return 1.88;}
+    return 1.62;
+  }
+  function sectionHeight(value,width=contentW-.34){doc.setFont('helvetica','normal');doc.setFontSize(12);const lines=doc.splitTextToSize(String(value||'—'),width);return Math.max(.55,.30+lines.length*.20);}
+  function ensureSpace(y,h,contTitle='PROJECT KICKOFF (CONT.)'){if(y+h<=bottom)return y;return newPage(contTitle,p.projectName||'');}
+  function drawSection(y,title,value,{full=true}={}){
+    const val=String(value||'').trim()||'—';const h=sectionHeight(val);y=ensureSpace(y,h+.14);
+    doc.setFillColor(...light);doc.setDrawColor(...border);doc.setLineWidth(.008);doc.roundedRect(contentX,y,contentW,h,.08,.08,'FD');
+    doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);doc.text(title.toUpperCase(),contentX+.16,y+.24);
+    doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...text);const lines=doc.splitTextToSize(val,contentW-.32);doc.text(lines,contentX+.16,y+.47,{lineHeightFactor:1.18});
+    return y+h+.12;
+  }
+  function drawTwoColumnRows(y,rows){
+    for(const row of rows){
+      const left=String(row[0]?.[1]||'—'),rightVal=String(row[1]?.[1]||'—');
+      doc.setFont('helvetica','normal');doc.setFontSize(12);const lw=(contentW-.18)/2;const lLines=doc.splitTextToSize(left,lw-.26),rLines=doc.splitTextToSize(rightVal,lw-.26);const h=Math.max(.68,.34+Math.max(lLines.length,rLines.length)*.20);y=ensureSpace(y,h+.10);
+      [[0,row[0],lLines],[1,row[1],rLines]].forEach(([idx,item,lines])=>{const x=contentX+idx*(lw+.18);doc.setFillColor(...light);doc.setDrawColor(...border);doc.roundedRect(x,y,lw,h,.08,.08,'FD');doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);doc.text(String(item[0]||'').toUpperCase(),x+.14,y+.23);doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...text);doc.text(lines,x+.14,y+.46,{lineHeightFactor:1.16});});
+      y+=h+.11;
+    }
+    return y;
+  }
+  // Project information pages based on the existing kickoff template's information architecture.
+  let y=newPage('PROJECT KICKOFF',`${p.projectName||'Untitled Project'}${p.projectNumber?`  •  ${p.projectNumber}`:''}`);
+  y=drawSection(y,'Project Overview',info.projectOverview||'');
+  y=drawTwoColumnRows(y,[[['Owner / Client',info.owner||p.clientName],['Contract Type',info.contractType]],[['Tax Status',info.taxStatus],['Contract Value',info.contractValue]],[['Target GP',info.targetGP],['Preliminary Schedule',`${info.startDate?fmtDate(info.startDate):'—'} – ${info.endDate?fmtDate(info.endDate):'—'}`]]]);
+  y=drawSection(y,'Owner Contacts',info.ownerContacts||'');
+  y=drawSection(y,'Project Location',info.projectLocation||p.projectAddress||'');
+  y=drawSection(y,'Design Team',info.designTeam||'');
+
+  // Optional project-location map page. Interactive views work without a key;
+  // a restricted Static Maps API key is used only to capture maps into the PDF.
+  const maps=info.maps||{};
+  if(maps.enabled&&(maps.wide||maps.close)){
+    const my=newPage('PROJECT LOCATION',info.projectLocation||p.projectAddress||'');
+    const key=getMapSettings().apiKey,addr=String(info.projectLocation||p.projectAddress||'').trim();
+    const views=[]; if(maps.wide)views.push({label:'WIDE VIEW',zoom:maps.wideZoom||12});if(maps.close)views.push({label:'CLOSE-UP VIEW',zoom:maps.closeZoom||17});
+    let mapY=my;
+    for(const view of views){
+      const h=views.length===1?7.2:3.55;doc.setDrawColor(...border);doc.setFillColor(248,248,247);doc.roundedRect(contentX,mapY,contentW,h,.08,.08,'FD');
+      doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);doc.text(view.label,contentX+.14,mapY+.24);
+      let mapData=null;
+      if(key&&addr){try{mapData=await imageToDataUrl(kickoffStaticMapUrl(addr,view.zoom,key));}catch{mapData=null;}}
+      if(mapData){const imgY=mapY+.36,imgH=h-.48;doc.addImage(mapData,'PNG',contentX+.12,imgY,contentW-.24,imgH,undefined,'FAST');}
+      else{doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);const msg=key?'Google Maps image could not be loaded for this address.':'Add a restricted Google Maps Static API key under Admin → Offices to embed this map in the exported PDF.';doc.text(doc.splitTextToSize(msg,contentW-.46),contentX+.22,mapY+h/2,{lineHeightFactor:1.2});}
+      mapY+=h+.18;
+    }
+  }
+
+  function drawDivisionHeader(d,title='DIVISION KICKOFF'){
+    let dy=newPage(title,`${d.number?d.number+' - ':''}${d.description||'Untitled Division'}`);const h=1.15;doc.setFillColor(249,249,248);doc.setDrawColor(...border);doc.roundedRect(contentX,dy,contentW,h,.08,.08,'FD');
+    const cols=[{x:contentX+.16,w:2.55,label:'DIVISION',value:`${d.number?d.number+' - ':''}${d.description||'—'}`},{x:contentX+2.78,w:2.18,label:'SUBCONTRACTOR',value:d.subcontractor||'—'},{x:contentX+5.05,w:1.30,label:'BUDGET',value:d.budget||'—'}];
+    cols.forEach(c=>{doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);doc.text(c.label,c.x,dy+.27);doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...text);const lines=doc.splitTextToSize(String(c.value),c.w);doc.text(lines.slice(0,3),c.x,dy+.55,{lineHeightFactor:1.14});});
+    return dy+h+.18;
+  }
+  function drawDivisionNotes(d){
+    let dy=drawDivisionHeader(d);const plain=kickoffPlainTextFromHtml(d.notesHtml||'');const paragraphs=plain?plain.split(/\n/):[''];
+    doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...text);
+    if(!plain){doc.setTextColor(...muted);doc.text('No kickoff notes entered.',contentX+.08,dy+.16);return;}
+    for(const para of paragraphs){
+      const wrapped=para.trim()?doc.splitTextToSize(para,contentW-.18):[''];
+      for(const line of wrapped){if(dy+.24>bottom){dy=drawDivisionHeader(d,'DIVISION KICKOFF (CONT.)');doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...text);}if(line)doc.text(line,contentX+.08,dy+.16);dy+=.22;}
+      dy+=.07;
+    }
+  }
+  async function addQuotePages(q){
+    for(const key of q.pages||[]){
+      const asset=await getQuoteAsset(key);if(!asset?.blob)continue;
+      const qy=newPage('SUBCONTRACTOR / VENDOR QUOTE',q.name||'Quote');
+      try{
+        const data=await quoteBlobToJpegDataUrl(asset.blob);const img=new Image();await new Promise((res,rej)=>{img.onload=res;img.onerror=rej;img.src=data;});const maxW=contentW,maxH=bottom-qy-.08;const ratio=Math.min(maxW/img.naturalWidth,maxH/img.naturalHeight);const w=img.naturalWidth*ratio,h=img.naturalHeight*ratio;const x=contentX+(maxW-w)/2;doc.addImage(data,'JPEG',x,qy,w,h,undefined,'FAST');
+      }catch{doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);doc.text('Stored quote snapshot could not be rendered.',contentX,qy+.3);}
+    }
+  }
+  for(const d of k.divisions||[]){drawDivisionNotes(d);for(const q of (k.quotes||[]).filter(q=>q.divisionId===d.id))await addQuotePages(q);}
+  for(const q of (k.quotes||[]).filter(q=>!q.divisionId))await addQuotePages(q);
+
+  // Add the familiar page numbering after the final page count is known.
+  const total=doc.getNumberOfPages();
+  for(let i=1;i<=total;i++){doc.setPage(i);doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...text);doc.text(`PAGE ${i} OF ${total}`,pageW-right,10.62,{align:'right'});doc.setDrawColor(...orange);doc.setLineWidth(.022);doc.line(pageW-right-.50,10.73,pageW-right,10.73);}
+  if(previewOnly)return doc;
+  const safe=safeFilePart(p.projectNumber||p.projectName||'Project');doc.save(`${safe}_Kickoff.pdf`);toast('Kickoff PDF exported.');return doc;
+}
+function scheduleKickoffPdfPreview(delay=450){clearTimeout(state.kickoffPreviewTimer);if(!state.currentKickoffProjectId)return;state.kickoffPreviewTimer=setTimeout(renderKickoffPdfPreview,delay);}
+async function renderKickoffPdfPreview(){
+  if(!state.currentKickoffProjectId||state.currentKickoffTab!=='preview')return;
+  const wrap=$("#kickoffPdfPreviewPages"),status=$("#kickoffPdfPreviewStatus");if(!wrap)return;const token=++state.kickoffPreviewToken;if(status){status.textContent='Building kickoff preview…';status.classList.remove('hidden');}
+  try{
+    const doc=await buildKickoffPdf({preview:true});if(!doc||token!==state.kickoffPreviewToken)return;if(!window.pdfjsLib)throw new Error('Preview renderer unavailable.');if(window.pdfjsLib.GlobalWorkerOptions)window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';const pdf=await window.pdfjsLib.getDocument({data:doc.output('arraybuffer')}).promise;const fragment=document.createDocumentFragment();const available=Math.min(760,Math.max(300,wrap.clientWidth||760));const dpr=Math.min(2,window.devicePixelRatio||1);
+    for(let i=1;i<=pdf.numPages;i++){if(token!==state.kickoffPreviewToken)return;const page=await pdf.getPage(i),base=page.getViewport({scale:1}),cssScale=available/base.width,viewport=page.getViewport({scale:cssScale*dpr}),canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);canvas.style.width=`${Math.round(base.width*cssScale)}px`;canvas.style.height=`${Math.round(base.height*cssScale)}px`;const sheet=document.createElement('div');sheet.className='kickoff-pdf-preview-sheet';const tag=document.createElement('span');tag.className='kickoff-pdf-preview-tag';tag.textContent=`Page ${i} of ${pdf.numPages}`;sheet.append(canvas,tag);fragment.appendChild(sheet);await page.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport}).promise;}
+    wrap.replaceChildren(fragment);if(status)status.classList.add('hidden');
+  }catch(err){console.error(err);if(status){status.textContent='Kickoff preview unavailable. Try Export Kickoff PDF.';status.classList.remove('hidden');}}
+}
 
 async function exportPdf(options={}) {
   const previewOnly=Boolean(options&&options.preview===true);
@@ -1836,7 +2151,8 @@ async function restoreDataBackup(file) {
         users:{...(incoming.users||{})},
         projects:{...(incoming.projects||{})},
         disclaimers:Array.isArray(incoming.disclaimers)&&incoming.disclaimers.length?incoming.disclaimers:DEFAULT_DISCLAIMERS.map(x=>({...x})),
-        officeSettings:normalizeOfficeSettings(incoming.officeSettings)
+        officeSettings:normalizeOfficeSettings(incoming.officeSettings),
+        mapsSettings:{apiKey:String(incoming.mapsSettings?.apiKey||"")}
       };
     } else {
       merged=JSON.parse(JSON.stringify(current));
@@ -1850,6 +2166,7 @@ async function restoreDataBackup(file) {
         });
         merged.officeSettings=currentOffices;
       }
+      if((incoming.mapsSettings?.apiKey||"").trim())merged.mapsSettings={apiKey:String(incoming.mapsSettings.apiKey)};
     }
     const users=Object.values(merged.users||{}).filter(Boolean);
     if (users.length && !users.some(u=>u.role==="admin")) {
@@ -1897,9 +2214,19 @@ $("#adminDownloadBackupBtn").addEventListener("click",downloadDataBackup);$("#ad
 $("#newProjectBtn").addEventListener("click",openNewProjectDialog);$("#emptyNewProjectBtn").addEventListener("click",openNewProjectDialog);$("#newProjectForm").addEventListener("submit",handleNewProject);$("#closeNewProjectDialog")?.addEventListener("click",()=>$("#newProjectDialog").close());$("#cancelNewProjectDialog")?.addEventListener("click",()=>$("#newProjectDialog").close());$("#newProjectDialog")?.addEventListener("click",e=>{if(e.target===$("#newProjectDialog"))$("#newProjectDialog").close();});$("#projectSearch").addEventListener("input",renderProjects);$("#projectSort").addEventListener("change",renderProjects);$$('.project-nav-btn').forEach(b=>b.addEventListener('click',()=>setDashboardMode(b.dataset.projectView)));$("#adminUserFilter").addEventListener("change",()=>{state.adminUserFilter=$("#adminUserFilter").value;renderProjects();});
 $("#importProjectArchiveBtn")?.addEventListener("click",()=>$("#projectArchiveFileInput")?.click());
 $("#projectArchiveFileInput")?.addEventListener("change",async e=>{const file=e.target.files?.[0];e.target.value="";if(file)await importKoehnProjectArchive(file);});
-$("#addKickoffQuoteBtn")?.addEventListener("click",()=>$("#kickoffQuoteFileInput")?.click());
+$("#addKickoffQuoteBtn")?.addEventListener("click",()=>{state.kickoffQuoteTargetDivisionId=null;$("#kickoffQuoteFileInput")?.click();});
 $("#kickoffQuoteFileInput")?.addEventListener("change",async e=>{const file=e.target.files?.[0];e.target.value="";if(file)await handleKickoffQuoteUpload(file);});
-$("#backToDashboard").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#sidebarBack").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#kickoffBackBtn").addEventListener("click",()=>enterDashboard());$("#exportPdfBtn").addEventListener("click",exportPdf);$("#deleteProjectBtn").addEventListener("click",handleVersionDeleteRestore);
+$$('.kickoff-tab-btn').forEach(b=>b.addEventListener('click',()=>activateKickoffTab(b.dataset.kickoffTab)));
+$("#addKickoffDivisionBtn")?.addEventListener('click',()=>addKickoffDivision());
+$("#importKickoffDivisionBtn")?.addEventListener('click',()=>{const n=$("#kickoffProposalDivisionSelect")?.value;if(!n)return toast('Select a proposal division to import.');addKickoffDivision(n);});
+$("#exportKickoffPdfBtn")?.addEventListener('click',()=>buildKickoffPdf({preview:false}));
+$("#refreshKickoffPreviewBtn")?.addEventListener('click',()=>scheduleKickoffPdfPreview(10));
+$("#refreshKickoffMapsBtn")?.addEventListener('click',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();scheduleKickoffPdfPreview(250);});
+$("#kickoffMapsEnabled")?.addEventListener('change',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();});
+$("#kickoffWideMapEnabled")?.addEventListener('change',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();});
+$("#kickoffCloseMapEnabled")?.addEventListener('change',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();});
+$$('[data-kickoff-info]').forEach(el=>{el.addEventListener('input',()=>scheduleKickoffSave());el.addEventListener('change',()=>{saveKickoffInfoFromForm();if(el.dataset.kickoffInfo==='projectLocation')renderKickoffMapPreviews();});});
+$("#backToDashboard").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#sidebarBack").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#kickoffBackBtn").addEventListener("click",()=>{saveKickoffInfoFromForm();if(document.querySelector('.kickoff-division-card'))collectKickoffDivisionsFromDom();enterDashboard();});$("#exportPdfBtn").addEventListener("click",exportPdf);$("#deleteProjectBtn").addEventListener("click",handleVersionDeleteRestore);
 $("#divisionSearch").addEventListener("input",filterDivisionNav);$("#expandAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.add('open')));$("#collapseAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.remove('open')));
 $("#previewToggle").addEventListener("click",()=>togglePreview());$("#closePreviewBtn").addEventListener("click",()=>togglePreview(false));$$('.tab-btn').forEach(b=>b.addEventListener('click',()=>activateTab(b.dataset.tab)));
 $("#projectTitleInline").addEventListener("input",()=>{scheduleSave();updatePreview();});$("#addPriceItemBtn").addEventListener("click",addPriceItem);
@@ -1934,15 +2261,15 @@ closeoutTab.addEventListener("click",e=>{
 $("#priceItems").addEventListener("click",e=>{const b=e.target.closest('.remove-price-item');if(!b)return;const row=b.closest('.price-item-row');row.remove();const base=$('.base-bid-row');if(base)base.classList.toggle('has-alternates',$$('.price-item-row:not(.base-bid-row)').length>0);$("#emptyPriceItems").classList.toggle("hidden",$$('.price-item-row').length>0);scheduleSave();updatePreview();});
 $("#projectDisclaimerSelect").addEventListener("change",()=>{updateSelectedDisclaimerPreview();scheduleSave();updatePreview();});
 document.addEventListener("input",e=>{
-  if(e.target.matches('[data-field],[data-company],[data-office-setting],.price-item-input,#basicSummaryNote,.basic-summary-label,.basic-summary-amount,#basicOverheadLabel,#basicOverheadAmount,.summary-division-amount,.summary-sub-label,.summary-sub-amount,.summary-custom-label,.summary-custom-amount,.summary-extra-label,.summary-extra-amount')){
+  if(e.target.matches('[data-field],[data-company],[data-office-setting],[data-map-setting],.price-item-input,#basicSummaryNote,.basic-summary-label,.basic-summary-amount,#basicOverheadLabel,#basicOverheadAmount,.summary-division-amount,.summary-sub-label,.summary-sub-amount,.summary-custom-label,.summary-custom-amount,.summary-extra-label,.summary-extra-amount')){
     if(e.target.matches('.basic-summary-amount,#basicOverheadAmount'))updateBasicSummaryTotal();
     if(e.target.matches('.summary-division-amount,.summary-sub-amount,.summary-custom-amount,.summary-extra-amount'))updateAdvancedSummaryTotals();
-    if(e.target.matches('[data-office-setting]'))collectAndSaveOfficeSettings();
+    if(e.target.matches('[data-office-setting],[data-map-setting]'))collectAndSaveOfficeSettings();
     scheduleSave();updatePreview();
   }
 });
-document.addEventListener("change",e=>{if(e.target.matches('[data-section-enabled],[data-company],[data-field],[data-office-setting]')){if(e.target.matches('[data-office-setting]'))collectAndSaveOfficeSettings();scheduleSave();updatePreview();}});
+document.addEventListener("change",e=>{if(e.target.matches('[data-section-enabled],[data-company],[data-field],[data-office-setting],[data-map-setting]')){if(e.target.matches('[data-office-setting],[data-map-setting]'))collectAndSaveOfficeSettings();scheduleSave();updatePreview();}});
 document.addEventListener('click',e=>{if(!e.target.closest('.project-card-actions'))$$('.project-menu').forEach(x=>x.classList.add('hidden'));});
-window.addEventListener('beforeunload',()=>{if(state.currentProjectId)saveEditorProject();});
+window.addEventListener('beforeunload',()=>{if(state.currentProjectId)saveEditorProject();if(state.currentKickoffProjectId){saveKickoffInfoFromForm();if(document.querySelector('.kickoff-division-card'))collectKickoffDivisionsFromDom();}});
 
 updateAuthMode();readDataStore();restoreSession();
