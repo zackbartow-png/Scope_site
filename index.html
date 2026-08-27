@@ -172,6 +172,7 @@
               <div id="kickoffMapSettings" class="kickoff-map-settings hidden">
                 <label class="map-check"><input id="kickoffWideMapEnabled" type="checkbox" checked> Wide View</label>
                 <label class="map-check"><input id="kickoffCloseMapEnabled" type="checkbox" checked> Close-Up View</label>
+                <label class="map-check"><input id="kickoffStreetMapEnabled" type="checkbox"> Street View</label>
                 <button id="refreshKickoffMapsBtn" class="btn btn-secondary" type="button">Refresh Map Views</button>
                 <button id="prepareKickoffMapsBtn" class="btn btn-primary" type="button">Prepare Maps for PDF</button>
                 <div class="kickoff-map-preview-grid">
@@ -185,10 +186,16 @@
                     <div id="kickoffCloseMapFrame" class="kickoff-google-map" role="img" aria-label="Close Google Maps project view"></div>
                     <div class="kickoff-map-actions"><button id="uploadKickoffCloseMapBtn" class="text-btn" type="button">Upload Close-Up Map Image</button></div>
                   </div>
+                  <div class="kickoff-map-preview">
+                    <div class="kickoff-map-preview-label">Street View <span id="kickoffStreetMapStatus" class="kickoff-map-status">Live preview</span></div>
+                    <div id="kickoffStreetMapFrame" class="kickoff-google-map" role="img" aria-label="Google Street View project view"></div>
+                    <div class="kickoff-map-actions"><button id="uploadKickoffStreetMapBtn" class="text-btn" type="button">Upload Street View Image</button></div>
+                  </div>
                 </div>
                 <input id="kickoffWideMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
                 <input id="kickoffCloseMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
-                <p id="kickoffMapExportNote" class="kickoff-map-note">For the hosted site, paste the raw Google keys into <strong>maps-config.txt</strong> after the equals signs—no quotes required. Use <strong>Prepare Maps for PDF</strong> to save the pinned Wide and Close-Up views for export. <strong>config.js</strong> and the Admin Static Maps field remain supported as fallbacks.</p>
+                <input id="kickoffStreetMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
+                <p id="kickoffMapExportNote" class="kickoff-map-note">For the hosted site, paste the raw Google keys into <strong>maps-config.txt</strong> after the equals signs—no quotes required. Use <strong>Prepare Maps for PDF</strong> to prepare the selected Wide, Close-Up, and Street View images for export. <strong>config.js</strong> and the Admin Static Maps field remain supported as fallbacks.</p>
               </div>
             </div>
 

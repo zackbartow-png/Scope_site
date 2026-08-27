@@ -325,6 +325,7 @@ async function loadKoehnMapsTextConfig(){
         const idx=line.indexOf('='),name=line.slice(0,idx).trim(),value=line.slice(idx+1).trim();
         if(name==='GOOGLE_MAPS_JAVASCRIPT_API_KEY'&&value)parsed.googleMapsJavaScriptApiKey=value;
         if(name==='GOOGLE_MAPS_STATIC_API_KEY'&&value)parsed.googleMapsStaticApiKey=value;
+        if(name==='GOOGLE_STREET_VIEW_STATIC_API_KEY'&&value)parsed.googleStreetViewStaticApiKey=value;
       });
       window.KOEHN_CONFIG={...getKoehnConfig(),...parsed};
       return window.KOEHN_CONFIG;
@@ -334,6 +335,7 @@ async function loadKoehnMapsTextConfig(){
 }
 function getGoogleMapsJavaScriptApiKey(){ return validConfiguredKey(getKoehnConfig().googleMapsJavaScriptApiKey); }
 function getGoogleMapsStaticApiKey(){ return validConfiguredKey(getKoehnConfig().googleMapsStaticApiKey)||String(getMapSettings().apiKey||'').trim(); }
+function getGoogleStreetViewStaticApiKey(){ return validConfiguredKey(getKoehnConfig().googleStreetViewStaticApiKey)||getGoogleMapsStaticApiKey(); }
 let googleMapsLoadPromise=null;
 async function ensureGoogleMapsApi(){
   if(window.google?.maps)return window.google.maps;
@@ -346,7 +348,7 @@ async function ensureGoogleMapsApi(){
     if(existing){existing.addEventListener('load',()=>resolve(window.google?.maps));existing.addEventListener('error',()=>reject(new Error('Google Maps JavaScript API failed to load.')));return;}
     const script=document.createElement('script');
     script.dataset.koehnGoogleMaps='true';script.async=true;script.defer=true;
-    script.src=`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly`;
+    script.src=`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&libraries=geometry`;
     script.onload=()=>window.google?.maps?resolve(window.google.maps):reject(new Error('Google Maps JavaScript API loaded without maps.'));
     script.onerror=()=>reject(new Error('Google Maps JavaScript API failed to load.'));
     document.head.appendChild(script);
@@ -383,7 +385,7 @@ function normalizeProject(p, ownerUsername="") {
   p.kickoff.quotes = Array.isArray(p.kickoff.quotes) ? p.kickoff.quotes.map(q=>({...q,pages:Array.isArray(q.pages)?q.pages:[],divisionId:q.divisionId||null})) : [];
   p.kickoff.divisions = Array.isArray(p.kickoff.divisions) ? p.kickoff.divisions.map(d=>({id:d.id||uid(),number:String(d.number||""),description:String(d.description||""),subcontractor:String(d.subcontractor||""),budget:String(d.budget||""),notesHtml:sanitizeScopeHtml(d.notesHtml||plainTextToRichHtml(d.notes||"")),sourceDivisionNumber:d.sourceDivisionNumber||""})) : [];
   p.kickoff.projectInfo = {...(p.kickoff.projectInfo||{})};
-  p.kickoff.projectInfo.maps = {enabled:false,wide:true,close:true,wideZoom:12,closeZoom:17,wideSnapshot:"",closeSnapshot:"",...(p.kickoff.projectInfo.maps||{})};
+  p.kickoff.projectInfo.maps = {enabled:false,wide:true,close:true,street:false,wideZoom:12,closeZoom:17,streetHeading:0,streetPitch:0,streetFov:90,wideSnapshot:"",closeSnapshot:"",streetSnapshot:"",...(p.kickoff.projectInfo.maps||{})};
   p.ownerUsername = p.ownerUsername || ownerUsername || "";
   p.divisions = p.divisions || Object.fromEntries(CSI_DIVISIONS.map(([n,t]) => [n,{number:n,title:t,enabled:false,text:""}]));
   CSI_DIVISIONS.forEach(([n,t]) => {
@@ -735,7 +737,7 @@ function activateKickoffTab(name){
   $$('.kickoff-tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.kickoffTab===name));
   $$('.kickoff-tab-panel').forEach(panel=>panel.classList.remove('active'));
   const panel=$(`#kickoff${name[0].toUpperCase()+name.slice(1)}Tab`); if(panel)panel.classList.add('active');
-  if(name==='preview'){ if(state.kickoffPreviewBlobUrl)syncKickoffNativePreview(state.kickoffPreviewBlobUrl); else scheduleKickoffPdfPreview(40); }
+  if(name==='preview')scheduleKickoffPdfPreview(40);
 }
 function populateKickoffBuilder(p){
   if(!p)return;
@@ -749,6 +751,7 @@ function populateKickoffBuilder(p){
   $("#kickoffMapsEnabled").checked=Boolean(info.maps?.enabled);
   $("#kickoffWideMapEnabled").checked=info.maps?.wide!==false;
   $("#kickoffCloseMapEnabled").checked=info.maps?.close!==false;
+  $("#kickoffStreetMapEnabled").checked=Boolean(info.maps?.street);
   $("#kickoffMapSettings").classList.toggle('hidden',!info.maps?.enabled);
   renderKickoffMapPreviews();
   renderKickoffProposalDivisionOptions(p);
@@ -761,12 +764,34 @@ function scheduleKickoffSave(delay=320){
   clearTimeout(state.kickoffSaveTimer);
   state.kickoffSaveTimer=setTimeout(()=>{saveKickoffInfoFromForm();scheduleKickoffPdfPreview(650);},delay);
 }
+function kickoffStreetPovFromLive(){
+  const pano=state.kickoffStreetPanorama;
+  if(!pano?.getPov)return null;
+  try{
+    const pov=pano.getPov()||{};
+    const zoom=Number(pano.getZoom?.() ?? pov.zoom ?? 1);
+    return {
+      streetHeading:Number.isFinite(Number(pov.heading))?Number(pov.heading):0,
+      streetPitch:Number.isFinite(Number(pov.pitch))?Number(pov.pitch):0,
+      streetFov:Math.max(20,Math.min(120,180/Math.pow(2,Math.max(0,zoom))))
+    };
+  }catch{return null;}
+}
 function saveKickoffInfoFromForm(){
   const p=getCurrentKickoffProject(); if(!p)return;
+  const livePov=kickoffStreetPovFromLive();
   mutateKickoff(k=>{
     k.projectInfo=k.projectInfo||{};
     $$('[data-kickoff-info]').forEach(el=>k.projectInfo[el.dataset.kickoffInfo]=el.value);
-    k.projectInfo.maps={...(k.projectInfo.maps||{}),enabled:Boolean($("#kickoffMapsEnabled")?.checked),wide:Boolean($("#kickoffWideMapEnabled")?.checked),close:Boolean($("#kickoffCloseMapEnabled")?.checked),wideZoom:12,closeZoom:17};
+    k.projectInfo.maps={
+      ...(k.projectInfo.maps||{}),
+      enabled:Boolean($("#kickoffMapsEnabled")?.checked),
+      wide:Boolean($("#kickoffWideMapEnabled")?.checked),
+      close:Boolean($("#kickoffCloseMapEnabled")?.checked),
+      street:Boolean($("#kickoffStreetMapEnabled")?.checked),
+      wideZoom:12,closeZoom:17,
+      ...(livePov||{})
+    };
   });
   renderKickoffPageOrder();
 }
@@ -790,21 +815,42 @@ async function renderGoogleKickoffMap(el,address,zoom){
     el.innerHTML='';el.appendChild(iframe);
   }
 }
+async function renderGoogleKickoffStreetView(el,address,maps={}){
+  if(!el)return;
+  const addr=String(address||'').trim();
+  if(!addr){el.innerHTML='<div class="map-fallback">Enter the project location to display Street View.</div>';return;}
+  try{
+    await ensureGoogleMapsApi();
+    const position=await googleGeocodeAddress(addr);
+    const service=new google.maps.StreetViewService();
+    const result=await new Promise((resolve,reject)=>service.getPanorama({location:position,radius:120,preference:google.maps.StreetViewPreference?.NEAREST},(data,status)=>status==='OK'&&data?resolve(data):reject(new Error(`Street View unavailable: ${status}`))));
+    const panoPosition=result.location?.latLng||position;
+    let heading=Number(maps.streetHeading||0);
+    if(window.google?.maps?.geometry?.spherical?.computeHeading){try{heading=google.maps.geometry.spherical.computeHeading(panoPosition,position);}catch{}}
+    el.innerHTML='';
+    const pano=new google.maps.StreetViewPanorama(el,{position:panoPosition,pov:{heading:Number.isFinite(heading)?heading:0,pitch:Number(maps.streetPitch||0)},zoom:1,addressControl:false,fullscreenControl:false,linksControl:true,panControl:true,zoomControl:true,showRoadLabels:true});
+    state.kickoffStreetPanorama=pano;
+  }catch(err){
+    console.warn(err);state.kickoffStreetPanorama=null;
+    el.innerHTML='<div class="map-fallback">Street View is not available here, or the Street View service is not enabled for this API key.</div>';
+  }
+}
 function updateKickoffMapStatuses(){
   const p=getCurrentKickoffProject();if(!p)return;
   const maps=p.kickoff?.projectInfo?.maps||{};
-  const wide=$("#kickoffWideMapStatus"),close=$("#kickoffCloseMapStatus");
-  if(wide){wide.textContent=maps.wideSnapshot?'Ready for PDF':'Live preview';wide.classList.toggle('ready',Boolean(maps.wideSnapshot));}
-  if(close){close.textContent=maps.closeSnapshot?'Ready for PDF':'Live preview';close.classList.toggle('ready',Boolean(maps.closeSnapshot));}
+  [['wide','#kickoffWideMapStatus'],['close','#kickoffCloseMapStatus'],['street','#kickoffStreetMapStatus']].forEach(([kind,sel])=>{
+    const el=$(sel);if(!el)return;const ready=Boolean(maps[`${kind}Snapshot`]);el.textContent=ready?'Ready for PDF':'Live preview';el.classList.toggle('ready',ready);
+  });
 }
 function renderKickoffMapPreviews(){
   const p=getCurrentKickoffProject(); if(!p)return;
   const info=p.kickoff.projectInfo||{}; const enabled=Boolean($("#kickoffMapsEnabled")?.checked ?? info.maps?.enabled);
   $("#kickoffMapSettings")?.classList.toggle('hidden',!enabled);
   const addr=String($("[data-kickoff-info=projectLocation]")?.value||info.projectLocation||p.projectAddress||"").trim();
-  const wide=$("#kickoffWideMapFrame"), close=$("#kickoffCloseMapFrame");
+  const wide=$("#kickoffWideMapFrame"), close=$("#kickoffCloseMapFrame"), street=$("#kickoffStreetMapFrame");
   if(wide){ if(enabled&&($("#kickoffWideMapEnabled")?.checked??true))renderGoogleKickoffMap(wide,addr,12); else wide.innerHTML=''; }
   if(close){ if(enabled&&($("#kickoffCloseMapEnabled")?.checked??true))renderGoogleKickoffMap(close,addr,17); else close.innerHTML=''; }
+  if(street){ if(enabled&&Boolean($("#kickoffStreetMapEnabled")?.checked))renderGoogleKickoffStreetView(street,addr,info.maps||{}); else {street.innerHTML='';state.kickoffStreetPanorama=null;} }
   updateKickoffMapStatuses();
 }
 async function compressKickoffMapImage(file){
@@ -821,26 +867,57 @@ async function saveKickoffMapUpload(kind,file){
   if(!file)return;
   try{
     const data=await compressKickoffMapImage(file);
-    mutateKickoff(k=>{k.projectInfo=k.projectInfo||{};k.projectInfo.maps={wide:true,close:true,wideZoom:12,closeZoom:17,...(k.projectInfo.maps||{}),enabled:true};k.projectInfo.maps[kind]=true;k.projectInfo.maps[kind==='wide'?'wideSnapshot':'closeSnapshot']=data;});
-    renderKickoffMapPreviews();scheduleKickoffPdfPreview(150);toast(`${kind==='wide'?'Wide':'Close-up'} map image saved for PDF.`);
+    mutateKickoff(k=>{k.projectInfo=k.projectInfo||{};k.projectInfo.maps={wide:true,close:true,street:false,wideZoom:12,closeZoom:17,...(k.projectInfo.maps||{}),enabled:true};k.projectInfo.maps[kind]=true;k.projectInfo.maps[`${kind}Snapshot`]=data;});
+    renderKickoffMapPreviews();scheduleKickoffPdfPreview(180);toast(`${kind==='wide'?'Wide':kind==='close'?'Close-up':'Street View'} image saved for PDF.`);
   }catch(err){console.error(err);toast('Unable to save that map image.');}
+}
+async function externalImageUrlToDataUrl(url){
+  // Prefer fetch/blob so API errors return useful HTTP status information.
+  try{
+    const res=await fetch(url,{mode:'cors',credentials:'omit',cache:'no-store',referrerPolicy:'strict-origin-when-cross-origin'});
+    if(!res.ok)throw new Error(`Google image request returned ${res.status}.`);
+    const type=String(res.headers.get('content-type')||'');
+    if(!type.startsWith('image/'))throw new Error('Google returned a non-image response. Check API restrictions, billing, and enabled services.');
+    const blob=await res.blob();
+    return await blobToDataUrl(blob);
+  }catch(fetchErr){
+    // Some browsers/API configurations permit direct image loading but not fetch.
+    return await new Promise((resolve,reject)=>{
+      const img=new Image();img.crossOrigin='anonymous';
+      img.onload=()=>{try{const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d',{alpha:false}).drawImage(img,0,0);resolve(c.toDataURL('image/jpeg',.92));}catch(err){reject(new Error(`${fetchErr?.message||'Map request failed'} Browser security also blocked converting the Google image for PDF.`));}};
+      img.onerror=()=>reject(fetchErr instanceof Error?fetchErr:new Error('Google image request failed.'));
+      img.src=url;
+    });
+  }
+}
+function kickoffStreetViewStaticUrl(address,maps,key,size='640x400'){
+  const params=new URLSearchParams({size:String(size||'640x400'),location:String(address||''),fov:String(Math.round(Number(maps.streetFov||90))),heading:String(Math.round(Number(maps.streetHeading||0))),pitch:String(Math.round(Number(maps.streetPitch||0))),key:String(key||''),return_error_code:'true'});
+  return `https://maps.googleapis.com/maps/api/streetview?${params.toString()}`;
 }
 async function prepareKickoffMapsForPdf(){
   saveKickoffInfoFromForm();
   await loadKoehnMapsTextConfig();
   const p=getCurrentKickoffProject();if(!p)return;
-  const maps=p.kickoff?.projectInfo?.maps||{},addr=String(p.kickoff?.projectInfo?.projectLocation||p.projectAddress||'').trim(),key=getGoogleMapsStaticApiKey();
+  const maps=p.kickoff?.projectInfo?.maps||{},addr=String(p.kickoff?.projectInfo?.projectLocation||p.projectAddress||'').trim();
   if(!addr)return toast('Enter the project location first.');
-  if(!key){toast('No Google Static Maps API key is saved. Upload the Wide/Close-Up Google Maps screenshots below the previews instead.');return;}
+  const mapKey=getGoogleMapsStaticApiKey(),streetKey=getGoogleStreetViewStaticApiKey();
   const tasks=[];
-  if(maps.wide!==false)tasks.push(['wide',maps.wideZoom||12]);
-  if(maps.close!==false)tasks.push(['close',maps.closeZoom||17]);
-  try{
-    const saved={};
-    for(const [kind,zoom] of tasks)saved[kind]=await imageToDataUrl(kickoffStaticMapUrl(addr,zoom,key,tasks.length===1?'640x600':'640x320'));
-    mutateKickoff(k=>{k.projectInfo=k.projectInfo||{};k.projectInfo.maps={...(k.projectInfo.maps||{})};if(saved.wide)k.projectInfo.maps.wideSnapshot=saved.wide;if(saved.close)k.projectInfo.maps.closeSnapshot=saved.close;});
-    renderKickoffMapPreviews();scheduleKickoffPdfPreview(150);toast('Pinned map images are ready for PDF export.');
-  }catch(err){console.error(err);toast('Google map images could not be captured. Upload map screenshots below the previews instead.');}
+  if(maps.wide!==false)tasks.push({kind:'wide',url:mapKey?kickoffStaticMapUrl(addr,maps.wideZoom||12,mapKey,'640x360'):''});
+  if(maps.close!==false)tasks.push({kind:'close',url:mapKey?kickoffStaticMapUrl(addr,maps.closeZoom||17,mapKey,'640x360'):''});
+  if(maps.street)tasks.push({kind:'street',url:streetKey?kickoffStreetViewStaticUrl(addr,maps,streetKey,'640x360'):''});
+  if(!tasks.length)return toast('Select at least one map view first.');
+  const saved={},errors=[];
+  for(const task of tasks){
+    if(!task.url){errors.push(`${task.kind}: API key not configured`);continue;}
+    try{saved[task.kind]=await externalImageUrlToDataUrl(task.url);}catch(err){console.error(err);errors.push(`${task.kind}: ${err?.message||'request failed'}`);}
+  }
+  if(Object.keys(saved).length){
+    mutateKickoff(k=>{k.projectInfo=k.projectInfo||{};k.projectInfo.maps={...(k.projectInfo.maps||{})};Object.entries(saved).forEach(([kind,data])=>k.projectInfo.maps[`${kind}Snapshot`]=data);});
+    renderKickoffMapPreviews();scheduleKickoffPdfPreview(180);
+  }
+  if(errors.length){
+    toast(`Prepared ${Object.keys(saved).length} view(s). ${errors.join(' | ')}${maps.street?' Enable Street View Static API on the Street/Static key if needed.':''}`);
+  }else toast('Selected map views are ready for PDF export.');
 }
 async function runKickoffMapsDiagnostics(){
   const out=$("#kickoffMapsDiagnostics");
@@ -961,7 +1038,7 @@ function renderKickoffPageOrder(){
   const p=getCurrentKickoffProject(); if(!p)return;
   const rows=[]; let page=1;
   rows.push({page:page++,title:'Project Kickoff Overview',sub:'Project information'});
-  if(p.kickoff.projectInfo?.maps?.enabled&&(p.kickoff.projectInfo.maps.wide||p.kickoff.projectInfo.maps.close))rows.push({page:page++,title:'Project Location',sub:'Google Maps views'});
+  if(p.kickoff.projectInfo?.maps?.enabled&&(p.kickoff.projectInfo.maps.wide||p.kickoff.projectInfo.maps.close||p.kickoff.projectInfo.maps.street))rows.push({page:page++,title:'Project Location',sub:'Google Maps / Street View'});
   (p.kickoff.divisions||[]).forEach(d=>{
     rows.push({page:page++,title:`${d.number?d.number+' - ':''}${d.description||'Untitled Division'}`,sub:`Division page · ${d.subcontractor||'No subcontractor entered'}`});
     (p.kickoff.quotes||[]).filter(q=>q.divisionId===d.id).forEach(q=>{rows.push({page:page,title:q.name||'Quote',sub:`Quote PDF · ${q.pageCount||q.pages?.length||0} page(s)`});page+=Number(q.pageCount||q.pages?.length||1);});
@@ -1474,47 +1551,85 @@ function schedulePdfPreview(delay=520){
   if(!state.previewOpen||!state.currentProjectId)return;
   state.previewRenderTimer=setTimeout(renderLivePdfPreview,delay);
 }
-function setNativePdfFrame(container,url,title){
-  if(!container)return;
-  let frame=container.querySelector('iframe.native-pdf-preview-frame');
-  if(!frame){
-    frame=document.createElement('iframe');
-    frame.className='native-pdf-preview-frame';
-    frame.title=title||'PDF preview';
-    frame.setAttribute('loading','eager');
-    container.replaceChildren(frame);
+function captureLazyPreviewPosition(scroller,wrap){
+  if(!scroller||!wrap)return {page:1,offsetRatio:0};
+  const sheets=[...wrap.querySelectorAll('.lazy-pdf-sheet')];
+  if(!sheets.length)return {page:1,offsetRatio:0};
+  const sr=scroller.getBoundingClientRect();
+  let chosen=sheets[0];
+  for(const sheet of sheets){
+    const r=sheet.getBoundingClientRect();
+    if(r.top<=sr.top+10)chosen=sheet; else break;
   }
-  // Native browser PDF viewers render vector text/graphics and are substantially
-  // faster and clearer than rasterizing every page through PDF.js.
-  frame.src=`${url}#toolbar=0&navpanes=0&view=FitH`;
+  const r=chosen.getBoundingClientRect();
+  return {page:Number(chosen.dataset.page||1),offsetRatio:Math.max(0,Math.min(1,(sr.top-r.top)/Math.max(1,r.height)))};
+}
+function restoreLazyPreviewPosition(scroller,wrap,pos){
+  if(!scroller||!wrap||!pos)return;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    const sheet=wrap.querySelector(`.lazy-pdf-sheet[data-page="${Math.max(1,Number(pos.page)||1)}"]`)||wrap.querySelector('.lazy-pdf-sheet');
+    if(!sheet)return;
+    const sr=scroller.getBoundingClientRect(),r=sheet.getBoundingClientRect();
+    const currentTop=scroller.scrollTop+(r.top-sr.top);
+    scroller.scrollTop=Math.max(0,currentTop+(Number(pos.offsetRatio)||0)*r.height);
+  }));
+}
+async function mountLazyPdfPreview(pdf,wrap,scroller,{token,isCurrent,maxWidth=440,dprCap=2}={}){
+  if(!pdf||!wrap||!scroller)return;
+  const pos=captureLazyPreviewPosition(scroller,wrap);
+  try{wrap._lazyPdfObserver?.disconnect?.();}catch{}
+  const oldPdf=wrap._lazyPdfDocument;
+  wrap._lazyPdfDocument=pdf;
+  const frag=document.createDocumentFragment();
+  for(let i=1;i<=pdf.numPages;i++){
+    const sheet=document.createElement('div');sheet.className='lazy-pdf-sheet';sheet.dataset.page=String(i);sheet.style.maxWidth=`${maxWidth}px`;
+    const loading=document.createElement('div');loading.className='lazy-pdf-loading';loading.textContent=`Page ${i} of ${pdf.numPages}`;
+    const tag=document.createElement('div');tag.className='lazy-pdf-page-tag';tag.textContent=`Page ${i} of ${pdf.numPages}`;
+    sheet.append(loading,tag);frag.appendChild(sheet);
+  }
+  wrap.replaceChildren(frag);restoreLazyPreviewPosition(scroller,wrap,pos);
+  const activeRenders=new Set();
+  const renderPage=async pageNum=>{
+    const sheet=wrap.querySelector(`.lazy-pdf-sheet[data-page="${pageNum}"]`);
+    if(!sheet||sheet.dataset.rendered==='1'||sheet.dataset.rendering==='1'||!isCurrent())return;
+    sheet.dataset.rendering='1';
+    try{
+      const page=await pdf.getPage(pageNum);if(!isCurrent())return;
+      const base=page.getViewport({scale:1});
+      const cssW=Math.max(250,Math.min(maxWidth,sheet.clientWidth||maxWidth));
+      const cssScale=cssW/base.width;
+      const dpr=Math.min(dprCap,Math.max(1.35,window.devicePixelRatio||1.5));
+      const viewport=page.getViewport({scale:cssScale*dpr});
+      const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);canvas.style.width='100%';canvas.style.height='100%';canvas.setAttribute('aria-label',`PDF preview page ${pageNum} of ${pdf.numPages}`);
+      const task=page.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport});activeRenders.add(task);await task.promise;activeRenders.delete(task);if(!isCurrent())return;
+      sheet.querySelector('.lazy-pdf-loading')?.remove();sheet.prepend(canvas);sheet.dataset.rendered='1';
+    }catch(err){if(isCurrent())console.warn('Preview page render failed',err);}finally{sheet.dataset.rendering='0';}
+  };
+  const observer=new IntersectionObserver(entries=>{
+    for(const entry of entries){if(!entry.isIntersecting)continue;const n=Number(entry.target.dataset.page||1);[n-1,n,n+1].filter(x=>x>=1&&x<=pdf.numPages).forEach(x=>renderPage(x));}
+  },{root:scroller,rootMargin:'750px 0px',threshold:.01});
+  wrap._lazyPdfObserver=observer;[...wrap.querySelectorAll('.lazy-pdf-sheet')].forEach(sheet=>observer.observe(sheet));
+  const first=Math.max(1,Math.min(pdf.numPages,Number(pos.page)||1));[first-1,first,first+1].filter(x=>x>=1&&x<=pdf.numPages).forEach(x=>renderPage(x));
+  if(oldPdf&&oldPdf!==pdf)setTimeout(()=>{try{oldPdf.destroy?.();}catch{}},900);
 }
 async function renderLivePdfPreview(){
   if(!state.previewOpen||!state.currentProjectId)return;
   if(state.previewRendering){state.previewPending=true;return;}
-  const pagesWrap=$("#pdfPreviewPages"),status=$("#pdfPreviewStatus");
-  if(!pagesWrap)return;
+  const scroller=$("#pdfPreviewScroll"),pagesWrap=$("#pdfPreviewPages"),status=$("#pdfPreviewStatus");
+  if(!scroller||!pagesWrap)return;
   state.previewRendering=true;state.previewPending=false;
   const token=++state.previewRenderToken;
-  if(status){status.textContent="Updating live PDF…";status.classList.remove("hidden");}
+  if(status){status.textContent='Updating live PDF…';status.classList.remove('hidden');}
   try{
-    const doc=await exportPdf({preview:true});
-    if(!doc||token!==state.previewRenderToken)return;
-    const blob=doc.output('blob');
-    const url=URL.createObjectURL(blob);
-    if(token!==state.previewRenderToken){URL.revokeObjectURL(url);return;}
-    const oldUrl=state.previewBlobUrl;
-    state.previewBlobUrl=url;
-    setNativePdfFrame(pagesWrap,url,'Live proposal PDF preview');
+    const doc=await exportPdf({preview:true});if(!doc||token!==state.previewRenderToken)return;
+    if(!window.pdfjsLib)throw new Error('PDF preview renderer did not load.');
+    if(window.pdfjsLib.GlobalWorkerOptions)window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await window.pdfjsLib.getDocument({data:doc.output('arraybuffer')}).promise;
+    if(token!==state.previewRenderToken){try{pdf.destroy?.();}catch{};return;}
+    await mountLazyPdfPreview(pdf,pagesWrap,scroller,{token,isCurrent:()=>token===state.previewRenderToken,maxWidth:440,dprCap:2});
     if(status)status.classList.add('hidden');
-    // Give the iframe time to switch away from the old blob before releasing it.
-    if(oldUrl)setTimeout(()=>URL.revokeObjectURL(oldUrl),2500);
-  }catch(err){
-    console.error(err);
-    if(token===state.previewRenderToken&&status){status.textContent="Live preview unavailable. Export PDF still uses the locked template.";status.classList.remove("hidden");}
-  }finally{
-    state.previewRendering=false;
-    if(state.previewPending){state.previewPending=false;schedulePdfPreview(180);}
-  }
+  }catch(err){console.error(err);if(token===state.previewRenderToken&&status){status.textContent='Live preview unavailable. Export PDF still uses the locked template.';status.classList.remove('hidden');}}
+  finally{state.previewRendering=false;if(state.previewPending){state.previewPending=false;schedulePdfPreview(260);}}
 }
 
 const imageDataUrlCache=new Map();
@@ -1678,28 +1793,31 @@ async function buildKickoffPdf(options={}){
   y=drawSection(y,'Project Location',info.projectLocation||p.projectAddress||'');
   y=drawSection(y,'Design Team',info.designTeam||'');
 
-  // Optional project-location map page. Interactive views work without a key;
-  // a restricted Static Maps API key is used only to capture maps into the PDF.
+  // Optional project-location map page. PDF generation uses the prepared snapshots
+  // only, so live preview refreshes never make extra Google image requests.
   const maps=info.maps||{};
-  if(maps.enabled&&(maps.wide||maps.close)){
+  if(maps.enabled&&(maps.wide||maps.close||maps.street)){
     const my=newPage('PROJECT LOCATION',info.projectLocation||p.projectAddress||'');
-    const key=getGoogleMapsStaticApiKey(),addr=String(info.projectLocation||p.projectAddress||'').trim();
-    const views=[]; if(maps.wide)views.push({label:'WIDE VIEW',zoom:maps.wideZoom||12});if(maps.close)views.push({label:'CLOSE-UP VIEW',zoom:maps.closeZoom||17});
+    const views=[];
+    if(maps.wide)views.push({label:'WIDE VIEW',snapshot:String(maps.wideSnapshot||'')});
+    if(maps.close)views.push({label:'CLOSE-UP VIEW',snapshot:String(maps.closeSnapshot||'')});
+    if(maps.street)views.push({label:'STREET VIEW',snapshot:String(maps.streetSnapshot||'')});
     let mapY=my;
     for(const view of views){
-      const h=views.length===1?7.2:3.55;doc.setDrawColor(...border);doc.setFillColor(248,248,247);doc.roundedRect(contentX,mapY,contentW,h,.08,.08,'FD');
+      const h=views.length===1?7.2:views.length===2?3.55:2.48;
+      doc.setDrawColor(...border);doc.setFillColor(248,248,247);doc.roundedRect(contentX,mapY,contentW,h,.08,.08,'FD');
       doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);doc.text(view.label,contentX+.14,mapY+.24);
-      let mapData=view.label==='WIDE VIEW'?String(maps.wideSnapshot||''):String(maps.closeSnapshot||'');
-      if(!mapData&&key&&addr){try{mapData=await imageToDataUrl(kickoffStaticMapUrl(addr,view.zoom,key,views.length===1?'640x600':'640x320'));}catch{mapData=null;}}
+      const mapData=view.snapshot;
       if(mapData){
         const boxX=contentX+.12,boxY=mapY+.36,boxW=contentW-.24,boxH=h-.48;
-        // Fill the existing map window edge-to-edge without stretching. The saved
-        // image is center-cropped only enough to match the window's aspect ratio.
         const fitted=await cropMapDataUrlToAspect(mapData,boxW/boxH);
         const fmt=fitted.startsWith('data:image/jpeg')?'JPEG':'PNG';
         doc.addImage(fitted,fmt,boxX,boxY,boxW,boxH,undefined,'FAST');
+      } else {
+        doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);
+        const msg=`${view.label} is not prepared for PDF. In Kickoff → Project Info, click Prepare Maps for PDF or upload an image for this view.`;
+        doc.text(doc.splitTextToSize(msg,contentW-.46),contentX+.22,mapY+h/2,{lineHeightFactor:1.2});
       }
-      else{doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);const msg='Map image not prepared. In Kickoff → Project Info, click Prepare Maps for PDF or upload a Google Maps screenshot for this view.';doc.text(doc.splitTextToSize(msg,contentW-.46),contentX+.22,mapY+h/2,{lineHeightFactor:1.2});}
       mapY+=h+.18;
     }
   }
@@ -1759,15 +1877,10 @@ function scheduleKickoffPdfPreview(delay=520){
   if(!state.currentKickoffProjectId)return;
   state.kickoffPreviewTimer=setTimeout(renderKickoffPdfPreview,delay);
 }
-function syncKickoffNativePreview(url){
-  const liveWrap=$("#kickoffLivePreviewPages"),tabWrap=$("#kickoffPdfPreviewPages");
-  if(liveWrap)setNativePdfFrame(liveWrap,url,'Live kickoff PDF preview');
-  if(tabWrap&&state.currentKickoffTab==='preview')setNativePdfFrame(tabWrap,url,'Kickoff PDF preview');
-}
 async function renderKickoffPdfPreview(){
   if(!state.currentKickoffProjectId)return;
   if(state.kickoffPreviewRendering){state.kickoffPreviewPending=true;return;}
-  const liveWrap=$("#kickoffLivePreviewPages"),liveStatus=$("#kickoffLivePreviewStatus");
+  const liveWrap=$("#kickoffLivePreviewPages"),liveStatus=$("#kickoffLivePreviewStatus"),liveScroll=$("#kickoffLivePreviewScroll");
   const tabWrap=$("#kickoffPdfPreviewPages"),tabStatus=$("#kickoffPdfPreviewStatus");
   if(!liveWrap&&!tabWrap)return;
   state.kickoffPreviewRendering=true;state.kickoffPreviewPending=false;
@@ -1775,26 +1888,19 @@ async function renderKickoffPdfPreview(){
   if(liveStatus){liveStatus.textContent='Updating kickoff PDF…';liveStatus.classList.remove('hidden');}
   if(state.currentKickoffTab==='preview'&&tabStatus){tabStatus.textContent='Updating kickoff PDF…';tabStatus.classList.remove('hidden');}
   try{
-    const doc=await buildKickoffPdf({preview:true});
-    if(!doc||token!==state.kickoffPreviewToken)return;
-    const blob=doc.output('blob');
-    const url=URL.createObjectURL(blob);
-    if(token!==state.kickoffPreviewToken){URL.revokeObjectURL(url);return;}
-    const oldUrl=state.kickoffPreviewBlobUrl;
-    state.kickoffPreviewBlobUrl=url;
-    syncKickoffNativePreview(url);
-    if(liveStatus)liveStatus.classList.add('hidden');
-    if(tabStatus&&state.currentKickoffTab==='preview')tabStatus.classList.add('hidden');
-    if(oldUrl)setTimeout(()=>URL.revokeObjectURL(oldUrl),2500);
+    const doc=await buildKickoffPdf({preview:true});if(!doc||token!==state.kickoffPreviewToken)return;
+    if(!window.pdfjsLib)throw new Error('Preview renderer unavailable.');
+    if(window.pdfjsLib.GlobalWorkerOptions)window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await window.pdfjsLib.getDocument({data:doc.output('arraybuffer')}).promise;if(token!==state.kickoffPreviewToken){try{pdf.destroy?.();}catch{};return;}
+    const isCurrent=()=>token===state.kickoffPreviewToken;
+    if(liveWrap&&liveScroll){await mountLazyPdfPreview(pdf,liveWrap,liveScroll,{token,isCurrent,maxWidth:360,dprCap:2});if(liveStatus)liveStatus.classList.add('hidden');}
+    if(state.currentKickoffTab==='preview'&&tabWrap){await mountLazyPdfPreview(pdf,tabWrap,tabWrap,{token,isCurrent,maxWidth:760,dprCap:2});if(tabStatus)tabStatus.classList.add('hidden');}
   }catch(err){
     console.error(err);
-    if(token===state.kickoffPreviewToken){
-      if(liveStatus){liveStatus.textContent='Kickoff preview unavailable. Export PDF is still available.';liveStatus.classList.remove('hidden');}
-      if(tabStatus&&state.currentKickoffTab==='preview'){tabStatus.textContent='Kickoff preview unavailable. Try Export Kickoff PDF.';tabStatus.classList.remove('hidden');}
-    }
+    if(token===state.kickoffPreviewToken){if(liveStatus){liveStatus.textContent='Kickoff preview unavailable. Export PDF is still available.';liveStatus.classList.remove('hidden');}if(tabStatus&&state.currentKickoffTab==='preview'){tabStatus.textContent='Kickoff preview unavailable. Try Export Kickoff PDF.';tabStatus.classList.remove('hidden');}}
   }finally{
     state.kickoffPreviewRendering=false;
-    if(state.kickoffPreviewPending){state.kickoffPreviewPending=false;scheduleKickoffPdfPreview(180);}
+    if(state.kickoffPreviewPending){state.kickoffPreviewPending=false;scheduleKickoffPdfPreview(260);}
   }
 }
 
@@ -2458,11 +2564,14 @@ $("#refreshKickoffMapsBtn")?.addEventListener('click',()=>{saveKickoffInfoFromFo
 $("#prepareKickoffMapsBtn")?.addEventListener('click',prepareKickoffMapsForPdf);
 $("#uploadKickoffWideMapBtn")?.addEventListener('click',()=>$("#kickoffWideMapFileInput")?.click());
 $("#uploadKickoffCloseMapBtn")?.addEventListener('click',()=>$("#kickoffCloseMapFileInput")?.click());
+$("#uploadKickoffStreetMapBtn")?.addEventListener('click',()=>$("#kickoffStreetMapFileInput")?.click());
 $("#kickoffWideMapFileInput")?.addEventListener('change',async e=>{const file=e.target.files?.[0];e.target.value='';if(file)await saveKickoffMapUpload('wide',file);});
 $("#kickoffCloseMapFileInput")?.addEventListener('change',async e=>{const file=e.target.files?.[0];e.target.value='';if(file)await saveKickoffMapUpload('close',file);});
+$("#kickoffStreetMapFileInput")?.addEventListener('change',async e=>{const file=e.target.files?.[0];e.target.value='';if(file)await saveKickoffMapUpload('street',file);});
 $("#kickoffMapsEnabled")?.addEventListener('change',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();});
 $("#kickoffWideMapEnabled")?.addEventListener('change',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();});
 $("#kickoffCloseMapEnabled")?.addEventListener('change',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();});
+$("#kickoffStreetMapEnabled")?.addEventListener('change',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();scheduleKickoffPdfPreview(220);});
 $$('[data-kickoff-info]').forEach(el=>{el.addEventListener('input',()=>scheduleKickoffSave());el.addEventListener('change',()=>{saveKickoffInfoFromForm();if(el.dataset.kickoffInfo==='projectLocation')renderKickoffMapPreviews();});});
 $("#backToDashboard").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#sidebarBack").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#kickoffBackBtn").addEventListener("click",()=>{saveKickoffInfoFromForm();if(document.querySelector('.kickoff-division-card'))collectKickoffDivisionsFromDom();enterDashboard();});$("#exportPdfBtn").addEventListener("click",exportPdf);$("#deleteProjectBtn").addEventListener("click",handleVersionDeleteRestore);
 $("#divisionSearch").addEventListener("input",filterDivisionNav);$("#expandAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.add('open')));$("#collapseAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.remove('open')));

@@ -565,7 +565,7 @@ body { min-height: 100%; overflow-y: auto; }
 .kickoff-map-settings { display:grid; grid-template-columns:auto auto 1fr; gap:10px 14px; align-items:center; }
 .map-check { display:flex!important; grid-auto-flow:column; align-items:center; gap:7px!important; font-size:10px!important; }
 .map-check input { width:15px!important; height:15px; }
-.kickoff-map-preview-grid { grid-column:1/-1; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.kickoff-map-preview-grid { grid-column:1/-1; display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; }
 .kickoff-map-preview { border:1px solid #dadde0; border-radius:10px; overflow:hidden; background:#fff; }
 .kickoff-map-preview-label { padding:8px 10px; color:#555a5e; font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; border-bottom:1px solid #e3e5e7; }
 .kickoff-map-preview iframe, .kickoff-map-preview .kickoff-google-map { display:block; width:100%; height:245px; border:0; background:#f3f4f4; }
@@ -648,33 +648,20 @@ body { min-height: 100%; overflow-y: auto; }
 /* Live interactive maps always fill their viewport; saved PDF snapshots are cropped only as needed to the same frame ratio. */
 .kickoff-google-map { overflow:hidden; }
 
-/* V7.29 — native vector PDF preview. Avoids slow/soft canvas rasterization. */
+/* V7.30 — lazy high-resolution PDF.js previews. Only visible pages render,
+   so previews remain sharp while preserving scroll position across refreshes. */
 .pdf-preview-pages,
 .kickoff-pdf-preview-pages,
-.kickoff-live-preview-pages {
-  display: block;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-}
-.native-pdf-preview-frame {
-  display: block;
-  width: 100%;
-  height: 100%;
-  min-height: 640px;
-  border: 0;
-  background: #dfe2e4;
-}
-.pdf-preview-scroll {
-  padding: 0;
-  overflow: hidden;
-}
-#pdfPreviewPages { height: 100%; }
-#kickoffLivePreviewPages { height: 100%; }
-#kickoffPdfPreviewPages { height: 78vh; min-height: 760px; }
-.kickoff-live-preview-scroll { padding: 0 !important; overflow: hidden !important; }
-.kickoff-live-preview-pane .native-pdf-preview-frame { min-height: 0; height: 100%; }
-@media (max-width: 900px) {
-  #kickoffPdfPreviewPages { height: 70vh; min-height: 620px; }
-  .native-pdf-preview-frame { min-height: 560px; }
-}
+.kickoff-live-preview-pages { display:grid; gap:18px; justify-items:center; width:100%; height:auto; margin:0; }
+.pdf-preview-scroll { padding:16px 12px 28px; overflow:auto; scrollbar-gutter:stable; }
+.kickoff-live-preview-scroll { padding:12px 10px 24px !important; overflow:auto !important; scrollbar-gutter:stable; }
+#kickoffPdfPreviewPages { min-height:640px; }
+.lazy-pdf-sheet { position:relative; width:min(100%, 440px); aspect-ratio:8.5/11; background:#fff; box-shadow:0 7px 20px rgba(0,0,0,.16); overflow:hidden; }
+.kickoff-pdf-preview-pages .lazy-pdf-sheet { width:min(100%, 760px); }
+.kickoff-live-preview-pages .lazy-pdf-sheet { width:min(100%, 360px); }
+.lazy-pdf-sheet canvas { display:block; width:100%; height:100%; background:#fff; }
+.lazy-pdf-page-tag { position:absolute; right:7px; bottom:7px; padding:4px 7px; border-radius:999px; background:rgba(33,37,40,.78); color:#fff; font-size:8px; line-height:1; }
+.lazy-pdf-loading { position:absolute; inset:0; display:grid; place-items:center; color:#8a8e91; font-size:10px; background:linear-gradient(180deg,#fff,#f8f8f8); }
+@media (max-width:900px){ #kickoffPdfPreviewPages{min-height:560px} }
+/* Dedicated kickoff preview keeps its own scroll position between live refreshes. */
+#kickoffPdfPreviewPages { max-height:78vh; overflow:auto; padding:14px 10px 28px; background:#dfe2e4; scrollbar-gutter:stable; }
