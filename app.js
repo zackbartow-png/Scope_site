@@ -68,6 +68,14 @@ function sanitizeScopeHtml(html="") {
     if(node.nodeType!==Node.ELEMENT_NODE)return;
     const tag=node.tagName.toLowerCase();
     if(tag==="br"){ parent.appendChild(document.createElement("br")); return; }
+    if(tag==="img"){
+      const key=String(node.getAttribute("data-kickoff-image-key")||"").trim();
+      if(!key)return;
+      const img=document.createElement("img");
+      img.setAttribute("data-kickoff-image-key",key);
+      img.setAttribute("alt",String(node.getAttribute("alt")||"Kickoff image"));
+      parent.appendChild(img);return;
+    }
     if(tag==="div"||tag==="p"){
       const block=document.createElement("div"); [...node.childNodes].forEach(ch=>copy(ch,block)); parent.appendChild(block); return;
     }
@@ -91,6 +99,10 @@ function sanitizeScopeHtml(html="") {
 function richEditorPlainText(el){
   if(!el)return "";
   return String(el.innerText||"").replace(/\r/g,"").replace(/\n+$/g,"");
+}
+function kickoffImageKeysFromHtml(html=""){
+  const root=document.createElement("div");root.innerHTML=String(html||"");
+  return $$('img[data-kickoff-image-key]',root).map(img=>String(img.getAttribute('data-kickoff-image-key')||'').trim()).filter(Boolean);
 }
 function normalizedDivisionRichHtml(d){
   const rich=String(d?.richText||"").trim();
@@ -164,6 +176,48 @@ function canvasToCompressedBlob(canvas){
   return new Promise(resolve=>{
     canvas.toBlob(b=>{if(b)return resolve({blob:b,mime:"image/webp"});canvas.toBlob(j=>resolve({blob:j,mime:"image/jpeg"}),"image/jpeg",0.88);},"image/webp",0.84);
   });
+}
+const kickoffInlineImageDataCache=new Map();
+async function compressKickoffInlineImage(fileOrBlob){
+  const blob=fileOrBlob instanceof Blob?fileOrBlob:null;if(!blob)throw new Error("No image was provided.");
+  if(!String(blob.type||"").startsWith("image/"))throw new Error("Please select an image file.");
+  const url=URL.createObjectURL(blob);
+  try{
+    const img=await new Promise((resolve,reject)=>{const im=new Image();im.onload=()=>resolve(im);im.onerror=()=>reject(new Error("Could not read that image."));im.src=url;});
+    const maxW=1800,maxH=1800,scale=Math.min(1,maxW/img.naturalWidth,maxH/img.naturalHeight);
+    const w=Math.max(1,Math.round(img.naturalWidth*scale)),h=Math.max(1,Math.round(img.naturalHeight*scale));
+    const c=document.createElement("canvas");c.width=w;c.height=h;const ctx=c.getContext("2d",{alpha:false});ctx.fillStyle="#fff";ctx.fillRect(0,0,w,h);ctx.drawImage(img,0,0,w,h);
+    const out=await new Promise(resolve=>c.toBlob(b=>resolve(b),"image/jpeg",.90));
+    if(!out)throw new Error("Could not compress that image.");
+    return {blob:out,mime:"image/jpeg",width:w,height:h};
+  }finally{URL.revokeObjectURL(url);}
+}
+async function saveKickoffInlineImage(blob,divisionId){
+  const p=getCurrentKickoffProject();if(!p)throw new Error("Open a kickoff project first.");
+  const familyId=p.familyId||p.id,asset=await compressKickoffInlineImage(blob),key=`${familyId}::division-image::${divisionId}::${uid()}`;
+  await putQuoteAsset({key,familyId,assetType:"divisionImage",divisionId,name:"Kickoff image",mime:asset.mime,blob:asset.blob,width:asset.width,height:asset.height,createdAt:nowIso()});
+  kickoffInlineImageDataCache.delete(key);return key;
+}
+async function kickoffInlineImageDataUrl(key){
+  if(kickoffInlineImageDataCache.has(key))return kickoffInlineImageDataCache.get(key);
+  const promise=(async()=>{const asset=await getQuoteAsset(key);return asset?.blob?await blobToDataUrl(asset.blob):"";})();
+  kickoffInlineImageDataCache.set(key,promise);try{return await promise;}catch(err){kickoffInlineImageDataCache.delete(key);throw err;}
+}
+function kickoffEditorRange(editor){
+  const sel=window.getSelection();
+  if(sel?.rangeCount&&editor?.contains(sel.anchorNode))return sel.getRangeAt(0).cloneRange();
+  const r=document.createRange();r.selectNodeContents(editor);r.collapse(false);return r;
+}
+function insertKickoffImageMarker(editor,key,range=null){
+  if(!editor||!key)return;
+  editor.focus();
+  if(range){const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);}
+  const html=`<div><img data-kickoff-image-key="${esc(key)}" alt="Kickoff image"></div><div><br></div>`;
+  document.execCommand("insertHTML",false,html);
+}
+async function hydrateKickoffInlineImages(root=document){
+  const imgs=$$('img[data-kickoff-image-key]',root);
+  await Promise.all(imgs.map(async img=>{const key=img.getAttribute('data-kickoff-image-key');if(!key||img.getAttribute('src'))return;try{const src=await kickoffInlineImageDataUrl(key);if(src)img.src=src;}catch{}}));
 }
 async function convertKickoffPdfToSnapshots(file,familyId,quoteId,onProgress=()=>{}){
   if(!window.pdfjsLib)throw new Error("PDF converter did not load.");
@@ -1185,13 +1239,16 @@ function moveKickoffDivision(id,delta){
   mutateKickoff(k=>{const arr=k.divisions||[],i=arr.findIndex(d=>d.id===id),j=i+delta;if(i<0||j<0||j>=arr.length)return;[arr[i],arr[j]]=[arr[j],arr[i]];k.pageOrder=defaultKickoffPageOrder(k);});
   renderKickoffDivisions();renderKickoffPageOrder();scheduleKickoffPdfPreview(250);
 }
-function removeKickoffDivision(id){
+async function removeKickoffDivision(id){
   const p=getCurrentKickoffProject(); if(!p)return;
   const d=(p.kickoff.divisions||[]).find(x=>x.id===id); if(!d)return;
   const linked=(p.kickoff.quotes||[]).filter(q=>q.divisionId===id);
   if(linked.length)return toast("Remove or reassign the quote PDFs attached to this division first.");
   if(!confirm(`Remove ${d.number||''} ${d.description||'this division'} from the kickoff?`))return;
-  mutateKickoff(k=>{k.divisions=(k.divisions||[]).filter(x=>x.id!==id);k.pageOrder=normalizedKickoffPageOrder(k);});renderKickoffDivisions();renderKickoffPageOrder();scheduleKickoffPdfPreview(250);
+  const inlineImageKeys=kickoffImageKeysFromHtml(d.notesHtml||'');
+  mutateKickoff(k=>{k.divisions=(k.divisions||[]).filter(x=>x.id!==id);k.pageOrder=normalizedKickoffPageOrder(k);});
+  try{await deleteQuoteAssetsByKeys(inlineImageKeys);}catch{}
+  renderKickoffDivisions();renderKickoffPageOrder();scheduleKickoffPdfPreview(250);
 }
 function kickoffFormatSelection(editor,command){
   if(!editor)return;editor.focus();document.execCommand(command,false,null);
@@ -1215,7 +1272,7 @@ function renderKickoffDivisions(){
       <div class="kickoff-division-actions"><button class="btn btn-secondary btn-small" data-kickoff-move-up="${esc(d.id)}" type="button" ${index===0?'disabled':''}>↑</button><button class="btn btn-secondary btn-small" data-kickoff-move-down="${esc(d.id)}" type="button" ${index===divisions.length-1?'disabled':''}>↓</button><button class="btn btn-danger btn-small" data-kickoff-remove-division="${esc(d.id)}" type="button">×</button></div>
     </div>
     <div class="kickoff-division-card-body">
-      <div class="kickoff-notes-toolbar"><button class="scope-format-btn" data-kickoff-format="bold" type="button"><strong>B</strong></button><button class="scope-format-btn" data-kickoff-format="italic" type="button"><em>I</em></button><button class="scope-format-btn" data-kickoff-format="underline" type="button"><span class="format-u">U</span></button></div>
+      <div class="kickoff-notes-toolbar"><button class="scope-format-btn" data-kickoff-format="bold" type="button"><strong>B</strong></button><button class="scope-format-btn" data-kickoff-format="italic" type="button"><em>I</em></button><button class="scope-format-btn" data-kickoff-format="underline" type="button"><span class="format-u">U</span></button><button class="scope-format-btn kickoff-image-btn" data-kickoff-paste-image type="button">Paste Screenshot</button><button class="scope-format-btn kickoff-image-btn" data-kickoff-add-image type="button">Upload Image</button><span class="kickoff-image-hint">Images stay inline with the division notes.</span><input class="hidden" data-kickoff-image-input type="file" accept="image/*"></div>
       <div class="kickoff-rich-editor" contenteditable="true" data-placeholder="Kickoff scope, coordination notes, quote clarifications, missed items, schedule notes…">${sanitizeScopeHtml(d.notesHtml||"")}</div>
       <div class="kickoff-proposal-reference hidden" data-kickoff-proposal-reference-panel>
         <div class="kickoff-proposal-reference-head">
@@ -1235,6 +1292,7 @@ function renderKickoffDivisions(){
     </div>
   </section>`;
   }).join('');
+  hydrateKickoffInlineImages(list);
   $$('[data-kickoff-move-up]',list).forEach(b=>b.addEventListener('click',()=>moveKickoffDivision(b.dataset.kickoffMoveUp,-1)));
   $$('[data-kickoff-move-down]',list).forEach(b=>b.addEventListener('click',()=>moveKickoffDivision(b.dataset.kickoffMoveDown,1)));
   $$('[data-kickoff-remove-division]',list).forEach(b=>b.addEventListener('click',()=>removeKickoffDivision(b.dataset.kickoffRemoveDivision)));
@@ -1251,12 +1309,38 @@ function renderKickoffDivisions(){
     const card=select.closest('.kickoff-division-card');updateKickoffProposalReferencePanel(card,select.value);collectKickoffDivisionsFromDom();
   }));
   $$('[data-kickoff-copy-proposal-text]',list).forEach(b=>b.addEventListener('click',()=>copyKickoffProposalReference(b.closest('.kickoff-division-card'))));
+  $$('[data-kickoff-paste-image], [data-kickoff-add-image]',list).forEach(b=>b.addEventListener('mousedown',()=>{const card=b.closest('.kickoff-division-card'),editor=card?.querySelector('.kickoff-rich-editor');if(editor)editor._kickoffInsertRange=kickoffEditorRange(editor);}));
+  $$('[data-kickoff-paste-image]',list).forEach(b=>b.addEventListener('click',async()=>{
+    const card=b.closest('.kickoff-division-card'),editor=card?.querySelector('.kickoff-rich-editor');if(!card||!editor)return;
+    try{
+      if(!navigator.clipboard?.read)throw new Error('Clipboard image access is not available here. Click in the notes box and press Ctrl+V instead.');
+      const items=await navigator.clipboard.read();let blob=null;
+      for(const item of items){const type=item.types.find(t=>String(t).startsWith('image/'));if(type){blob=await item.getType(type);break;}}
+      if(!blob)throw new Error('No screenshot or image is currently on the clipboard.');
+      const key=await saveKickoffInlineImage(blob,card.dataset.kickoffDivisionId);insertKickoffImageMarker(editor,key,editor._kickoffInsertRange||kickoffEditorRange(editor));await hydrateKickoffInlineImages(editor);collectKickoffDivisionsFromDom();scheduleKickoffPdfPreview(250);toast('Screenshot pasted into kickoff division.');
+    }catch(err){toast(err?.message||'Could not read a screenshot from the clipboard.');}
+    editor._kickoffInsertRange=null;
+  }));
+  $$('[data-kickoff-add-image]',list).forEach(b=>b.addEventListener('mousedown',()=>{const card=b.closest('.kickoff-division-card'),editor=card?.querySelector('.kickoff-rich-editor');if(editor)editor._kickoffInsertRange=kickoffEditorRange(editor);}));
+  $$('[data-kickoff-add-image]',list).forEach(b=>b.addEventListener('click',()=>b.closest('.kickoff-division-card')?.querySelector('[data-kickoff-image-input]')?.click()));
+  $$('[data-kickoff-image-input]',list).forEach(input=>input.addEventListener('change',async()=>{
+    const file=input.files?.[0];input.value='';if(!file)return;
+    const card=input.closest('.kickoff-division-card'),editor=card?.querySelector('.kickoff-rich-editor');if(!card||!editor)return;
+    try{const key=await saveKickoffInlineImage(file,card.dataset.kickoffDivisionId);insertKickoffImageMarker(editor,key,editor._kickoffInsertRange||kickoffEditorRange(editor));await hydrateKickoffInlineImages(editor);collectKickoffDivisionsFromDom();scheduleKickoffPdfPreview(250);toast('Image added to kickoff division.');}catch(err){toast(err?.message||'Could not add that image.');}
+    editor._kickoffInsertRange=null;
+  }));
   $$('[data-kickoff-format]',list).forEach(b=>b.addEventListener('click',()=>kickoffFormatSelection(b.closest('.kickoff-division-card')?.querySelector('.kickoff-rich-editor'),b.dataset.kickoffFormat)));
   $$('input[data-kickoff-division-field]',list).forEach(el=>el.addEventListener('input',()=>{clearTimeout(state.kickoffSaveTimer);state.kickoffSaveTimer=setTimeout(()=>{collectKickoffDivisionsFromDom();scheduleKickoffPdfPreview(650);},300);}));
   $$('.kickoff-rich-editor',list).forEach(el=>{
     el.addEventListener('input',()=>{clearTimeout(state.kickoffSaveTimer);state.kickoffSaveTimer=setTimeout(()=>{collectKickoffDivisionsFromDom();scheduleKickoffPdfPreview(650);},320);});
     el.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&['b','i','u'].includes(e.key.toLowerCase())){e.preventDefault();const cmd={b:'bold',i:'italic',u:'underline'}[e.key.toLowerCase()];kickoffFormatSelection(el,cmd);}});
-    el.addEventListener('paste',e=>{
+    el.addEventListener('paste',async e=>{
+      const imageItem=[...(e.clipboardData?.items||[])].find(item=>item.kind==='file'&&String(item.type||'').startsWith('image/'));
+      if(imageItem){
+        e.preventDefault();const blob=imageItem.getAsFile();const card=el.closest('.kickoff-division-card'),range=kickoffEditorRange(el);
+        try{const key=await saveKickoffInlineImage(blob,card.dataset.kickoffDivisionId);insertKickoffImageMarker(el,key,range);await hydrateKickoffInlineImages(el);collectKickoffDivisionsFromDom();scheduleKickoffPdfPreview(250);toast('Screenshot pasted into kickoff division.');}catch(err){toast(err?.message||'Could not paste that image.');}
+        return;
+      }
       e.preventDefault();
       const html=e.clipboardData?.getData('text/html')||'';
       const text=e.clipboardData?.getData('text/plain')||'';
@@ -1344,22 +1428,26 @@ async function archiveFamilyToKoehn(familyId,ownerUsername){
   const all=getProjectsForUser(ownerUsername,{includeDeleted:true});
   const family=all.filter(p=>(p.familyId||p.id)===familyId); if(!family.length)return toast("Project not found.");
   const latest=[...family].sort((a,b)=>(b.version||0)-(a.version||0))[0];
-  const ok=confirm(`Archive ${latest.projectName||'this project'}?\n\nA .koehn archive file will download, then this project and its kickoff quote snapshots will be removed from the active workspace. Import the .koehn file later to restore it.`);
+  const ok=confirm(`Archive ${latest.projectName||'this project'}?\n\nA .koehn archive file will download, then this project and its kickoff assets will be removed from the active workspace. Import the .koehn file later to restore it.`);
   if(!ok)return;
   const menuBtn=$(`[data-archive-family="${CSS.escape(familyId)}"]`); if(menuBtn)menuBtn.disabled=true;
   try{
-    const assets=await getFamilyQuoteAssets(familyId);
+    const allAssets=await getFamilyQuoteAssets(familyId);
+    const referencedKeys=new Set();
+    (latest.kickoff?.quotes||[]).forEach(q=>(q.pages||[]).forEach(key=>referencedKeys.add(key)));
+    (latest.kickoff?.divisions||[]).forEach(d=>kickoffImageKeysFromHtml(d.notesHtml||'').forEach(key=>referencedKeys.add(key)));
+    const assets=allAssets.filter(a=>referencedKeys.has(a.key));
     const packedAssets=[];
     for(let i=0;i<assets.length;i++){
-      const a=assets[i]; packedAssets.push({key:a.key,familyId:a.familyId,quoteId:a.quoteId,pageIndex:a.pageIndex,name:a.name,mime:a.mime,width:a.width,height:a.height,createdAt:a.createdAt,data:await blobToBase64(a.blob)});
+      const a=assets[i]; packedAssets.push({key:a.key,familyId:a.familyId,quoteId:a.quoteId,divisionId:a.divisionId,assetType:a.assetType,pageIndex:a.pageIndex,name:a.name,mime:a.mime,width:a.width,height:a.height,createdAt:a.createdAt,data:await blobToBase64(a.blob)});
     }
     const terms=[...new Set(family.map(p=>p.disclaimerId).filter(Boolean))].map(id=>getDisclaimer(id)).filter(Boolean);
-    const payload={schema:"koehn-project-archive",version:1,createdAt:nowIso(),ownerUsername,projectName:latest.projectName||"Project",familyId,projects:family,termsAndConditions:terms,assets:packedAssets,assetPolicy:{sourcePdfsRetained:false,quoteStorage:"compressed-page-snapshots"}};
+    const payload={schema:"koehn-project-archive",version:1,createdAt:nowIso(),ownerUsername,projectName:latest.projectName||"Project",familyId,projects:family,termsAndConditions:terms,assets:packedAssets,assetPolicy:{sourcePdfsRetained:false,quoteStorage:"compressed-page-snapshots",divisionImages:"compressed-inline-images"}};
     const archiveBlob=await gzipJsonBlob(payload);
     const fname=`${safeFilePart(latest.projectNumber||latest.projectName||'Project')}_${safeFilePart(latest.projectName||'Archive')}.koehn`;
     downloadBlob(archiveBlob,fname);
     // Once the portable project archive is constructed successfully, remove the
-    // active workspace copy and its local quote-page assets.
+    // active workspace copy and its local kickoff assets.
     saveProjectsForUser(ownerUsername,all.filter(p=>(p.familyId||p.id)!==familyId));
     await deleteFamilyQuoteAssets(familyId);
     refreshDashboardNav();renderProjects();toast(`Archived to ${fname}.`);
@@ -1383,7 +1471,7 @@ async function importKoehnProjectArchive(file){
     saveProjectsForUser(targetOwner,[...incoming,...existing]);
     for(const a of payload.assets||[]){
       if(!a?.key||!a?.data)continue;
-      await putQuoteAsset({key:a.key,familyId:a.familyId||familyId,quoteId:a.quoteId,pageIndex:a.pageIndex,name:a.name,mime:a.mime||"image/webp",blob:base64ToBlob(a.data,a.mime||"image/webp"),width:a.width,height:a.height,createdAt:a.createdAt||nowIso()});
+      await putQuoteAsset({key:a.key,familyId:a.familyId||familyId,quoteId:a.quoteId,divisionId:a.divisionId,assetType:a.assetType,pageIndex:a.pageIndex,name:a.name,mime:a.mime||"image/webp",blob:base64ToBlob(a.data,a.mime||"image/webp"),width:a.width,height:a.height,createdAt:a.createdAt||nowIso()});
     }
     state.dashboardMode="active";refreshDashboardNav();renderProjects();toast(`Imported ${payload.projectName||'project'} from .koehn archive.`);
   }catch(err){toast(err?.message||"Could not import that .koehn archive.");}
@@ -2085,36 +2173,41 @@ function kickoffStaticMapUrl(address,zoom,key,size='640x320'){
   const params=new URLSearchParams({center:String(address||''),zoom:String(zoom),size:String(size||'640x320'),scale:'2',maptype:'roadmap',markers:marker,key:String(key||'')});
   return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
 }
-function kickoffRichLinesFromHtml(html=""){
-  const safe=sanitizeScopeHtml(html||'');const root=document.createElement('div');root.innerHTML=safe;let lines=[[]];
-  // Always create a logical line when the editor contains a manual line break.
-  // Consecutive empty editor blocks therefore survive as true blank PDF lines.
-  const newLine=()=>lines.push([]);
-  const addText=(value,style)=>{String(value||'').split(/\n/).forEach((part,i)=>{if(i)newLine();if(part)lines[lines.length-1].push({text:part,bold:Boolean(style.bold),italic:Boolean(style.italic),underline:Boolean(style.underline)});});};
+function kickoffContentBlocksFromHtml(html=""){
+  const safe=sanitizeScopeHtml(html||'');const root=document.createElement('div');root.innerHTML=safe;
+  const blocks=[];let line=[];
+  const flush=(forceBlank=false)=>{if(line.length){blocks.push({type:'line',runs:line});line=[];}else if(forceBlank)blocks.push({type:'line',runs:[]});};
+  const addText=(value,style)=>{String(value||'').split(/\n/).forEach((part,i)=>{if(i)flush(true);if(part)line.push({text:part,bold:Boolean(style.bold),italic:Boolean(style.italic),underline:Boolean(style.underline)});});};
   const walk=(node,style={bold:false,italic:false,underline:false})=>{
     if(node.nodeType===Node.TEXT_NODE){addText(node.nodeValue,style);return;}if(node.nodeType!==Node.ELEMENT_NODE)return;
-    const tag=node.tagName.toLowerCase();if(tag==='br'){newLine();return;}const next={...style};if(tag==='b'||tag==='strong')next.bold=true;if(tag==='i'||tag==='em')next.italic=true;if(tag==='u')next.underline=true;
+    const tag=node.tagName.toLowerCase();
+    if(tag==='br'){flush(true);return;}
+    if(tag==='img'){
+      const key=String(node.getAttribute('data-kickoff-image-key')||'').trim();
+      if(key){flush(false);blocks.push({type:'image',key});}
+      return;
+    }
+    const next={...style};if(tag==='b'||tag==='strong')next.bold=true;if(tag==='i'||tag==='em')next.italic=true;if(tag==='u')next.underline=true;
     if(tag==='div'||tag==='p'){
-      if(lines[lines.length-1].length)newLine();
-      const before=lines.length;
-      [...node.childNodes].forEach(ch=>walk(ch,next));
-      // A non-empty block needs a boundary before the next block. An empty
-      // <div><br></div> already created that boundary and represents one blank line.
-      if(lines[lines.length-1].length)newLine();
-      else if(lines.length===before)newLine();
+      if(line.length)flush(false);
+      const before=blocks.length;[...node.childNodes].forEach(ch=>walk(ch,next));
+      if(line.length)flush(false);else if(blocks.length===before)flush(true);
       return;
     }
     [...node.childNodes].forEach(ch=>walk(ch,next));
   };
-  [...root.childNodes].forEach(ch=>walk(ch));
-  const cleaned=lines.map(runs=>{const out=[];runs.forEach(run=>{if(!run.text)return;const prev=out[out.length-1];if(prev&&prev.bold===run.bold&&prev.italic===run.italic&&prev.underline===run.underline)prev.text+=run.text;else out.push({...run});});if(out.length)out[0].text=out[0].text.replace(/^\s+/,'');if(out.length)out[out.length-1].text=out[out.length-1].text.replace(/\s+$/,'');return out.filter(r=>r.text);});
-  // Remove only the editor's trailing cursor line. Keep all intentional blanks
-  // between text lines so the PDF visually matches the kickoff editor.
-  while(cleaned.length&&!cleaned[cleaned.length-1].some(x=>x.text.trim()))cleaned.pop();
-  while(cleaned.length&&!cleaned[0].some(x=>x.text.trim()))cleaned.shift();
-  return cleaned;
+  [...root.childNodes].forEach(ch=>walk(ch));if(line.length)flush(false);
+  const merged=blocks.map(block=>{
+    if(block.type!=='line')return block;
+    const out=[];(block.runs||[]).forEach(run=>{if(!run.text)return;const prev=out[out.length-1];if(prev&&prev.bold===run.bold&&prev.italic===run.italic&&prev.underline===run.underline)prev.text+=run.text;else out.push({...run});});
+    if(out.length)out[0].text=out[0].text.replace(/^\s+/,'');if(out.length)out[out.length-1].text=out[out.length-1].text.replace(/\s+$/,'');return {type:'line',runs:out.filter(r=>r.text)};
+  });
+  while(merged.length&&merged[0].type==='line'&&!merged[0].runs.some(x=>x.text.trim()))merged.shift();
+  while(merged.length&&merged[merged.length-1].type==='line'&&!merged[merged.length-1].runs.some(x=>x.text.trim()))merged.pop();
+  return merged;
 }
-function kickoffPlainTextFromHtml(html=""){return kickoffRichLinesFromHtml(html).map(r=>r.map(x=>x.text).join('')).join('\n');}
+function kickoffRichLinesFromHtml(html=""){return kickoffContentBlocksFromHtml(html).filter(b=>b.type==='line').map(b=>b.runs);}
+function kickoffPlainTextFromHtml(html=""){return kickoffContentBlocksFromHtml(html).map(b=>b.type==='line'?b.runs.map(x=>x.text).join(''):'[Image]').join('\n');}
 async function buildKickoffPdf(options={}){
   const previewOnly=Boolean(options.preview);
   saveKickoffInfoFromForm();
@@ -2235,21 +2328,26 @@ async function buildKickoffPdf(options={}){
   function drawKickoffRunLine(runs,x,y){
     let cx=x;(runs||[]).forEach(run=>{doc.setFont('helvetica',kickoffRunStyle(run));doc.setFontSize(12);doc.setTextColor(...text);doc.text(run.text,cx,y);const w=doc.getTextWidth(run.text);if(run.underline&&run.text.trim()){doc.setDrawColor(...text);doc.setLineWidth(.008);doc.line(cx,y+.025,cx+w,y+.025);}cx+=w;});
   }
-  function drawDivisionNotes(d){
-    let dy=drawDivisionHeader(d);const richLines=kickoffRichLinesFromHtml(d.notesHtml||'');
-    if(!richLines.length){doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);doc.text('No kickoff notes entered.',contentX+.08,dy+.16);return;}
-    for(const richLine of richLines){
-      // An empty logical line is an intentional blank line in the kickoff editor.
-      if(!richLine.length){
-        if(dy+.24>bottom){dy=drawDivisionHeader(d,true);}
-        dy+=.22;
+  async function drawDivisionNotes(d){
+    let dy=drawDivisionHeader(d);const blocks=kickoffContentBlocksFromHtml(d.notesHtml||'');
+    if(!blocks.length){doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);doc.text('No kickoff notes entered.',contentX+.08,dy+.16);return;}
+    for(const block of blocks){
+      if(block.type==='image'){
+        try{
+          const asset=await getQuoteAsset(block.key);if(!asset?.blob)continue;
+          const data=await blobToDataUrl(asset.blob);const iw=Number(asset.width)||1200,ih=Number(asset.height)||800;
+          const maxW=contentW-.16,fullMaxH=bottom-(1.18+1.15+.18)-.10;
+          let w=maxW,h=w*(ih/iw);if(h>fullMaxH){h=fullMaxH;w=h*(iw/ih);}
+          if(dy+h+.12>bottom)dy=drawDivisionHeader(d,true);
+          const available=bottom-dy-.08;if(h>available){h=available;w=h*(iw/ih);}
+          const x=contentX+.08+(maxW-w)/2;doc.addImage(data,'JPEG',x,dy,w,h,undefined,'FAST');dy+=h+.16;
+        }catch{doc.setFont('helvetica','italic');doc.setFontSize(12);doc.setTextColor(...muted);doc.text('Image could not be rendered.',contentX+.08,dy+.16);dy+=.24;}
         continue;
       }
+      const richLine=block.runs||[];
+      if(!richLine.length){if(dy+.24>bottom)dy=drawDivisionHeader(d,true);dy+=.22;continue;}
       const wrapped=wrapKickoffRuns(richLine,contentW-.18);
-      for(const line of wrapped){
-        if(dy+.24>bottom){dy=drawDivisionHeader(d,true);}
-        drawKickoffRunLine(line,contentX+.08,dy+.16);dy+=.22;
-      }
+      for(const line of wrapped){if(dy+.24>bottom)dy=drawDivisionHeader(d,true);drawKickoffRunLine(line,contentX+.08,dy+.16);dy+=.22;}
       dy+=.02;
     }
   }
@@ -2265,7 +2363,7 @@ async function buildKickoffPdf(options={}){
   const kickoffDivisionsById=new Map((k.divisions||[]).map(d=>[d.id,d]));
   const kickoffQuotesById=new Map((k.quotes||[]).map(q=>[q.id,q]));
   for(const token of normalizedKickoffPageOrder(k)){
-    if(token.startsWith('division:')){const d=kickoffDivisionsById.get(token.slice(9));if(d)drawDivisionNotes(d);}
+    if(token.startsWith('division:')){const d=kickoffDivisionsById.get(token.slice(9));if(d)await drawDivisionNotes(d);}
     else if(token.startsWith('quote:')){const q=kickoffQuotesById.get(token.slice(6));if(q)await addQuotePages(q);}
   }
 
@@ -2554,7 +2652,7 @@ async function exportPdf(options={}) {
     const introText=String(p.introNote||'').replace(/\r/g,'');
     if(introText.trim()){
       const introItems=introText.split('\n').map(line=>line.trim()?{text:line,runs:[],bullet:false,indentIn:0}:{text:'',runs:[],bullet:false,blank:true,indentIn:0});
-      addSplittable({type:'intro',title:'PROPOSAL NOTES'},introItems,{fontSize:minPdfFont,leading:bodyLeading});
+      addSplittable({type:'intro',title:'INTRODUCTION'},introItems,{fontSize:minPdfFont,leading:bodyLeading});
     }
     active.forEach(d=>addSplittable({type:'division',number:d.number,title:d.title},scopeItemsFromRichHtml(d.richText,d.text),{fontSize:bodyFont,leading:bodyLeading}));
     const extras=[

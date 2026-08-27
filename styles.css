@@ -728,3 +728,8 @@ body { min-height: 100%; overflow-y: auto; }
   .kickoff-page-order-row { grid-template-columns:34px minmax(0,1fr); align-items:start; }
   .kickoff-page-order-actions,.kickoff-page-order-fixed { grid-column:2; justify-self:start; }
 }
+.kickoff-notes-toolbar { align-items:center; flex-wrap:wrap; }
+.kickoff-image-btn { width:auto; padding:5px 10px; font-weight:700; }
+.kickoff-image-hint { font-size:11px; color:#8a8f94; margin-left:3px; }
+.kickoff-rich-editor img[data-kickoff-image-key] { display:block; max-width:100%; height:auto; margin:10px auto; border:1px solid #d8dbde; border-radius:7px; background:#fff; }
+.kickoff-rich-editor div:has(> img[data-kickoff-image-key]) { white-space:normal; }
