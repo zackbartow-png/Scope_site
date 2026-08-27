@@ -171,11 +171,22 @@
                 <label class="map-check"><input id="kickoffWideMapEnabled" type="checkbox" checked> Wide View</label>
                 <label class="map-check"><input id="kickoffCloseMapEnabled" type="checkbox" checked> Close-Up View</label>
                 <button id="refreshKickoffMapsBtn" class="btn btn-secondary" type="button">Refresh Map Views</button>
+                <button id="prepareKickoffMapsBtn" class="btn btn-primary" type="button">Prepare Maps for PDF</button>
                 <div class="kickoff-map-preview-grid">
-                  <div class="kickoff-map-preview"><div class="kickoff-map-preview-label">Wide View</div><iframe id="kickoffWideMapFrame" title="Wide Google Maps project view" loading="lazy"></iframe></div>
-                  <div class="kickoff-map-preview"><div class="kickoff-map-preview-label">Close-Up View</div><iframe id="kickoffCloseMapFrame" title="Close Google Maps project view" loading="lazy"></iframe></div>
+                  <div class="kickoff-map-preview">
+                    <div class="kickoff-map-preview-label">Wide View <span id="kickoffWideMapStatus" class="kickoff-map-status">Live preview</span></div>
+                    <iframe id="kickoffWideMapFrame" title="Wide Google Maps project view" loading="lazy"></iframe>
+                    <div class="kickoff-map-actions"><button id="uploadKickoffWideMapBtn" class="text-btn" type="button">Upload Wide Map Image</button></div>
+                  </div>
+                  <div class="kickoff-map-preview">
+                    <div class="kickoff-map-preview-label">Close-Up View <span id="kickoffCloseMapStatus" class="kickoff-map-status">Live preview</span></div>
+                    <iframe id="kickoffCloseMapFrame" title="Close Google Maps project view" loading="lazy"></iframe>
+                    <div class="kickoff-map-actions"><button id="uploadKickoffCloseMapBtn" class="text-btn" type="button">Upload Close-Up Map Image</button></div>
+                  </div>
                 </div>
-                <p id="kickoffMapExportNote" class="kickoff-map-note">Interactive map previews use Google Maps. To place map snapshots into the exported PDF, Admin can add a restricted Google Maps Static API key under Admin → Offices.</p>
+                <input id="kickoffWideMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
+                <input id="kickoffCloseMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
+                <p id="kickoffMapExportNote" class="kickoff-map-note">For PDF export, click <strong>Prepare Maps for PDF</strong>. If Admin has a Google Maps Static API key, the site will save the pinned map images automatically. If not, upload a wide and/or close-up Google Maps screenshot here; the stored snapshots will be embedded in the kickoff PDF and carried inside the .koehn archive.</p>
               </div>
             </div>
 

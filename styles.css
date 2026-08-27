@@ -611,3 +611,8 @@ body { min-height: 100%; overflow-y: auto; }
   .kickoff-division-card-head{grid-template-columns:1fr}.kickoff-division-actions{grid-column:auto;justify-content:flex-start;flex-wrap:wrap}
   .kickoff-section-heading-split{flex-direction:column}.kickoff-map-option-head{align-items:flex-start;flex-direction:column}
 }
+.kickoff-map-preview-label { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.kickoff-map-status { font-size:8px; font-weight:700; letter-spacing:0; text-transform:none; color:#8b9094; }
+.kickoff-map-status.ready { color:#2f7d32; }
+.kickoff-map-actions { padding:7px 10px 9px; border-top:1px solid #eceeef; background:#fff; }
+.kickoff-map-actions .text-btn { font-size:9px; }

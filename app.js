@@ -330,7 +330,7 @@ function normalizeProject(p, ownerUsername="") {
   p.kickoff.quotes = Array.isArray(p.kickoff.quotes) ? p.kickoff.quotes.map(q=>({...q,pages:Array.isArray(q.pages)?q.pages:[],divisionId:q.divisionId||null})) : [];
   p.kickoff.divisions = Array.isArray(p.kickoff.divisions) ? p.kickoff.divisions.map(d=>({id:d.id||uid(),number:String(d.number||""),description:String(d.description||""),subcontractor:String(d.subcontractor||""),budget:String(d.budget||""),notesHtml:sanitizeScopeHtml(d.notesHtml||plainTextToRichHtml(d.notes||"")),sourceDivisionNumber:d.sourceDivisionNumber||""})) : [];
   p.kickoff.projectInfo = {...(p.kickoff.projectInfo||{})};
-  p.kickoff.projectInfo.maps = {enabled:false,wide:true,close:true,wideZoom:12,closeZoom:17,...(p.kickoff.projectInfo.maps||{})};
+  p.kickoff.projectInfo.maps = {enabled:false,wide:true,close:true,wideZoom:12,closeZoom:17,wideSnapshot:"",closeSnapshot:"",...(p.kickoff.projectInfo.maps||{})};
   p.ownerUsername = p.ownerUsername || ownerUsername || "";
   p.divisions = p.divisions || Object.fromEntries(CSI_DIVISIONS.map(([n,t]) => [n,{number:n,title:t,enabled:false,text:""}]));
   CSI_DIVISIONS.forEach(([n,t]) => {
@@ -719,6 +719,13 @@ function kickoffMapEmbedUrl(address,zoom){
   const q=encodeURIComponent(String(address||"").trim());
   return q?`https://www.google.com/maps?q=${q}&z=${Number(zoom)||14}&output=embed`:"about:blank";
 }
+function updateKickoffMapStatuses(){
+  const p=getCurrentKickoffProject();if(!p)return;
+  const maps=p.kickoff?.projectInfo?.maps||{};
+  const wide=$("#kickoffWideMapStatus"),close=$("#kickoffCloseMapStatus");
+  if(wide){wide.textContent=maps.wideSnapshot?'Ready for PDF':'Live preview';wide.classList.toggle('ready',Boolean(maps.wideSnapshot));}
+  if(close){close.textContent=maps.closeSnapshot?'Ready for PDF':'Live preview';close.classList.toggle('ready',Boolean(maps.closeSnapshot));}
+}
 function renderKickoffMapPreviews(){
   const p=getCurrentKickoffProject(); if(!p)return;
   const info=p.kickoff.projectInfo||{}; const enabled=Boolean($("#kickoffMapsEnabled")?.checked ?? info.maps?.enabled);
@@ -727,6 +734,41 @@ function renderKickoffMapPreviews(){
   const wide=$("#kickoffWideMapFrame"), close=$("#kickoffCloseMapFrame");
   if(wide)wide.src=enabled&&($("#kickoffWideMapEnabled")?.checked??true)?kickoffMapEmbedUrl(addr,12):"about:blank";
   if(close)close.src=enabled&&($("#kickoffCloseMapEnabled")?.checked??true)?kickoffMapEmbedUrl(addr,17):"about:blank";
+  updateKickoffMapStatuses();
+}
+async function compressKickoffMapImage(file){
+  const source=await createImageBitmap(file);
+  try{
+    const maxW=1600,maxH=1100,ratio=Math.min(1,maxW/source.width,maxH/source.height);
+    const w=Math.max(1,Math.round(source.width*ratio)),h=Math.max(1,Math.round(source.height*ratio));
+    const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+    const ctx=canvas.getContext('2d',{alpha:false});ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);ctx.drawImage(source,0,0,w,h);
+    return canvas.toDataURL('image/jpeg',.90);
+  }finally{source.close?.();}
+}
+async function saveKickoffMapUpload(kind,file){
+  if(!file)return;
+  try{
+    const data=await compressKickoffMapImage(file);
+    mutateKickoff(k=>{k.projectInfo=k.projectInfo||{};k.projectInfo.maps={wide:true,close:true,wideZoom:12,closeZoom:17,...(k.projectInfo.maps||{}),enabled:true};k.projectInfo.maps[kind]=true;k.projectInfo.maps[kind==='wide'?'wideSnapshot':'closeSnapshot']=data;});
+    renderKickoffMapPreviews();scheduleKickoffPdfPreview(150);toast(`${kind==='wide'?'Wide':'Close-up'} map image saved for PDF.`);
+  }catch(err){console.error(err);toast('Unable to save that map image.');}
+}
+async function prepareKickoffMapsForPdf(){
+  saveKickoffInfoFromForm();
+  const p=getCurrentKickoffProject();if(!p)return;
+  const maps=p.kickoff?.projectInfo?.maps||{},addr=String(p.kickoff?.projectInfo?.projectLocation||p.projectAddress||'').trim(),key=getMapSettings().apiKey.trim();
+  if(!addr)return toast('Enter the project location first.');
+  if(!key){toast('No Google Static Maps API key is saved. Upload the Wide/Close-Up Google Maps screenshots below the previews instead.');return;}
+  const tasks=[];
+  if(maps.wide!==false)tasks.push(['wide',maps.wideZoom||12]);
+  if(maps.close!==false)tasks.push(['close',maps.closeZoom||17]);
+  try{
+    const saved={};
+    for(const [kind,zoom] of tasks)saved[kind]=await imageToDataUrl(kickoffStaticMapUrl(addr,zoom,key));
+    mutateKickoff(k=>{k.projectInfo=k.projectInfo||{};k.projectInfo.maps={...(k.projectInfo.maps||{})};if(saved.wide)k.projectInfo.maps.wideSnapshot=saved.wide;if(saved.close)k.projectInfo.maps.closeSnapshot=saved.close;});
+    renderKickoffMapPreviews();scheduleKickoffPdfPreview(150);toast('Pinned map images are ready for PDF export.');
+  }catch(err){console.error(err);toast('Google map images could not be captured. Upload map screenshots below the previews instead.');}
 }
 function renderKickoffProposalDivisionOptions(p=getCurrentKickoffProject()){
   const select=$("#kickoffProposalDivisionSelect"); if(!select||!p)return;
@@ -1453,9 +1495,19 @@ function kickoffStaticMapUrl(address,zoom,key){
   const params=new URLSearchParams({center:String(address||''),zoom:String(zoom),size:'640x420',scale:'2',maptype:'roadmap',markers:marker,key:String(key||'')});
   return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
 }
-function kickoffPlainTextFromHtml(html=""){
-  const d=document.createElement('div');d.innerHTML=sanitizeScopeHtml(html||'');return String(d.innerText||'').replace(/\r/g,'').trim();
+function kickoffRichLinesFromHtml(html=""){
+  const safe=sanitizeScopeHtml(html||'');const root=document.createElement('div');root.innerHTML=safe;let lines=[[]];
+  const newLine=()=>{if(lines[lines.length-1].length)lines.push([]);};
+  const addText=(value,style)=>{String(value||'').split(/\n/).forEach((part,i)=>{if(i)newLine();if(part)lines[lines.length-1].push({text:part,bold:Boolean(style.bold),italic:Boolean(style.italic),underline:Boolean(style.underline)});});};
+  const walk=(node,style={bold:false,italic:false,underline:false})=>{
+    if(node.nodeType===Node.TEXT_NODE){addText(node.nodeValue,style);return;}if(node.nodeType!==Node.ELEMENT_NODE)return;
+    const tag=node.tagName.toLowerCase();if(tag==='br'){newLine();return;}const next={...style};if(tag==='b'||tag==='strong')next.bold=true;if(tag==='i'||tag==='em')next.italic=true;if(tag==='u')next.underline=true;
+    if(tag==='div'||tag==='p'){if(lines[lines.length-1].length)newLine();[...node.childNodes].forEach(ch=>walk(ch,next));newLine();return;}[...node.childNodes].forEach(ch=>walk(ch,next));
+  };
+  [...root.childNodes].forEach(ch=>walk(ch));
+  return lines.map(runs=>{const out=[];runs.forEach(run=>{if(!run.text)return;const prev=out[out.length-1];if(prev&&prev.bold===run.bold&&prev.italic===run.italic&&prev.underline===run.underline)prev.text+=run.text;else out.push({...run});});if(out.length)out[0].text=out[0].text.replace(/^\s+/,'');if(out.length)out[out.length-1].text=out[out.length-1].text.replace(/\s+$/,'');return out.filter(r=>r.text);}).filter(r=>r.some(x=>x.text.trim()));
 }
+function kickoffPlainTextFromHtml(html=""){return kickoffRichLinesFromHtml(html).map(r=>r.map(x=>x.text).join('')).join('\n');}
 async function buildKickoffPdf(options={}){
   const previewOnly=Boolean(options.preview);
   saveKickoffInfoFromForm();
@@ -1512,10 +1564,10 @@ async function buildKickoffPdf(options={}){
     for(const view of views){
       const h=views.length===1?7.2:3.55;doc.setDrawColor(...border);doc.setFillColor(248,248,247);doc.roundedRect(contentX,mapY,contentW,h,.08,.08,'FD');
       doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);doc.text(view.label,contentX+.14,mapY+.24);
-      let mapData=null;
-      if(key&&addr){try{mapData=await imageToDataUrl(kickoffStaticMapUrl(addr,view.zoom,key));}catch{mapData=null;}}
-      if(mapData){const imgY=mapY+.36,imgH=h-.48;doc.addImage(mapData,'PNG',contentX+.12,imgY,contentW-.24,imgH,undefined,'FAST');}
-      else{doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);const msg=key?'Google Maps image could not be loaded for this address.':'Add a restricted Google Maps Static API key under Admin → Offices to embed this map in the exported PDF.';doc.text(doc.splitTextToSize(msg,contentW-.46),contentX+.22,mapY+h/2,{lineHeightFactor:1.2});}
+      let mapData=view.label==='WIDE VIEW'?String(maps.wideSnapshot||''):String(maps.closeSnapshot||'');
+      if(!mapData&&key&&addr){try{mapData=await imageToDataUrl(kickoffStaticMapUrl(addr,view.zoom,key));}catch{mapData=null;}}
+      if(mapData){const imgY=mapY+.36,imgH=h-.48;const fmt=mapData.startsWith('data:image/jpeg')?'JPEG':'PNG';doc.addImage(mapData,fmt,contentX+.12,imgY,contentW-.24,imgH,undefined,'FAST');}
+      else{doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);const msg='Map image not prepared. In Kickoff → Project Info, click Prepare Maps for PDF or upload a Google Maps screenshot for this view.';doc.text(doc.splitTextToSize(msg,contentW-.46),contentX+.22,mapY+h/2,{lineHeightFactor:1.2});}
       mapY+=h+.18;
     }
   }
@@ -1526,13 +1578,29 @@ async function buildKickoffPdf(options={}){
     cols.forEach(c=>{doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);doc.text(c.label,c.x,dy+.27);doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...text);const lines=doc.splitTextToSize(String(c.value),c.w);doc.text(lines.slice(0,3),c.x,dy+.55,{lineHeightFactor:1.14});});
     return dy+h+.18;
   }
+  function kickoffRunStyle(run={}){return run.bold&&run.italic?'bolditalic':run.bold?'bold':run.italic?'italic':'normal';}
+  function kickoffRunWidth(value,run){doc.setFont('helvetica',kickoffRunStyle(run));doc.setFontSize(12);return doc.getTextWidth(String(value||''));}
+  function wrapKickoffRuns(runs,maxW){
+    const tokens=[];(runs||[]).forEach(run=>String(run.text||'').split(/(\s+)/).filter(Boolean).forEach(t=>tokens.push({...run,text:t})));
+    const lines=[];let line=[],width=0;
+    const push=()=>{if(line.length){while(line.length&&/^\s+$/.test(line[line.length-1].text))line.pop();if(line.length)lines.push(line);line=[];width=0;}};
+    const add=token=>{const space=/^\s+$/.test(token.text);if(space&&!line.length)return;const w=kickoffRunWidth(token.text,token);if(line.length&&width+w>maxW){push();if(space)return;}line.push(token);width+=w;};
+    tokens.forEach(add);push();return lines.length?lines:[[]];
+  }
+  function drawKickoffRunLine(runs,x,y){
+    let cx=x;(runs||[]).forEach(run=>{doc.setFont('helvetica',kickoffRunStyle(run));doc.setFontSize(12);doc.setTextColor(...text);doc.text(run.text,cx,y);const w=doc.getTextWidth(run.text);if(run.underline&&run.text.trim()){doc.setDrawColor(...text);doc.setLineWidth(.008);doc.line(cx,y+.025,cx+w,y+.025);}cx+=w;});
+  }
   function drawDivisionNotes(d){
-    let dy=drawDivisionHeader(d);const plain=kickoffPlainTextFromHtml(d.notesHtml||'');const paragraphs=plain?plain.split(/\n/):[''];
-    doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...text);
-    if(!plain){doc.setTextColor(...muted);doc.text('No kickoff notes entered.',contentX+.08,dy+.16);return;}
-    for(const para of paragraphs){
-      const wrapped=para.trim()?doc.splitTextToSize(para,contentW-.18):[''];
-      for(const line of wrapped){if(dy+.24>bottom){dy=drawDivisionHeader(d,'DIVISION KICKOFF (CONT.)');doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...text);}if(line)doc.text(line,contentX+.08,dy+.16);dy+=.22;}
+    let dy=drawDivisionHeader(d);const richLines=kickoffRichLinesFromHtml(d.notesHtml||'');
+    if(!richLines.length){doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);doc.text('No kickoff notes entered.',contentX+.08,dy+.16);return;}
+    for(const richLine of richLines){
+      const wrapped=wrapKickoffRuns(richLine,contentW-.18);
+      for(const line of wrapped){
+        if(dy+.24>bottom){dy=drawDivisionHeader(d,'DIVISION KICKOFF (CONT.)');}
+        drawKickoffRunLine(line,contentX+.08,dy+.16);dy+=.22;
+      }
+      // Preserve each manual Enter/paragraph as a separate visual line instead of
+      // concatenating the next sentence directly onto the previous one.
       dy+=.07;
     }
   }
@@ -2222,6 +2290,11 @@ $("#importKickoffDivisionBtn")?.addEventListener('click',()=>{const n=$("#kickof
 $("#exportKickoffPdfBtn")?.addEventListener('click',()=>buildKickoffPdf({preview:false}));
 $("#refreshKickoffPreviewBtn")?.addEventListener('click',()=>scheduleKickoffPdfPreview(10));
 $("#refreshKickoffMapsBtn")?.addEventListener('click',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();scheduleKickoffPdfPreview(250);});
+$("#prepareKickoffMapsBtn")?.addEventListener('click',prepareKickoffMapsForPdf);
+$("#uploadKickoffWideMapBtn")?.addEventListener('click',()=>$("#kickoffWideMapFileInput")?.click());
+$("#uploadKickoffCloseMapBtn")?.addEventListener('click',()=>$("#kickoffCloseMapFileInput")?.click());
+$("#kickoffWideMapFileInput")?.addEventListener('change',async e=>{const file=e.target.files?.[0];e.target.value='';if(file)await saveKickoffMapUpload('wide',file);});
+$("#kickoffCloseMapFileInput")?.addEventListener('change',async e=>{const file=e.target.files?.[0];e.target.value='';if(file)await saveKickoffMapUpload('close',file);});
 $("#kickoffMapsEnabled")?.addEventListener('change',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();});
 $("#kickoffWideMapEnabled")?.addEventListener('change',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();});
 $("#kickoffCloseMapEnabled")?.addEventListener('change',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();});
