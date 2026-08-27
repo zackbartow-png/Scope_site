@@ -897,7 +897,7 @@ async function saveKickoffMapUpload(kind,file){
   try{
     const data=await compressKickoffMapImage(file);
     mutateKickoff(k=>{k.projectInfo=k.projectInfo||{};k.projectInfo.maps={wide:true,close:true,street:false,wideZoom:12,closeZoom:17,...(k.projectInfo.maps||{}),enabled:true};k.projectInfo.maps[kind]=true;k.projectInfo.maps[`${kind}Snapshot`]=data;});
-    renderKickoffMapPreviews();scheduleKickoffPdfPreview(180);toast(`${kind==='wide'?'Wide':kind==='close'?'Close-up':'Street View'} image saved for PDF.`);
+    renderKickoffMapPreviews();scheduleKickoffPdfPreview(180);toast(`${kind==='wide'?'Wide':kind==='close'?'Close-up':'Street View'} screenshot saved for PDF.`);
   }catch(err){console.error(err);toast('Unable to save that map image.');}
 }
 async function pasteKickoffMapScreenshot(kind){
@@ -917,13 +917,12 @@ async function pasteKickoffMapScreenshot(kind){
     toast('Could not read an image from the clipboard. Use Upload Image instead, or allow clipboard access for this site.');
   }
 }
-function openKickoffMapSearch(provider){
+function openKickoffGoogleMaps(){
   const p=getCurrentKickoffProject();if(!p)return;
   const address=String($("[data-kickoff-info=projectLocation]")?.value||p.kickoff?.projectInfo?.projectLocation||p.projectAddress||'').trim();
   if(!address)return toast('Enter the project location first.');
   const q=encodeURIComponent(address);
-  const url=provider==='osm'?`https://www.openstreetmap.org/search?query=${q}`:`https://www.google.com/maps/search/?api=1&query=${q}`;
-  window.open(url,'_blank','noopener,noreferrer');
+  window.open(`https://www.google.com/maps/search/?api=1&query=${q}`,'_blank','noopener,noreferrer');
 }
 async function externalImageUrlToDataUrl(url){
   // Prefer fetch/blob so API errors return useful HTTP status information.
@@ -1198,7 +1197,12 @@ function renderKickoffPageOrder(){
   const p=getCurrentKickoffProject(); if(!p)return;
   const rows=[]; let page=1;
   rows.push({page:page++,title:'Project Kickoff Overview',sub:'Project information'});
-  if(p.kickoff.projectInfo?.maps?.enabled&&(p.kickoff.projectInfo.maps.wide||p.kickoff.projectInfo.maps.close||p.kickoff.projectInfo.maps.street))rows.push({page:page++,title:'Project Location',sub:'Google Maps / Street View'});
+  if(p.kickoff.projectInfo?.maps?.enabled){
+    const maps=p.kickoff.projectInfo.maps||{};
+    if(maps.wide)rows.push({page:page++,title:'Project Location – Wide View',sub:'Map screenshot'});
+    if(maps.close)rows.push({page:page++,title:'Project Location – Close-Up View',sub:'Map screenshot'});
+    if(maps.street)rows.push({page:page++,title:'Project Location – Street View',sub:'Screenshot'});
+  }
   (p.kickoff.divisions||[]).forEach(d=>{
     rows.push({page:page++,title:`${d.number?d.number+' - ':''}${d.description||'Untitled Division'}`,sub:`Division page · ${d.subcontractor||'No subcontractor entered'}`});
     (p.kickoff.quotes||[]).filter(q=>q.divisionId===d.id).forEach(q=>{rows.push({page:page,title:q.name||'Quote',sub:`Quote PDF · ${q.pageCount||q.pages?.length||0} page(s)`});page+=Number(q.pageCount||q.pages?.length||1);});
@@ -2066,32 +2070,41 @@ async function buildKickoffPdf(options={}){
   y=drawSection(y,'Project Location',info.projectLocation||p.projectAddress||'');
   y=drawSection(y,'Design Team',info.designTeam||'');
 
-  // Optional project-location map page. PDF generation uses the prepared snapshots
-  // only, so live preview refreshes never make extra Google image requests.
+  // Optional project-location screenshot pages. Each selected view receives its
+  // own page so screenshots are not compressed into a single page. Images are
+  // scaled proportionally to the largest size that fits; they are never stretched
+  // or cropped to a forced aspect ratio.
   const maps=info.maps||{};
   if(maps.enabled&&(maps.wide||maps.close||maps.street)){
-    const my=newPage('PROJECT LOCATION',info.projectLocation||p.projectAddress||'');
     const views=[];
     if(maps.wide)views.push({label:'WIDE VIEW',snapshot:String(maps.wideSnapshot||'')});
     if(maps.close)views.push({label:'CLOSE-UP VIEW',snapshot:String(maps.closeSnapshot||'')});
     if(maps.street)views.push({label:'STREET VIEW',snapshot:String(maps.streetSnapshot||'')});
-    let mapY=my;
     for(const view of views){
-      const h=views.length===1?7.2:views.length===2?3.55:2.48;
-      doc.setDrawColor(...border);doc.setFillColor(248,248,247);doc.roundedRect(contentX,mapY,contentW,h,.08,.08,'FD');
-      doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);doc.text(view.label,contentX+.14,mapY+.24);
+      const mapY=newPage('PROJECT LOCATION',info.projectLocation||p.projectAddress||'');
+      doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);doc.text(view.label,contentX,mapY+.10);
+      const frameY=mapY+.27,frameH=Math.max(1,bottom-frameY),frameW=contentW;
+      doc.setDrawColor(...border);doc.setFillColor(248,248,247);doc.roundedRect(contentX,frameY,frameW,frameH,.08,.08,'FD');
       const mapData=view.snapshot;
       if(mapData){
-        const boxX=contentX+.12,boxY=mapY+.36,boxW=contentW-.24,boxH=h-.48;
-        const fitted=await cropMapDataUrlToAspect(mapData,boxW/boxH);
-        const fmt=fitted.startsWith('data:image/jpeg')?'JPEG':'PNG';
-        doc.addImage(fitted,fmt,boxX,boxY,boxW,boxH,undefined,'FAST');
+        try{
+          const dims=await new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve({w:img.naturalWidth||1,h:img.naturalHeight||1});img.onerror=reject;img.src=mapData;});
+          const innerX=contentX+.12,innerY=frameY+.12,maxW=frameW-.24,maxH=frameH-.24;
+          const ratio=Math.min(maxW/dims.w,maxH/dims.h);
+          const drawW=dims.w*ratio,drawH=dims.h*ratio;
+          const drawX=innerX+(maxW-drawW)/2,drawY=innerY+(maxH-drawH)/2;
+          const fmt=mapData.startsWith('data:image/jpeg')?'JPEG':mapData.startsWith('data:image/webp')?'WEBP':'PNG';
+          doc.addImage(mapData,fmt,drawX,drawY,drawW,drawH,undefined,'FAST');
+        }catch(err){
+          console.warn('Kickoff map screenshot could not be placed in PDF.',err);
+          doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);
+          doc.text('This screenshot could not be rendered. Re-paste or upload the image and try again.',contentX+.22,frameY+.44,{maxWidth:contentW-.44});
+        }
       } else {
         doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...muted);
-        const msg=`${view.label} is not prepared for PDF. In Kickoff → Project Info, click Prepare Maps for PDF or upload an image for this view.`;
-        doc.text(doc.splitTextToSize(msg,contentW-.46),contentX+.22,mapY+h/2,{lineHeightFactor:1.2});
+        const msg=`No ${view.label.toLowerCase()} screenshot has been added. Paste or upload the screenshot in Kickoff → Project Info.`;
+        doc.text(doc.splitTextToSize(msg,contentW-.46),contentX+.22,frameY+.50,{lineHeightFactor:1.2});
       }
-      mapY+=h+.18;
     }
   }
 
@@ -2865,8 +2878,6 @@ $$('.kickoff-tab-btn').forEach(b=>b.addEventListener('click',()=>activateKickoff
 $("#addKickoffDivisionBtn")?.addEventListener('click',()=>addKickoffDivision());
 $("#exportKickoffPdfBtn")?.addEventListener('click',()=>buildKickoffPdf({preview:false}));
 $("#refreshKickoffPreviewBtn")?.addEventListener('click',()=>scheduleKickoffPdfPreview(10));
-$("#refreshKickoffMapsBtn")?.addEventListener('click',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();scheduleKickoffPdfPreview(250);});
-$("#prepareKickoffMapsBtn")?.addEventListener('click',prepareKickoffMapsForPdf);
 $("#uploadKickoffWideMapBtn")?.addEventListener('click',()=>$("#kickoffWideMapFileInput")?.click());
 $("#uploadKickoffCloseMapBtn")?.addEventListener('click',()=>$("#kickoffCloseMapFileInput")?.click());
 $("#uploadKickoffStreetMapBtn")?.addEventListener('click',()=>$("#kickoffStreetMapFileInput")?.click());
@@ -2874,8 +2885,7 @@ $("#kickoffWideMapFileInput")?.addEventListener('change',async e=>{const file=e.
 $("#kickoffCloseMapFileInput")?.addEventListener('change',async e=>{const file=e.target.files?.[0];e.target.value='';if(file)await saveKickoffMapUpload('close',file);});
 $("#kickoffStreetMapFileInput")?.addEventListener('change',async e=>{const file=e.target.files?.[0];e.target.value='';if(file)await saveKickoffMapUpload('street',file);});
 $("#kickoffMapsEnabled")?.addEventListener('change',()=>{saveKickoffInfoFromForm();renderKickoffMapPreviews();});
-$("#openKickoffGoogleMapsBtn")?.addEventListener('click',()=>openKickoffMapSearch('google'));
-$("#openKickoffOsmBtn")?.addEventListener('click',()=>openKickoffMapSearch('osm'));
+$("#openKickoffGoogleMapsBtn")?.addEventListener('click',openKickoffGoogleMaps);
 $("#pasteKickoffWideMapBtn")?.addEventListener('click',()=>pasteKickoffMapScreenshot('wide'));
 $("#pasteKickoffCloseMapBtn")?.addEventListener('click',()=>pasteKickoffMapScreenshot('close'));
 $("#pasteKickoffStreetMapBtn")?.addEventListener('click',()=>pasteKickoffMapScreenshot('street'));

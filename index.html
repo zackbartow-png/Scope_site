@@ -171,8 +171,7 @@
               </div>
               <div id="kickoffMapSettings" class="kickoff-map-settings hidden">
                 <div class="kickoff-map-source-actions">
-                  <button id="openKickoffGoogleMapsBtn" class="btn btn-secondary" type="button">Open Address in Google Maps</button>
-                  <button id="openKickoffOsmBtn" class="btn btn-secondary" type="button">Open Address in OpenStreetMap</button>
+                  <button id="openKickoffGoogleMapsBtn" class="btn btn-secondary" type="button">Open Google Maps in New Tab</button>
                 </div>
                 <label class="map-check"><input id="kickoffWideMapEnabled" type="checkbox" checked> Wide View</label>
                 <label class="map-check"><input id="kickoffCloseMapEnabled" type="checkbox" checked> Close-Up View</label>
@@ -197,7 +196,7 @@
                 <input id="kickoffWideMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
                 <input id="kickoffCloseMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
                 <input id="kickoffStreetMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
-                <p id="kickoffMapExportNote" class="kickoff-map-note"><strong>Screenshot workflow:</strong> open the project address in your preferred map site, frame the view you want, copy a screenshot, then click <strong>Paste Screenshot</strong>. You can also save the screenshot and use <strong>Upload Image</strong>. The stored image is used directly in the kickoff PDF and archive.</p>
+                <p id="kickoffMapExportNote" class="kickoff-map-note"><strong>Screenshot workflow:</strong> open the project address in Google Maps, frame the view you want, copy a screenshot, then click <strong>Paste Screenshot</strong>. You can also save the screenshot and use <strong>Upload Image</strong>. Each selected screenshot is placed on its own kickoff PDF page at the largest size that fits while preserving its original proportions.</p>
               </div>
             </div>
 
@@ -566,11 +565,6 @@
             <label>Phone<input data-office-setting="tulsa.phone" placeholder="Phone number" /></label>
           </section>
         </div>
-        <section class="office-settings-panel maps-api-panel">
-          <span class="eyebrow">Google Maps</span>
-          <label>Static Maps API Key<input data-map-setting="apiKey" type="password" placeholder="Optional – required only for map images in kickoff PDF exports" autocomplete="off" /></label>
-          <p class="admin-note">Fallback only. The preferred setup is to place the Maps JavaScript and Maps Static API keys in <strong>config.js</strong>. This Admin field can still provide a Static Maps key if the config file is blank.</p>
-        </section>
         <p class="admin-note">New projects save the selected office contact information with the proposal. Changing the Estimating Office on a project refreshes that project to the latest saved office information.</p>
       </section>
       <section id="adminUsersTab" class="admin-tab-panel">
@@ -603,7 +597,6 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
