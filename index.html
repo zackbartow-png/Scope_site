@@ -175,18 +175,18 @@
                 <div class="kickoff-map-preview-grid">
                   <div class="kickoff-map-preview">
                     <div class="kickoff-map-preview-label">Wide View <span id="kickoffWideMapStatus" class="kickoff-map-status">Live preview</span></div>
-                    <iframe id="kickoffWideMapFrame" title="Wide Google Maps project view" loading="lazy"></iframe>
+                    <div id="kickoffWideMapFrame" class="kickoff-google-map" role="img" aria-label="Wide Google Maps project view"></div>
                     <div class="kickoff-map-actions"><button id="uploadKickoffWideMapBtn" class="text-btn" type="button">Upload Wide Map Image</button></div>
                   </div>
                   <div class="kickoff-map-preview">
                     <div class="kickoff-map-preview-label">Close-Up View <span id="kickoffCloseMapStatus" class="kickoff-map-status">Live preview</span></div>
-                    <iframe id="kickoffCloseMapFrame" title="Close Google Maps project view" loading="lazy"></iframe>
+                    <div id="kickoffCloseMapFrame" class="kickoff-google-map" role="img" aria-label="Close Google Maps project view"></div>
                     <div class="kickoff-map-actions"><button id="uploadKickoffCloseMapBtn" class="text-btn" type="button">Upload Close-Up Map Image</button></div>
                   </div>
                 </div>
                 <input id="kickoffWideMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
                 <input id="kickoffCloseMapFileInput" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
-                <p id="kickoffMapExportNote" class="kickoff-map-note">For PDF export, click <strong>Prepare Maps for PDF</strong>. If Admin has a Google Maps Static API key, the site will save the pinned map images automatically. If not, upload a wide and/or close-up Google Maps screenshot here; the stored snapshots will be embedded in the kickoff PDF and carried inside the .koehn archive.</p>
+                <p id="kickoffMapExportNote" class="kickoff-map-note">For PDF export, click <strong>Prepare Maps for PDF</strong>. The site will use the Google Maps Static API key from <strong>config.js</strong> (or the Admin fallback key). If no Static Maps key is configured, you can upload a wide and/or close-up map image here.</p>
               </div>
             </div>
 
@@ -547,7 +547,7 @@
         <section class="office-settings-panel maps-api-panel">
           <span class="eyebrow">Google Maps</span>
           <label>Static Maps API Key<input data-map-setting="apiKey" type="password" placeholder="Optional – required only for map images in kickoff PDF exports" autocomplete="off" /></label>
-          <p class="admin-note">Use a Google Maps Static API key restricted to your hosted Scope Builder domain. Interactive builder previews do not require this key.</p>
+          <p class="admin-note">Fallback only. The preferred setup is to place the Maps JavaScript and Maps Static API keys in <strong>config.js</strong>. This Admin field can still provide a Static Maps key if the config file is blank.</p>
         </section>
         <p class="admin-note">New projects save the selected office contact information with the proposal. Changing the Estimating Office on a project refreshes that project to the latest saved office information.</p>
       </section>
@@ -581,6 +581,7 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

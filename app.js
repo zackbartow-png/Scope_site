@@ -309,6 +309,37 @@ function saveOfficeSettings(settings) { const data=readDataStore(); data.officeS
 function getOfficeContact(key="fredonia") { const offices=getOfficeSettings(); return {...(offices[key]||offices.fredonia)}; }
 function getMapSettings(){ const data=readDataStore(); return {apiKey:String(data.mapsSettings?.apiKey||"")}; }
 function saveMapSettings(settings){ const data=readDataStore(); data.mapsSettings={apiKey:String(settings?.apiKey||"")}; writeDataStore(data); }
+function getKoehnConfig(){ return (window.KOEHN_CONFIG&&typeof window.KOEHN_CONFIG==='object')?window.KOEHN_CONFIG:{}; }
+function validConfiguredKey(value){ const v=String(value||'').trim(); return v&&!/^PASTE_/.test(v)?v:''; }
+function getGoogleMapsJavaScriptApiKey(){ return validConfiguredKey(getKoehnConfig().googleMapsJavaScriptApiKey); }
+function getGoogleMapsStaticApiKey(){ return validConfiguredKey(getKoehnConfig().googleMapsStaticApiKey)||String(getMapSettings().apiKey||'').trim(); }
+let googleMapsLoadPromise=null;
+function ensureGoogleMapsApi(){
+  if(window.google?.maps)return Promise.resolve(window.google.maps);
+  const key=getGoogleMapsJavaScriptApiKey();
+  if(!key)return Promise.reject(new Error('Google Maps JavaScript API key is not configured.'));
+  if(googleMapsLoadPromise)return googleMapsLoadPromise;
+  googleMapsLoadPromise=new Promise((resolve,reject)=>{
+    const existing=document.querySelector('script[data-koehn-google-maps]');
+    if(existing){existing.addEventListener('load',()=>resolve(window.google?.maps));existing.addEventListener('error',()=>reject(new Error('Google Maps JavaScript API failed to load.')));return;}
+    const script=document.createElement('script');
+    script.dataset.koehnGoogleMaps='true';script.async=true;script.defer=true;
+    script.src=`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly`;
+    script.onload=()=>window.google?.maps?resolve(window.google.maps):reject(new Error('Google Maps JavaScript API loaded without maps.'));
+    script.onerror=()=>reject(new Error('Google Maps JavaScript API failed to load.'));
+    document.head.appendChild(script);
+  });
+  return googleMapsLoadPromise;
+}
+function googleGeocodeAddress(address){
+  return new Promise((resolve,reject)=>{
+    if(!window.google?.maps?.Geocoder)return reject(new Error('Google geocoder is unavailable.'));
+    new google.maps.Geocoder().geocode({address:String(address||'').trim()},(results,status)=>{
+      if(status==='OK'&&results?.[0])resolve(results[0].geometry.location);else reject(new Error(`Geocoding failed: ${status}`));
+    });
+  });
+}
+
 function cloneJson(value){ return JSON.parse(JSON.stringify(value)); }
 
 function normalizeProject(p, ownerUsername="") {
@@ -719,6 +750,22 @@ function kickoffMapEmbedUrl(address,zoom){
   const q=encodeURIComponent(String(address||"").trim());
   return q?`https://www.google.com/maps?q=${q}&z=${Number(zoom)||14}&output=embed`:"about:blank";
 }
+async function renderGoogleKickoffMap(el,address,zoom){
+  if(!el)return;
+  const addr=String(address||'').trim();
+  if(!addr){el.innerHTML='<div class="map-fallback">Enter the project location to display the map.</div>';return;}
+  try{
+    await ensureGoogleMapsApi();
+    const position=await googleGeocodeAddress(addr);
+    el.innerHTML='';
+    const map=new google.maps.Map(el,{center:position,zoom:Number(zoom)||14,mapTypeControl:false,streetViewControl:false,fullscreenControl:false,clickableIcons:false});
+    new google.maps.Marker({map,position,title:addr});
+  }catch(err){
+    console.warn(err);
+    const iframe=document.createElement('iframe');iframe.title='Google Maps project view';iframe.loading='lazy';iframe.src=kickoffMapEmbedUrl(addr,zoom);iframe.style.cssText='width:100%;height:100%;border:0;display:block';
+    el.innerHTML='';el.appendChild(iframe);
+  }
+}
 function updateKickoffMapStatuses(){
   const p=getCurrentKickoffProject();if(!p)return;
   const maps=p.kickoff?.projectInfo?.maps||{};
@@ -732,8 +779,8 @@ function renderKickoffMapPreviews(){
   $("#kickoffMapSettings")?.classList.toggle('hidden',!enabled);
   const addr=String($("[data-kickoff-info=projectLocation]")?.value||info.projectLocation||p.projectAddress||"").trim();
   const wide=$("#kickoffWideMapFrame"), close=$("#kickoffCloseMapFrame");
-  if(wide)wide.src=enabled&&($("#kickoffWideMapEnabled")?.checked??true)?kickoffMapEmbedUrl(addr,12):"about:blank";
-  if(close)close.src=enabled&&($("#kickoffCloseMapEnabled")?.checked??true)?kickoffMapEmbedUrl(addr,17):"about:blank";
+  if(wide){ if(enabled&&($("#kickoffWideMapEnabled")?.checked??true))renderGoogleKickoffMap(wide,addr,12); else wide.innerHTML=''; }
+  if(close){ if(enabled&&($("#kickoffCloseMapEnabled")?.checked??true))renderGoogleKickoffMap(close,addr,17); else close.innerHTML=''; }
   updateKickoffMapStatuses();
 }
 async function compressKickoffMapImage(file){
@@ -757,7 +804,7 @@ async function saveKickoffMapUpload(kind,file){
 async function prepareKickoffMapsForPdf(){
   saveKickoffInfoFromForm();
   const p=getCurrentKickoffProject();if(!p)return;
-  const maps=p.kickoff?.projectInfo?.maps||{},addr=String(p.kickoff?.projectInfo?.projectLocation||p.projectAddress||'').trim(),key=getMapSettings().apiKey.trim();
+  const maps=p.kickoff?.projectInfo?.maps||{},addr=String(p.kickoff?.projectInfo?.projectLocation||p.projectAddress||'').trim(),key=getGoogleMapsStaticApiKey();
   if(!addr)return toast('Enter the project location first.');
   if(!key){toast('No Google Static Maps API key is saved. Upload the Wide/Close-Up Google Maps screenshots below the previews instead.');return;}
   const tasks=[];
@@ -1558,7 +1605,7 @@ async function buildKickoffPdf(options={}){
   const maps=info.maps||{};
   if(maps.enabled&&(maps.wide||maps.close)){
     const my=newPage('PROJECT LOCATION',info.projectLocation||p.projectAddress||'');
-    const key=getMapSettings().apiKey,addr=String(info.projectLocation||p.projectAddress||'').trim();
+    const key=getGoogleMapsStaticApiKey(),addr=String(info.projectLocation||p.projectAddress||'').trim();
     const views=[]; if(maps.wide)views.push({label:'WIDE VIEW',zoom:maps.wideZoom||12});if(maps.close)views.push({label:'CLOSE-UP VIEW',zoom:maps.closeZoom||17});
     let mapY=my;
     for(const view of views){
