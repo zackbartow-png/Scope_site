@@ -1,0 +1,63 @@
+name: Apply uniform cover alignment v2
+
+on:
+  push:
+    branches: [uniform-cover-field-alignment-2026-08-28]
+    paths:
+      - '.github/workflows/apply-uniform-cover-alignment-v2.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Align cover values
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app.js')
+          s=p.read_text(encoding='utf-8')
+          replacements=[
+            ('date:{x1:4.02,x2:5.82,cy:5.88}','date:{x1:4.10,x2:5.82,cy:5.88}'),
+            ('prepared:{x1:4.02,x2:5.82,cy:7.03}','prepared:{x1:4.10,x2:5.82,cy:7.03}'),
+            ('revision:{x1:4.02,x2:5.82,cy:8.17}','revision:{x1:4.10,x2:5.82,cy:8.17}'),
+            ('address:{x1:1.02,x2:3.58,cy:9.18}','address:{x1:1.10,x2:3.58,cy:9.18}'),
+            ('website:{x1:4.02,x2:5.82,cy:10.12}','website:{x1:4.10,x2:5.82,cy:10.12}'),
+            ('date:{x1:3.84,x2:5.72,cy:5.48}','date:{x1:3.92,x2:5.72,cy:5.48}'),
+            ('prepared:{x1:3.84,x2:5.72,cy:6.67}','prepared:{x1:3.92,x2:5.72,cy:6.67}'),
+            ('revision:{x1:3.84,x2:5.72,cy:7.95}','revision:{x1:3.92,x2:5.72,cy:7.95}'),
+            ('address:{x1:.92,x2:3.55,cy:8.99}','address:{x1:.96,x2:3.55,cy:8.99}'),
+            ('website:{x1:3.84,x2:5.72,cy:9.79}','website:{x1:3.92,x2:5.72,cy:9.79}')
+          ]
+          for old,new in replacements:
+              if s.count(old)!=1: raise SystemExit(f'marker count={s.count(old)} for {old}')
+              s=s.replace(old,new)
+          old_comment="""      // Keep the office address close to Marketing's address icon/label instead\n      // of centering it across the full-width address rule.\n"""
+          if s.count(old_comment)!=1: raise SystemExit(f'comment marker count={s.count(old_comment)}')
+          s=s.replace(old_comment,"      // Keep every left-column value on the same visual left edge.\n")
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Validate JavaScript
+        run: node --check app.js
+      - name: Validate alignment
+        shell: bash
+        run: |
+          grep -q "date:{x1:4.10,x2:5.82,cy:5.88}" app.js
+          grep -q "address:{x1:1.10,x2:3.58,cy:9.18}" app.js
+          grep -q "date:{x1:3.92,x2:5.72,cy:5.48}" app.js
+          grep -q "address:{x1:.96,x2:3.55,cy:8.99}" app.js
+      - name: Remove temporary workflows and commit
+        run: |
+          rm -f .github/workflows/apply-uniform-cover-alignment.yml
+          rm -f .github/workflows/apply-uniform-cover-alignment-v2.yml
+          git config user.name "Scope Builder maintenance"
+          git config user.email "actions@users.noreply.github.com"
+          git add app.js .github/workflows/
+          git commit -m "Standardize proposal cover field alignment"
+          git push origin HEAD:uniform-cover-field-alignment-2026-08-28
