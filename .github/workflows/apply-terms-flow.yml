@@ -1,0 +1,64 @@
+name: Apply terms flow pagination
+
+on:
+  push:
+    branches: [terms-follow-pricing-2026-08-28]
+    paths:
+      - '.github/workflows/apply-terms-flow.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Let terms follow pricing
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('app.js')
+          s=p.read_text(encoding='utf-8')
+
+          old1="""  function selectionHeight(items){ return selectionMetrics(items).h; }\n\n  function buildLayout(){"""
+          new1="""  function selectionHeight(items){ return selectionMetrics(items).h; }\n  function termsMetrics(){\n    const disclaimer=getDisclaimer(p.disclaimerId);if(!disclaimer)return null;\n    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);\n    const lines=doc.splitTextToSize(disclaimer.text,contentW-.84);\n    const h=Math.max(1.18,.58+lines.length*bodyLeading+.18);\n    return {disclaimer,lines,h};\n  }\n  function termsHeight(){return termsMetrics()?.h||0;}\n\n  function buildLayout(){"""
+          if s.count(old1)!=1: raise SystemExit(f'selection marker count={s.count(old1)}')
+          s=s.replace(old1,new1)
+
+          old2="""    if(current.length){pages.push(current);current=[];}\n    pages.push([{type:'closing'}]);\n    return pages;"""
+          new2="""    const th=termsHeight();\n    if(th>0){\n      if(pageH-bottomLimit-y<th){if(current.length)pages.push(current);current=[];y=topY;}\n      current.push({type:'terms',height:th});y+=th+cardGap;\n    }\n    if(current.length){pages.push(current);current=[];}\n    pages.push([{type:'closing'}]);\n    return pages;"""
+          if s.count(old2)!=1: raise SystemExit(f'layout closing marker count={s.count(old2)}')
+          s=s.replace(old2,new2)
+
+          old3="""  function drawClosing(y){\n    const disclaimer=getDisclaimer(p.disclaimerId);\n    if(disclaimer){\n      const lines=(()=>{doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);return doc.splitTextToSize(disclaimer.text,contentW-.84);})();\n      const h=Math.max(1.18,.58+lines.length*bodyLeading+.18);\n      drawCardBase(y,h);\n      doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText(text);\n      doc.text('TERMS AND CONDITIONS',contentX+.42,y+.28,{maxWidth:contentW-.60});\n      doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);\n      doc.text(lines,contentX+.42,y+.55,{lineHeightFactor:bodyLeading/minPdfFont*72});\n      y+=h+cardGap;\n    }\n    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);"""
+          new3="""  function drawTerms(y){\n    const metrics=termsMetrics();if(!metrics)return y;\n    const {lines,h}=metrics;\n    drawCardBase(y,h);\n    doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText(text);\n    doc.text('TERMS AND CONDITIONS',contentX+.42,y+.28,{maxWidth:contentW-.60});\n    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);\n    doc.text(lines,contentX+.42,y+.55,{lineHeightFactor:bodyLeading/minPdfFont*72});\n    return y+h+cardGap;\n  }\n  function drawClosing(y){\n    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);"""
+          if s.count(old3)!=1: raise SystemExit(f'drawClosing marker count={s.count(old3)}')
+          s=s.replace(old3,new3)
+
+          old4="""else if(entry.type==='selections')y=drawSelections(y);else if(entry.type==='closing')drawClosing(y);"""
+          new4="""else if(entry.type==='selections')y=drawSelections(y);else if(entry.type==='terms')y=drawTerms(y);else if(entry.type==='closing')drawClosing(y);"""
+          if s.count(old4)!=1: raise SystemExit(f'render marker count={s.count(old4)}')
+          s=s.replace(old4,new4)
+
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Validate JavaScript
+        run: node --check app.js
+      - name: Validate terms pagination hooks
+        shell: bash
+        run: |
+          grep -q "function drawTerms(y)" app.js
+          grep -q "type:'terms'" app.js
+          grep -q "entry.type==='terms'" app.js
+      - name: Remove temporary workflow and commit
+        run: |
+          rm .github/workflows/apply-terms-flow.yml
+          git config user.name "Scope Builder maintenance"
+          git config user.email "actions@users.noreply.github.com"
+          git add app.js .github/workflows/apply-terms-flow.yml
+          git commit -m "Allow terms and conditions to follow pricing"
+          git push origin HEAD:terms-follow-pricing-2026-08-28
