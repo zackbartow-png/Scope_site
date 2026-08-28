@@ -364,9 +364,13 @@
             <div class="approval-card-head">
               <div>
                 <h3>Proposed Pricing</h3>
-                <p>Base Bid is always included as the first line. Add blank lines below it for alternates and add-ons as needed.</p>
+                <p>Base Bid is always included first. Add an existing Alternate Scope by name, or create a custom pricing line.</p>
               </div>
-              <button id="addPriceItemBtn" class="btn btn-secondary" type="button">+ Add Alternate / Add-On</button>
+              <div class="pricing-add-controls">
+                <select id="existingAlternatePriceSelect" class="select-control pricing-alternate-select" aria-label="Existing alternate scope"><option value="">Select existing alternate…</option></select>
+                <button id="addExistingAlternatePriceBtn" class="btn btn-secondary" type="button">+ Add Existing Alternate</button>
+                <button id="addPriceItemBtn" class="btn btn-secondary" type="button">+ Custom Alternate / Add-On</button>
+              </div>
             </div>
             <div class="price-item-head"><span></span><span>Pricing Line</span><span>Price</span><span></span></div>
             <div id="priceItems" class="price-items"></div>
