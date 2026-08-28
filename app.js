@@ -60,7 +60,7 @@ const cloudProjectSyncTimers = new Map();
 const cloudSettingSyncTimers = new Map();
 let cloudWorkspacePromise = null;
 
-const state = { user: null, currentProjectId: null, currentProjectOwner: null, currentKickoffProjectId: null, currentKickoffOwner: null, currentKickoffTab: "info", kickoffQuoteTargetDivisionId: null, kickoffSaveTimer: null, kickoffPreviewTimer: null, kickoffPreviewToken: 0, kickoffPreviewRendering: false, kickoffPreviewPending: false, kickoffPreviewBlobUrl: null, authMode: "login", saveTimer: null, previewOpen: true, previewLastEditAt: 0, previewIdleMs: 1500, previewRenderTimer: null, previewRenderToken: 0, previewRendering: false, previewPending: false, previewBlobUrl: null, adminDisclaimerId: null, dashboardMode: "active", adminUserFilter: "all" };
+const state = { user: null, currentProjectId: null, currentProjectOwner: null, currentKickoffProjectId: null, currentKickoffOwner: null, currentKickoffTab: "info", kickoffQuoteTargetDivisionId: null, kickoffSaveTimer: null, kickoffPreviewTimer: null, kickoffPreviewToken: 0, kickoffPreviewRendering: false, kickoffPreviewPending: false, kickoffPreviewBlobUrl: null, authMode: "login", saveTimer: null, previewOpen: true, previewLastEditAt: 0, previewIdleMs: 1200, previewRenderTimer: null, previewRenderToken: 0, previewRendering: false, previewPending: false, previewBlobUrl: null, adminDisclaimerId: null, dashboardMode: "active", adminUserFilter: "all" };
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 
@@ -2351,6 +2351,9 @@ function filterDivisionNav() { const q=$("#divisionSearch").value.trim().toLower
 
 function updatePreview() {
   state.previewLastEditAt=Date.now();
+  // Invalidate any preview already building. The PDF generator checks this token
+  // between pages so editing always gets priority over background preview work.
+  if(state.previewRendering)state.previewRenderToken++;
   schedulePdfPreview();
 }
 function togglePreview(open) {
@@ -2360,7 +2363,7 @@ function togglePreview(open) {
   $("#previewToggle").textContent=state.previewOpen?"Hide Preview":"PDF Preview";
   if(state.previewOpen)schedulePdfPreview(40);
 }
-function schedulePdfPreview(delay=1500){
+function schedulePdfPreview(delay=1200){
   clearTimeout(state.previewRenderTimer);
   if(!state.previewOpen||!state.currentProjectId)return;
   const elapsed=Date.now()-(state.previewLastEditAt||0);
@@ -2431,22 +2434,52 @@ async function mountLazyPdfPreview(pdf,wrap,scroller,{token,isCurrent,maxWidth=4
 async function renderLivePdfPreview(){
   if(!state.previewOpen||!state.currentProjectId)return;
   const idleFor=Date.now()-(state.previewLastEditAt||0);
-  if(idleFor<state.previewIdleMs){schedulePdfPreview(state.previewIdleMs-idleFor+60);return;}
+  if(idleFor<state.previewIdleMs){schedulePdfPreview(state.previewIdleMs-idleFor+40);return;}
   if(state.previewRendering){state.previewPending=true;return;}
   const scroller=$("#pdfPreviewScroll"),pagesWrap=$("#pdfPreviewPages"),status=$("#pdfPreviewStatus");
   if(!scroller||!pagesWrap)return;
   state.previewRendering=true;state.previewPending=false;
   const token=++state.previewRenderToken;
-  if(status){status.textContent='Updating live PDF…';status.classList.remove('hidden');}
+  const isCurrent=()=>token===state.previewRenderToken;
+  if(status){status.textContent='Updating local PDF preview…';status.classList.remove('hidden');}
   try{
-    const doc=await exportPdf({preview:true});if(!doc||token!==state.previewRenderToken)return;
+    // Preview generation stays entirely on this user's machine. Fast-preview mode
+    // skips PDF compression and yields between pages so the editor remains responsive.
+    const doc=await exportPdf({preview:true,fastPreview:true,yieldToUi:true,isCurrent});
+    if(!doc||!isCurrent())return;
+
+    // Let Chrome/Edge's native PDF renderer handle the visual preview. This avoids
+    // painting PDF.js canvases on the editor's main thread, which was the largest
+    // source of typing stalls on slower office machines.
+    if(navigator.pdfViewerEnabled!==false){
+      const blob=doc.output('blob');
+      const url=URL.createObjectURL(blob);
+      if(!isCurrent()){URL.revokeObjectURL(url);return;}
+      const oldUrl=state.previewBlobUrl;
+      state.previewBlobUrl=url;
+      const frame=document.createElement('iframe');
+      frame.className='native-pdf-preview-frame';
+      frame.title='Local PDF preview';
+      frame.src=`${url}#toolbar=0&navpanes=0&view=FitH`;
+      pagesWrap.classList.add('native-pdf-host');
+      scroller.classList.add('native-pdf-scroll');
+      pagesWrap.replaceChildren(frame);
+      frame.addEventListener('load',()=>{if(isCurrent()&&status)status.classList.add('hidden');},{once:true});
+      setTimeout(()=>{if(isCurrent()&&status)status.classList.add('hidden');},450);
+      if(oldUrl&&oldUrl!==url)setTimeout(()=>{try{URL.revokeObjectURL(oldUrl);}catch{}},2200);
+      return;
+    }
+
+    // Fallback for browsers with their built-in PDF viewer disabled.
+    pagesWrap.classList.remove('native-pdf-host');
+    scroller.classList.remove('native-pdf-scroll');
     if(!window.pdfjsLib)throw new Error('PDF preview renderer did not load.');
     if(window.pdfjsLib.GlobalWorkerOptions)window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     const pdf=await window.pdfjsLib.getDocument({data:doc.output('arraybuffer')}).promise;
-    if(token!==state.previewRenderToken){try{pdf.destroy?.();}catch{};return;}
-    await mountLazyPdfPreview(pdf,pagesWrap,scroller,{token,isCurrent:()=>token===state.previewRenderToken,maxWidth:420,dprCap:1.35});
+    if(!isCurrent()){try{pdf.destroy?.();}catch{};return;}
+    await mountLazyPdfPreview(pdf,pagesWrap,scroller,{token,isCurrent,maxWidth:400,dprCap:1});
     if(status)status.classList.add('hidden');
-  }catch(err){console.error(err);if(token===state.previewRenderToken&&status){status.textContent='Live preview unavailable. Export PDF still uses the locked template.';status.classList.remove('hidden');}}
+  }catch(err){console.error(err);if(isCurrent()&&status){status.textContent='Live preview unavailable. Export PDF still uses the locked template.';status.classList.remove('hidden');}}
   finally{state.previewRendering=false;if(state.previewPending){state.previewPending=false;schedulePdfPreview(state.previewIdleMs);}}
 }
 
@@ -2809,9 +2842,18 @@ async function renderKickoffPdfPreview(){
 
 async function exportPdf(options={}) {
   const previewOnly=Boolean(options&&options.preview===true);
+  const fastPreview=previewOnly&&options.fastPreview!==false;
+  const yieldToUi=previewOnly&&options.yieldToUi!==false;
+  const isCurrent=typeof options.isCurrent==='function'?options.isCurrent:()=>true;
+  const uiYield=async()=>{
+    if(!yieldToUi)return true;
+    if(globalThis.scheduler?.yield)await globalThis.scheduler.yield();
+    else await new Promise(resolve=>setTimeout(resolve,0));
+    return isCurrent();
+  };
   if(!previewOnly)saveEditorProject();
   const p=previewOnly?collectEditorProject():getCurrentProject();
-  if(!p)return;
+  if(!p||!isCurrent())return;
   if(!window.jspdf)return toast("PDF library did not load. Check your internet connection and try again.");
 
   if(!previewOnly)setSaveStatus("Building PDF…");
@@ -2821,24 +2863,28 @@ async function exportPdf(options={}) {
   // Marketing's standard cover master is 8.5 x 11.333 in; Civil and Concrete
   // division covers are US Letter. Each is rendered at its exact supplied size.
   const coverPageH=proposalType==="standard"?11.333333:11;
-  const doc=new jsPDF({unit:"in",format:[pageW,coverPageH],orientation:"portrait",compress:true});
+  const doc=new jsPDF({unit:"in",format:[pageW,coverPageH],orientation:"portrait",compress:!fastPreview});
   const orange=hexToRgb(p.company.orange||DEFAULT_COMPANY.orange);
   const charcoal=[36,43,49], text=[17,17,17], muted=[107,111,114], bg=[250,250,249], pale=[244,244,243], shadow=[228,228,226];
   const contentX=1.12, right=.48, contentW=pageW-contentX-right;
   const topY=1.20, bottomLimit=.72, cardGap=.14;
   const bodyFont=12.0, bodyLeading=.215, minPdfFont=12.0;
-  let standardCoverRevision=null, standardCoverOriginal=null, civilCoverRevision=null, civilCoverOriginal=null, concreteCoverRevision=null, concreteCoverOriginal=null, interiorData=null;
+  let coverRevisionData=null,coverOriginalData=null,interiorData=null;
+  const coverPaths=proposalType==='civil'
+    ? ['assets/marketing/civil/cover-revision.png','assets/marketing/civil/cover-original.png']
+    : proposalType==='concrete'
+      ? ['assets/marketing/concrete/cover-revision.png','assets/marketing/concrete/cover-original.png']
+      : ['assets/marketing/marketing-cover-revision.png','assets/marketing/marketing-cover-original.png'];
   try {
-    [standardCoverRevision,standardCoverOriginal,civilCoverRevision,civilCoverOriginal,concreteCoverRevision,concreteCoverOriginal,interiorData]=await Promise.all([
-      imageToDataUrl('assets/marketing/marketing-cover-revision.png'),
-      imageToDataUrl('assets/marketing/marketing-cover-original.png'),
-      imageToDataUrl('assets/marketing/civil/cover-revision.png'),
-      imageToDataUrl('assets/marketing/civil/cover-original.png'),
-      imageToDataUrl('assets/marketing/concrete/cover-revision.png'),
-      imageToDataUrl('assets/marketing/concrete/cover-original.png'),
+    // Only decode the cover artwork this proposal type actually uses. Previously
+    // every preview decoded all six cover images on each machine's first render.
+    [coverRevisionData,coverOriginalData,interiorData]=await Promise.all([
+      imageToDataUrl(coverPaths[0]),
+      imageToDataUrl(coverPaths[1]),
       imageToDataUrl('assets/marketing/marketing-blank.png')
     ]);
   } catch {}
+  if(!await uiYield())return null;
 
   const rgb=(arr)=>arr;
   const fmtProjectNo=()=>String(p.projectNumber||"PROJECT").toUpperCase();
@@ -2852,12 +2898,7 @@ async function exportPdf(options={}) {
     // Marketing-approved cover artwork is used as an immutable background master.
     // The app only overlays live values in the designated form locations.
     // Original proposals use the master with the Revision icon/label suppressed.
-    const coverSet=proposalType==="civil"
-      ? {revision:civilCoverRevision,original:civilCoverOriginal}
-      : proposalType==="concrete"
-        ? {revision:concreteCoverRevision,original:concreteCoverOriginal}
-        : {revision:standardCoverRevision,original:standardCoverOriginal};
-    const coverData=rev?coverSet.revision:coverSet.original;
+    const coverData=rev?coverRevisionData:coverOriginalData;
     if(coverData) doc.addImage(coverData,'PNG',0,0,pageW,coverPageH,undefined,'FAST');
     else { setFill([255,255,255]);doc.rect(0,0,pageW,pageH,'F'); }
 
@@ -3295,17 +3336,23 @@ async function exportPdf(options={}) {
   }
 
   const layout=buildLayout();
+  if(!await uiYield())return null;
   const summaryPages=buildSummaryPages();
   const totalPages=1+layout.length+summaryPages.length;
   drawCover();
-  layout.forEach((entries,idx)=>{
+  if(!await uiYield())return null;
+  for(let idx=0;idx<layout.length;idx++){
+    const entries=layout[idx];
     doc.addPage('letter','portrait');const pageNum=idx+2;drawInteriorHeader(pageNum,totalPages);let y=topY;
     entries.forEach(entry=>{if(entry.type==='division')y=drawDivisionCard(entry,y);else if(entry.type==='simple'||entry.type==='alternate'||entry.type==='intro')y=drawSimpleCard(entry,y);else if(entry.type==='selections')y=drawSelections(y);else if(entry.type==='closing')drawClosing(y);});
-  });
-  summaryPages.forEach((pageData,idx)=>{
+    if(!await uiYield())return null;
+  }
+  for(let idx=0;idx<summaryPages.length;idx++){
+    const pageData=summaryPages[idx];
     doc.addPage('letter','portrait');const pageNum=2+layout.length+idx;
     if(pageData.mode==='advanced')drawAdvancedSummaryPage(pageData,pageNum,totalPages);else drawBasicSummaryPage(pageData,pageNum,totalPages);
-  });
+    if(!await uiYield())return null;
+  }
 
   if(previewOnly)return doc;
   const proposalNumber=cleanPdfFilenameText(p.projectNumber||'');
