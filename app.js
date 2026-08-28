@@ -2425,10 +2425,10 @@ async function mountLazyPdfPreview(pdf,wrap,scroller,{token,isCurrent,maxWidth=4
     }catch(err){if(isCurrent())console.warn('Preview page render failed',err);}finally{sheet.dataset.rendering='0';}
   };
   const observer=new IntersectionObserver(entries=>{
-    for(const entry of entries){if(!entry.isIntersecting)continue;const n=Number(entry.target.dataset.page||1);[n-1,n,n+1].filter(x=>x>=1&&x<=pdf.numPages).forEach(x=>renderPage(x));}
-  },{root:scroller,rootMargin:'750px 0px',threshold:.01});
+    for(const entry of entries){if(!entry.isIntersecting)continue;const n=Number(entry.target.dataset.page||1);renderPage(n);}
+  },{root:scroller,rootMargin:'180px 0px',threshold:.01});
   wrap._lazyPdfObserver=observer;[...wrap.querySelectorAll('.lazy-pdf-sheet')].forEach(sheet=>observer.observe(sheet));
-  const first=Math.max(1,Math.min(pdf.numPages,Number(pos.page)||1));[first-1,first,first+1].filter(x=>x>=1&&x<=pdf.numPages).forEach(x=>renderPage(x));
+  const first=Math.max(1,Math.min(pdf.numPages,Number(pos.page)||1));renderPage(first);
   if(oldPdf&&oldPdf!==pdf)setTimeout(()=>{try{oldPdf.destroy?.();}catch{}},900);
 }
 async function renderLivePdfPreview(){
@@ -2451,7 +2451,7 @@ async function renderLivePdfPreview(){
     // Let Chrome/Edge's native PDF renderer handle the visual preview. This avoids
     // painting PDF.js canvases on the editor's main thread, which was the largest
     // source of typing stalls on slower office machines.
-    if(navigator.pdfViewerEnabled!==false){
+    if(false&&navigator.pdfViewerEnabled!==false){
       const blob=doc.output('blob');
       const url=URL.createObjectURL(blob);
       if(!isCurrent()){URL.revokeObjectURL(url);return;}
@@ -2470,7 +2470,7 @@ async function renderLivePdfPreview(){
       return;
     }
 
-    // Fallback for browsers with their built-in PDF viewer disabled.
+    // Use the local lazy page renderer so live refreshes can preserve the exact page and scroll position.
     pagesWrap.classList.remove('native-pdf-host');
     scroller.classList.remove('native-pdf-scroll');
     if(!window.pdfjsLib)throw new Error('PDF preview renderer did not load.');
