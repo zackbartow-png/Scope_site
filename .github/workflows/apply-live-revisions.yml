@@ -1,0 +1,38 @@
+name: Apply live revisions
+
+on:
+  push:
+    branches:
+      - live-revisions-2026-08-28
+    paths:
+      - patch_live_revisions.py
+      - .github/workflows/apply-live-revisions.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply revisions
+        run: python3 patch_live_revisions.py
+      - name: Validate JavaScript
+        run: node --check app.js
+      - name: Validate expected UI hooks
+        run: |
+          grep -q 'existingAlternatePriceSelect' index.html
+          grep -q 'addExistingAlternatePriceItem' app.js
+          grep -q 'previewIdleMs: 1500' app.js
+      - name: Remove temporary patch files and commit
+        run: |
+          rm patch_live_revisions.py
+          rm .github/workflows/apply-live-revisions.yml
+          git config user.name "Scope Builder maintenance"
+          git config user.email "actions@users.noreply.github.com"
+          git add app.js index.html styles.css patch_live_revisions.py .github/workflows/apply-live-revisions.yml
+          git commit -m "Improve live proposal editing and pricing workflow"
+          git push origin HEAD:live-revisions-2026-08-28
