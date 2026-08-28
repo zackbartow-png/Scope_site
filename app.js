@@ -60,7 +60,7 @@ const cloudProjectSyncTimers = new Map();
 const cloudSettingSyncTimers = new Map();
 let cloudWorkspacePromise = null;
 
-const state = { user: null, currentProjectId: null, currentProjectOwner: null, currentKickoffProjectId: null, currentKickoffOwner: null, currentKickoffTab: "info", kickoffQuoteTargetDivisionId: null, kickoffSaveTimer: null, kickoffPreviewTimer: null, kickoffPreviewToken: 0, kickoffPreviewRendering: false, kickoffPreviewPending: false, kickoffPreviewBlobUrl: null, authMode: "login", saveTimer: null, previewOpen: true, previewRenderTimer: null, previewRenderToken: 0, previewRendering: false, previewPending: false, previewBlobUrl: null, adminDisclaimerId: null, dashboardMode: "active", adminUserFilter: "all" };
+const state = { user: null, currentProjectId: null, currentProjectOwner: null, currentKickoffProjectId: null, currentKickoffOwner: null, currentKickoffTab: "info", kickoffQuoteTargetDivisionId: null, kickoffSaveTimer: null, kickoffPreviewTimer: null, kickoffPreviewToken: 0, kickoffPreviewRendering: false, kickoffPreviewPending: false, kickoffPreviewBlobUrl: null, authMode: "login", saveTimer: null, previewOpen: true, previewLastEditAt: 0, previewIdleMs: 1500, previewRenderTimer: null, previewRenderToken: 0, previewRendering: false, previewPending: false, previewBlobUrl: null, adminDisclaimerId: null, dashboardMode: "active", adminUserFilter: "all" };
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 
@@ -130,6 +130,19 @@ function moneyNumber(v="") {
   return Number.isFinite(n)?(neg?-Math.abs(n):n):0;
 }
 function formatMoneyNumber(n){ return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0,maximumFractionDigits:2}).format(Number(n)||0); }
+function ensureDollarPrefix(value=""){
+  const raw=String(value??"").trim();
+  if(!raw)return "";
+  if(raw.includes('$'))return raw;
+  if(raw.startsWith('-'))return `-$${raw.slice(1)}`;
+  if(raw.startsWith('(')&&raw.endsWith(')'))return `($${raw.slice(1,-1)})`;
+  return `$${raw}`;
+}
+function normalizeProposalCurrencyInput(input){
+  if(!input)return;
+  const next=ensureDollarPrefix(input.value);
+  if(input.value!==next)input.value=next;
+}
 
 
 const KOEHN_ASSET_DB = "koehn_scope_builder_assets_v1";
@@ -2073,16 +2086,39 @@ function collectAlternateScopes(){
 
 function renderPriceItems(p) {
   const wrap=$("#priceItems"); wrap.innerHTML="";
+  const alternateById=new Map((p.alternateScopes||[]).map(a=>[a.id,a]));
   const hasAlternates=p.priceItems.some(i=>!i.isBaseBid);
   p.priceItems.forEach((item,index)=>{
     const isBase=Boolean(item.isBaseBid);
-    const row=document.createElement("div"); row.className=`price-item-row ${isBase?'base-bid-row':''} ${isBase&&hasAlternates?'has-alternates':''}`.trim(); row.dataset.priceId=item.id; row.dataset.baseBid=isBase?'true':'false';
+    const linkedAlternate=!isBase&&item.alternateScopeId?alternateById.get(item.alternateScopeId):null;
+    const displayName=linkedAlternate?.title||item.name||'';
+    const row=document.createElement("div"); row.className=`price-item-row ${isBase?'base-bid-row':''} ${isBase&&hasAlternates?'has-alternates':''} ${linkedAlternate?'linked-alternate-row':''}`.trim(); row.dataset.priceId=item.id; row.dataset.baseBid=isBase?'true':'false'; row.dataset.alternateScopeId=linkedAlternate?.id||'';
     row.innerHTML=isBase
       ? `<input class="price-item-input price-name" value="Base Bid" readonly><input class="price-item-input price-value" value="${esc(item.price||'')}" placeholder="$0.00"><span class="base-bid-lock" title="Base Bid is always included in Proposed Pricing">Base</span>`
-      : `<div class="row-check-preview" title="Printed alternate/add-on selection box"></div><input class="price-item-input price-name" value="${esc(item.name||'')}" placeholder="Alternate / add-on pricing line"><input class="price-item-input price-value" value="${esc(item.price||'')}" placeholder="$0.00"><button class="remove-price-item" type="button" title="Remove line">×</button>`;
+      : `<div class="row-check-preview" title="Printed alternate/add-on selection box"></div><input class="price-item-input price-name" value="${esc(displayName)}" ${linkedAlternate?'readonly title="Linked to Alternate Scope"':'placeholder="Custom alternate / add-on pricing line"'}><input class="price-item-input price-value" value="${esc(item.price||'')}" placeholder="$0.00"><button class="remove-price-item" type="button" title="Remove line">×</button>`;
     wrap.appendChild(row);
   });
+  renderPricingAlternatePicker(p);
   $("#emptyPriceItems").classList.add("hidden");
+}
+function renderPricingAlternatePicker(p){
+  const select=$("#existingAlternatePriceSelect"),btn=$("#addExistingAlternatePriceBtn");
+  if(!select||!btn)return;
+  const linkedIds=new Set((p.priceItems||[]).map(i=>i.alternateScopeId).filter(Boolean));
+  const available=(p.alternateScopes||[]).filter(a=>a.enabled!==false&&!linkedIds.has(a.id));
+  select.innerHTML='';
+  const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent=available.length?'Select existing alternate…':'No unused alternates available';select.appendChild(placeholder);
+  available.forEach(a=>{const option=document.createElement('option');option.value=a.id;option.textContent=a.title||'Untitled Alternate';select.appendChild(option);});
+  btn.disabled=!available.length;
+}
+function addExistingAlternatePriceItem(){
+  const p=collectEditorProject();if(!p)return;
+  const id=$("#existingAlternatePriceSelect")?.value||'';if(!id)return toast('Select an alternate to add.');
+  const alt=(p.alternateScopes||[]).find(a=>a.id===id);if(!alt)return toast('That alternate could not be found.');
+  if((p.priceItems||[]).some(i=>i.alternateScopeId===id))return toast('That alternate is already in Proposed Pricing.');
+  p.priceItems.push({id:uid(),name:alt.title||'Alternate',description:'',price:'',isBaseBid:false,alternateScopeId:id});
+  putProject(p);renderPriceItems(p);updatePreview();
+  const row=$(`.price-item-row[data-alternate-scope-id="${id}"]`);$('.price-value',row)?.focus();
 }
 function addPriceItem() {
   const p=collectEditorProject(); if(!p)return;
@@ -2090,7 +2126,10 @@ function addPriceItem() {
   const last=$$('.price-item-row:not(.base-bid-row) .price-name').at(-1); if(last)last.focus();
 }
 function collectPriceItems() {
-  return $$('.price-item-row').map(row=>({id:row.dataset.priceId,name:row.dataset.baseBid==='true'?"Base Bid":$('.price-name',row).value,description:"",price:$('.price-value',row).value,isBaseBid:row.dataset.baseBid==='true'}));
+  return $$('.price-item-row').map(row=>{
+    const linkedId=row.dataset.alternateScopeId||'';
+    return {id:row.dataset.priceId,name:row.dataset.baseBid==='true'?"Base Bid":$('.price-name',row).value,description:"",price:$('.price-value',row).value,isBaseBid:row.dataset.baseBid==='true',...(linkedId?{alternateScopeId:linkedId}:{})};
+  });
 }
 
 function renderDisclaimerSelect(p) {
@@ -2321,9 +2360,7 @@ function activateTab(name) {
 function filterDivisionNav() { const q=$("#divisionSearch").value.trim().toLowerCase(); $$('[data-nav-division]').forEach(btn=>btn.classList.toggle('hidden',!btn.textContent.toLowerCase().includes(q))); }
 
 function updatePreview() {
-  const p=collectEditorProject();if(!p)return;
-  document.documentElement.style.setProperty('--orange',p.company.orange||DEFAULT_COMPANY.orange);
-  document.documentElement.style.setProperty('--charcoal',p.company.charcoal||DEFAULT_COMPANY.charcoal);
+  state.previewLastEditAt=Date.now();
   schedulePdfPreview();
 }
 function togglePreview(open) {
@@ -2333,10 +2370,12 @@ function togglePreview(open) {
   $("#previewToggle").textContent=state.previewOpen?"Hide Preview":"PDF Preview";
   if(state.previewOpen)schedulePdfPreview(40);
 }
-function schedulePdfPreview(delay=520){
+function schedulePdfPreview(delay=1500){
   clearTimeout(state.previewRenderTimer);
   if(!state.previewOpen||!state.currentProjectId)return;
-  state.previewRenderTimer=setTimeout(renderLivePdfPreview,delay);
+  const elapsed=Date.now()-(state.previewLastEditAt||0);
+  const wait=Math.max(delay,Math.max(0,state.previewIdleMs-elapsed));
+  state.previewRenderTimer=setTimeout(renderLivePdfPreview,wait);
 }
 function captureLazyPreviewPosition(scroller,wrap){
   if(!scroller||!wrap)return {page:1,offsetRatio:0};
@@ -2401,6 +2440,8 @@ async function mountLazyPdfPreview(pdf,wrap,scroller,{token,isCurrent,maxWidth=4
 }
 async function renderLivePdfPreview(){
   if(!state.previewOpen||!state.currentProjectId)return;
+  const idleFor=Date.now()-(state.previewLastEditAt||0);
+  if(idleFor<state.previewIdleMs){schedulePdfPreview(state.previewIdleMs-idleFor+60);return;}
   if(state.previewRendering){state.previewPending=true;return;}
   const scroller=$("#pdfPreviewScroll"),pagesWrap=$("#pdfPreviewPages"),status=$("#pdfPreviewStatus");
   if(!scroller||!pagesWrap)return;
@@ -2413,10 +2454,10 @@ async function renderLivePdfPreview(){
     if(window.pdfjsLib.GlobalWorkerOptions)window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     const pdf=await window.pdfjsLib.getDocument({data:doc.output('arraybuffer')}).promise;
     if(token!==state.previewRenderToken){try{pdf.destroy?.();}catch{};return;}
-    await mountLazyPdfPreview(pdf,pagesWrap,scroller,{token,isCurrent:()=>token===state.previewRenderToken,maxWidth:440,dprCap:2});
+    await mountLazyPdfPreview(pdf,pagesWrap,scroller,{token,isCurrent:()=>token===state.previewRenderToken,maxWidth:420,dprCap:1.35});
     if(status)status.classList.add('hidden');
   }catch(err){console.error(err);if(token===state.previewRenderToken&&status){status.textContent='Live preview unavailable. Export PDF still uses the locked template.';status.classList.remove('hidden');}}
-  finally{state.previewRendering=false;if(state.previewPending){state.previewPending=false;schedulePdfPreview(260);}}
+  finally{state.previewRendering=false;if(state.previewPending){state.previewPending=false;schedulePdfPreview(state.previewIdleMs);}}
 }
 
 const imageDataUrlCache=new Map();
@@ -3553,7 +3594,7 @@ $$('[data-kickoff-info]').forEach(el=>{el.addEventListener('input',()=>scheduleK
 $("#backToDashboard").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#sidebarBack").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#kickoffBackBtn").addEventListener("click",()=>{saveKickoffInfoFromForm();if(document.querySelector('.kickoff-division-card'))collectKickoffDivisionsFromDom();enterDashboard();});$("#exportPdfBtn").addEventListener("click",exportPdf);$("#deleteProjectBtn").addEventListener("click",handleVersionDeleteRestore);
 $("#divisionSearch").addEventListener("input",filterDivisionNav);$("#expandAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.add('open')));$("#collapseAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.remove('open')));
 $("#previewToggle").addEventListener("click",()=>togglePreview());$("#closePreviewBtn").addEventListener("click",()=>togglePreview(false));$$('.tab-btn').forEach(b=>b.addEventListener('click',()=>activateTab(b.dataset.tab)));
-$("#projectTitleInline").addEventListener("input",()=>{scheduleSave();updatePreview();});$("#addPriceItemBtn").addEventListener("click",addPriceItem);
+$("#projectTitleInline").addEventListener("input",()=>{scheduleSave();updatePreview();});$("#addPriceItemBtn").addEventListener("click",addPriceItem);$("#addExistingAlternatePriceBtn")?.addEventListener("click",addExistingAlternatePriceItem);
 $("#addAlternateScopeBtn")?.addEventListener("click",addAlternateScope);
 $("#summaryMode").addEventListener("change",()=>{const p=collectEditorProject();if(p)renderSummaryEditor(p);scheduleSave();updatePreview();});
 $("#addTopCustomDivisionBtn")?.addEventListener("click",()=>addCustomAdvancedDivision("__start__"));
@@ -3594,6 +3635,13 @@ document.addEventListener("input",e=>{
   }
 });
 document.addEventListener("change",e=>{if(e.target.matches('[data-section-enabled],[data-company],[data-field],[data-office-setting],[data-map-setting]')){if(e.target.matches('[data-office-setting],[data-map-setting]'))collectAndSaveOfficeSettings();scheduleSave();updatePreview();}});
+document.addEventListener('focusout',e=>{
+  if(!e.target.matches('.price-value,.basic-summary-amount,#basicOverheadAmount,.summary-division-amount,.summary-sub-amount,.summary-custom-amount,.summary-extra-amount'))return;
+  const before=e.target.value;normalizeProposalCurrencyInput(e.target);if(e.target.value===before)return;
+  if(e.target.matches('.basic-summary-amount,#basicOverheadAmount'))updateBasicSummaryTotal();
+  if(e.target.matches('.summary-division-amount,.summary-sub-amount,.summary-custom-amount,.summary-extra-amount'))updateAdvancedSummaryTotals();
+  scheduleSave();updatePreview();
+});
 document.addEventListener('click',e=>{if(!e.target.closest('.project-card-actions'))$$('.project-menu').forEach(x=>x.classList.add('hidden'));});
 window.addEventListener('beforeunload',()=>{if(state.currentProjectId)saveEditorProject();if(state.currentKickoffProjectId){saveKickoffInfoFromForm();if(document.querySelector('.kickoff-division-card'))collectKickoffDivisionsFromDom();}});
 
