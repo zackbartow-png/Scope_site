@@ -3075,6 +3075,14 @@ async function exportPdf(options={}) {
     return {h:Math.max(1.15,h),noteLines,itemsY,noteLeading,hasAlternates};
   }
   function selectionHeight(items){ return selectionMetrics(items).h; }
+  function termsMetrics(){
+    const disclaimer=getDisclaimer(p.disclaimerId);if(!disclaimer)return null;
+    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);
+    const lines=doc.splitTextToSize(disclaimer.text,contentW-.84);
+    const h=Math.max(1.18,.58+lines.length*bodyLeading+.18);
+    return {disclaimer,lines,h};
+  }
+  function termsHeight(){return termsMetrics()?.h||0;}
 
   function buildLayout(){
     const pages=[];let current=[],y=topY;
@@ -3114,6 +3122,11 @@ async function exportPdf(options={}) {
       const h=selectionHeight(p.priceItems.filter(i=>(i.name||'').trim()||(i.price||'').trim()));
       if(pageH-bottomLimit-y<h){if(current.length)pages.push(current);current=[];y=topY;}
       current.push({type:'selections',height:h});y+=h+cardGap;
+    }
+    const th=termsHeight();
+    if(th>0){
+      if(pageH-bottomLimit-y<th){if(current.length)pages.push(current);current=[];y=topY;}
+      current.push({type:'terms',height:th});y+=th+cardGap;
     }
     if(current.length){pages.push(current);current=[];}
     pages.push([{type:'closing'}]);
@@ -3182,18 +3195,17 @@ async function exportPdf(options={}) {
     });
     return y+h+cardGap;
   }
+  function drawTerms(y){
+    const metrics=termsMetrics();if(!metrics)return y;
+    const {lines,h}=metrics;
+    drawCardBase(y,h);
+    doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText(text);
+    doc.text('TERMS AND CONDITIONS',contentX+.42,y+.28,{maxWidth:contentW-.60});
+    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);
+    doc.text(lines,contentX+.42,y+.55,{lineHeightFactor:bodyLeading/minPdfFont*72});
+    return y+h+cardGap;
+  }
   function drawClosing(y){
-    const disclaimer=getDisclaimer(p.disclaimerId);
-    if(disclaimer){
-      const lines=(()=>{doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);return doc.splitTextToSize(disclaimer.text,contentW-.84);})();
-      const h=Math.max(1.18,.58+lines.length*bodyLeading+.18);
-      drawCardBase(y,h);
-      doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText(text);
-      doc.text('TERMS AND CONDITIONS',contentX+.42,y+.28,{maxWidth:contentW-.60});
-      doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);
-      doc.text(lines,contentX+.42,y+.55,{lineHeightFactor:bodyLeading/minPdfFont*72});
-      y+=h+cardGap;
-    }
     doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);
     const ackLines=doc.splitTextToSize(ACKNOWLEDGMENT_TEXT,contentW-.84);
     const h=Math.max(1.45,.66+ackLines.length*bodyLeading+.18);
@@ -3344,7 +3356,7 @@ async function exportPdf(options={}) {
   for(let idx=0;idx<layout.length;idx++){
     const entries=layout[idx];
     doc.addPage('letter','portrait');const pageNum=idx+2;drawInteriorHeader(pageNum,totalPages);let y=topY;
-    entries.forEach(entry=>{if(entry.type==='division')y=drawDivisionCard(entry,y);else if(entry.type==='simple'||entry.type==='alternate'||entry.type==='intro')y=drawSimpleCard(entry,y);else if(entry.type==='selections')y=drawSelections(y);else if(entry.type==='closing')drawClosing(y);});
+    entries.forEach(entry=>{if(entry.type==='division')y=drawDivisionCard(entry,y);else if(entry.type==='simple'||entry.type==='alternate'||entry.type==='intro')y=drawSimpleCard(entry,y);else if(entry.type==='selections')y=drawSelections(y);else if(entry.type==='terms')y=drawTerms(y);else if(entry.type==='closing')drawClosing(y);});
     if(!await uiYield())return null;
   }
   for(let idx=0;idx<summaryPages.length;idx++){
