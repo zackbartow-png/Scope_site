@@ -2912,27 +2912,26 @@ async function exportPdf(options={}) {
     // a proportional scale of the Standard cover.
     const standardFields={
       project:{x1:1.10,x2:3.42,cy:5.88},
-      date:{x1:4.02,x2:5.82,cy:5.88},
+      date:{x1:4.10,x2:5.82,cy:5.88},
       client:{x1:1.10,x2:3.42,cy:7.03},
-      prepared:{x1:4.02,x2:5.82,cy:7.03},
+      prepared:{x1:4.10,x2:5.82,cy:7.03},
       attn:{x1:1.10,x2:3.42,cy:8.17},
-      revision:{x1:4.02,x2:5.82,cy:8.17},
-      // Keep the office address close to Marketing's address icon/label instead
-      // of centering it across the full-width address rule.
-      address:{x1:1.02,x2:3.58,cy:9.18},
+      revision:{x1:4.10,x2:5.82,cy:8.17},
+      // Align the address value with the same left edge used by the other left-column fields.
+      address:{x1:1.10,x2:3.58,cy:9.18},
       phone:{x1:1.10,x2:3.42,cy:10.12},
-      website:{x1:4.02,x2:5.82,cy:10.12}
+      website:{x1:4.10,x2:5.82,cy:10.12}
     };
     const divisionFields={
       project:{x1:.96,x2:3.35,cy:5.48},
-      date:{x1:3.84,x2:5.72,cy:5.48},
+      date:{x1:3.92,x2:5.72,cy:5.48},
       client:{x1:.96,x2:3.35,cy:6.67},
-      prepared:{x1:3.84,x2:5.72,cy:6.67},
+      prepared:{x1:3.92,x2:5.72,cy:6.67},
       attn:{x1:.96,x2:3.35,cy:7.95},
-      revision:{x1:3.84,x2:5.72,cy:7.95},
-      address:{x1:.92,x2:3.55,cy:8.99},
+      revision:{x1:3.92,x2:5.72,cy:7.95},
+      address:{x1:.96,x2:3.55,cy:8.99},
       phone:{x1:.96,x2:3.35,cy:9.79},
-      website:{x1:3.84,x2:5.72,cy:9.79}
+      website:{x1:3.92,x2:5.72,cy:9.79}
     };
     const fields=proposalType==='standard'?standardFields:divisionFields;
     const drawCentered=(value,box,{bold=true,fontSize=12.0,maxLines=2,align='center'}={})=>{
