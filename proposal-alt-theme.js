@@ -1,4 +1,17 @@
 (() => {
+  // Load the archive/import stability patch after the core app. The script only
+  // overrides cloud merge + archive/import functions and leaves proposal data intact.
+  if (!document.querySelector('script[data-archive-sync-fix]')) {
+    const script = document.createElement('script');
+    script.src = 'archive-sync-fix.js?v=20260828-1';
+    script.async = false;
+    script.dataset.archiveSyncFix = 'true';
+    script.onerror = () => console.error('Archive sync stability patch failed to load.');
+    document.head.appendChild(script);
+  }
+})();
+
+(() => {
   // Revision 3 proposal styling patch.
   // Keeps the current Koehn proposal theme while separating the Alternates section
   // with a branded divider and a light gray alternate-card background.
