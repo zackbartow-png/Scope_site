@@ -345,8 +345,6 @@ async function convertKickoffPdfToSnapshots(file,familyId,quoteId,onProgress=()=
     onProgress(pageNum,pdf.numPages);
     const page=await pdf.getPage(pageNum);
     const base=page.getViewport({scale:1});
-    // About 160 DPI for a letter-size page. This keeps typed quotes sharp while
-    // dramatically reducing storage compared with the source PDF.
     const targetWidth=Math.min(1700,Math.max(1200,Math.round(base.width*2.2)));
     const scale=targetWidth/base.width;
     const viewport=page.getViewport({scale});
@@ -539,8 +537,6 @@ function googleGeocodeAddress(address){
 function cloneJson(value){ return JSON.parse(JSON.stringify(value)); }
 
 function normalizeProject(p, ownerUsername="") {
-  // Backward-compatible project normalization. Existing projects become the
-  // original/base version of a revision family automatically.
   if (!p.documentTitle || p.documentTitle.trim().toLowerCase() === "scope of work") p.documentTitle = "Proposal";
   if (!p.familyId) p.familyId = p.id;
   if (!Number.isInteger(p.version)) p.version = 0;
@@ -582,9 +578,6 @@ function normalizeProject(p, ownerUsername="") {
     if(!Object.prototype.hasOwnProperty.call(p,richKey) || !String(p[richKey]||"").trim()) p[richKey]=plainTextToRichHtml(p[field]||"");
     else p[richKey]=sanitizeScopeHtml(p[richKey]);
   });
-  // V7.33: proposal alternates are independent scope cards, like CSI divisions.
-  // Existing projects that used the legacy single Alternates box are migrated into
-  // one Alternate 01 card so no scope is lost.
   if(!Array.isArray(p.alternateScopes)){
     const legacyPlain=String(p.alternates||"");
     const legacyRich=sanitizeScopeHtml(p.alternatesRichText||plainTextToRichHtml(legacyPlain));
@@ -1028,9 +1021,6 @@ function refreshRoleUi() {
   $("#userRoleBadge").classList.toggle("admin",admin);
   $("#adminPanelBtn").classList.toggle("hidden",!admin);
   $("#adminPopoverBtn").classList.toggle("hidden",!admin);
-
-  // Company information is controlled by Admin users. Employees still carry
-  // the saved company data into previews/PDFs, but do not see or edit the tab.
   const companyTabButton = $('.tab-btn[data-tab="company"]');
   if (companyTabButton) companyTabButton.classList.toggle("hidden", !admin);
   const companyPanel = $("#companyTab");
@@ -1093,7 +1083,6 @@ function renderProjects() {
   const grouped=new Map();
   entries.forEach(({owner,p})=>{const key=`${ownerKey(owner)}::${p.familyId||p.id}`;if(!grouped.has(key))grouped.set(key,{owner,familyId:p.familyId||p.id,versions:[]});grouped.get(key).versions.push(p);});
   let families=[...grouped.values()].map(f=>{f.versions.sort((a,b)=>(a.version||0)-(b.version||0));f.latest=[...f.versions].sort((a,b)=>(b.version||0)-(a.version||0))[0];return f;});
-
   families.sort((a,b)=> sort==="name"?(a.latest.projectName||"").localeCompare(b.latest.projectName||""):sort==="client"?(a.latest.clientName||"").localeCompare(b.latest.clientName||""):new Date(b.latest.updatedAt)-new Date(a.latest.updatedAt));
   const grid=$("#projectsGrid"); grid.innerHTML="";
   const noProjects=!families.length;
@@ -1162,8 +1151,6 @@ function openKickoff(projectId, ownerUsername){
   saveProjectsForUser(owner,updated);
   state.currentProjectId=null; state.currentProjectOwner=null; state.currentKickoffProjectId=source.id; state.currentKickoffOwner=owner; state.currentKickoffTab="info";
   const current=normalizeProject(updated.find(p=>p.id===source.id)||source,owner);
-  // Seed kickoff data across the full project family so opening another revision
-  // returns to the same operational kickoff book.
   saveKickoffFamilyData(current.kickoff);
   $("#dashboardView").classList.add("hidden"); $("#editorView").classList.add("hidden"); $("#kickoffView").classList.remove("hidden");
   $("#backToDashboard").classList.add("hidden"); $("#exportPdfBtn").classList.add("hidden");
@@ -1366,7 +1353,6 @@ function openKickoffGoogleMaps(){
   window.open(`https://www.google.com/maps/search/?api=1&query=${q}`,'_blank','noopener,noreferrer');
 }
 async function externalImageUrlToDataUrl(url){
-  // Prefer fetch/blob so API errors return useful HTTP status information.
   try{
     const res=await fetch(url,{mode:'cors',credentials:'omit',cache:'no-store',referrerPolicy:'strict-origin-when-cross-origin'});
     if(!res.ok)throw new Error(`Google image request returned ${res.status}.`);
@@ -1375,7 +1361,6 @@ async function externalImageUrlToDataUrl(url){
     const blob=await res.blob();
     return await blobToDataUrl(blob);
   }catch(fetchErr){
-    // Some browsers/API configurations permit direct image loading but not fetch.
     return await new Promise((resolve,reject)=>{
       const img=new Image();img.crossOrigin='anonymous';
       img.onload=()=>{try{const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d',{alpha:false}).drawImage(img,0,0);resolve(c.toDataURL('image/jpeg',.92));}catch(err){reject(new Error(`${fetchErr?.message||'Map request failed'} Browser security also blocked converting the Google image for PDF.`));}};
@@ -1775,8 +1760,6 @@ function renderKickoffPageOrder(){
   $$('[data-remove-kickoff-quote]',wrap).forEach(b=>b.addEventListener('click',()=>removeKickoffQuote(b.dataset.removeKickoffQuote)));
 }
 async function renderKickoffQuotes(){
-  // Quote PDFs are managed inline in Quotes & Page Order. Keep this element only
-  // as a lightweight upload/progress area so there is not a duplicate quote list.
   const list=$("#kickoffQuoteList"); if(!list)return;
   if(!list.classList.contains('kickoff-processing-active'))list.innerHTML='';
 }
@@ -1829,8 +1812,6 @@ async function archiveFamilyToKoehn(familyId,ownerUsername){
     const archiveBlob=await gzipJsonBlob(payload);
     const fname=`${safeFilePart(latest.projectNumber||latest.projectName||'Project')}_${safeFilePart(latest.projectName||'Archive')}.koehn`;
     downloadBlob(archiveBlob,fname);
-    // Once the portable project archive is constructed successfully, remove the
-    // active workspace copy and its local kickoff assets.
     saveProjectsForUser(ownerUsername,all.filter(p=>(p.familyId||p.id)!==familyId));
     await deleteFamilyQuoteAssets(familyId);
     if(authBackendConfigured&&authClient)await deleteCloudProjectFamily(ownerUsername,familyId);
@@ -1871,7 +1852,6 @@ function reviseProject(projectId, ownerUsername){
   revised.id=uid(); revised.familyId=sourceLatest.familyId||sourceLatest.id; revised.version=nextVersion; revised.parentRevisionId=sourceLatest.id;
   revised.createdAt=nowIso(); revised.updatedAt=nowIso(); revised.locked=false; revised.archived=false; revised.deletedByUser=false; revised.deletedAt=null; revised.deletedBy=null; revised.deletedScope=null;
   revised.ownerUsername=ownerUsername;
-  // Creating a revision brings the family back to Active.
   const all=getProjectsForUser(ownerUsername,{includeDeleted:true}).map(p=>p.familyId===revised.familyId?{...p,archived:false}:p);
   all.unshift(revised); saveProjectsForUser(ownerUsername,all);
   refreshDashboardNav(); toast(`${versionLabel(revised)} created from ${versionLabel(sourceLatest)}.`); openProject(revised.id,ownerUsername);
@@ -1894,9 +1874,7 @@ function softDeleteFamily(familyId,ownerUsername){
   const all=getProjectsForUser(ownerUsername,{includeDeleted:true}), family=all.filter(p=>p.familyId===familyId&&!p.deletedByUser);
   if(!family.length)return toast("This project is already deleted.");
   const name=family[0]?.projectName||"this project";
-  if(!confirm(`Delete the entire project “${name}” and all of its revisions from the user workspace?
-
-Nothing will be permanently erased. Admin will retain every version in Deleted Items.`))return;
+  if(!confirm(`Delete the entire project “${name}” and all of its revisions from the user workspace?\n\nNothing will be permanently erased. Admin will retain every version in Deleted Items.`))return;
   const next=all.map(p=>p.familyId===familyId?markDeleted(p,"project"):p); saveProjectsForUser(ownerUsername,next);
   refreshDashboardNav(); renderProjects(); toast("Project deleted from user workspace. Admin recovery copy retained.");
 }
@@ -1904,9 +1882,7 @@ function softDeleteVersion(projectId,ownerUsername){
   if(ownerKey(ownerUsername)!==ownerKey(state.user?.username)&&!isAdmin())return toast("You can only delete your own proposal versions.");
   const all=getProjectsForUser(ownerUsername,{includeDeleted:true}), idx=all.findIndex(p=>p.id===projectId); if(idx<0)return;
   const p=all[idx]; if(p.deletedByUser)return toast("This version is already deleted.");
-  if(!confirm(`Delete ${versionLabel(p)} of “${p.projectName}” from the user workspace?
-
-Nothing will be permanently erased. Admin will retain this version in Deleted Items.`))return;
+  if(!confirm(`Delete ${versionLabel(p)} of “${p.projectName}” from the user workspace?\n\nNothing will be permanently erased. Admin will retain this version in Deleted Items.`))return;
   all[idx]=markDeleted(p,"version"); saveProjectsForUser(ownerUsername,all); refreshDashboardNav();
   if(state.currentProjectId===projectId)enterDashboard(); else renderProjects();
   toast(`${versionLabel(p)} deleted. Admin recovery copy retained.`);
@@ -2040,11 +2016,7 @@ function renderAlternateScopes(p){
     wrap.appendChild(card);
   });
   if(empty)empty.classList.toggle('hidden',items.length>0);
-
-  $$('.alternate-scope-card-head',wrap).forEach(head=>head.addEventListener('click',e=>{
-    if(e.target.closest('input,button,label'))return;
-    head.closest('.alternate-scope-card')?.classList.toggle('open');
-  }));
+  $$('.alternate-scope-card-head',wrap).forEach(head=>head.addEventListener('click',e=>{ if(e.target.closest('input,button,label'))return; head.closest('.alternate-scope-card')?.classList.toggle('open'); }));
   $$('.alternate-enabled',wrap).forEach(cb=>cb.addEventListener('change',e=>{e.target.closest('.alternate-scope-card')?.classList.toggle('enabled',e.target.checked);scheduleSave();updatePreview();}));
   $$('.alternate-title-input',wrap).forEach(input=>input.addEventListener('input',()=>{scheduleSave();updatePreview();}));
   $$('.rich-alternate-editor',wrap).forEach(editor=>{
@@ -2351,8 +2323,6 @@ function filterDivisionNav() { const q=$("#divisionSearch").value.trim().toLower
 
 function updatePreview() {
   state.previewLastEditAt=Date.now();
-  // Invalidate any preview already building. The PDF generator checks this token
-  // between pages so editing always gets priority over background preview work.
   if(state.previewRendering)state.previewRenderToken++;
   schedulePdfPreview();
 }
@@ -2407,7 +2377,6 @@ async function mountLazyPdfPreview(pdf,wrap,scroller,{token,isCurrent,maxWidth=4
     sheet.append(loading,tag);frag.appendChild(sheet);
   }
   wrap.replaceChildren(frag);restoreLazyPreviewPosition(scroller,wrap,pos);
-  const activeRenders=new Set();
   const renderPage=async pageNum=>{
     const sheet=wrap.querySelector(`.lazy-pdf-sheet[data-page="${pageNum}"]`);
     if(!sheet||sheet.dataset.rendered==='1'||sheet.dataset.rendering==='1'||!isCurrent())return;
@@ -2420,7 +2389,7 @@ async function mountLazyPdfPreview(pdf,wrap,scroller,{token,isCurrent,maxWidth=4
       const dpr=Math.min(dprCap,Math.max(1.35,window.devicePixelRatio||1.5));
       const viewport=page.getViewport({scale:cssScale*dpr});
       const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);canvas.style.width='100%';canvas.style.height='100%';canvas.setAttribute('aria-label',`PDF preview page ${pageNum} of ${pdf.numPages}`);
-      const task=page.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport});activeRenders.add(task);await task.promise;activeRenders.delete(task);if(!isCurrent())return;
+      const task=page.render({canvasContext:canvas.getContext('2d',{alpha:false}),viewport});await task.promise;if(!isCurrent())return;
       sheet.querySelector('.lazy-pdf-loading')?.remove();sheet.prepend(canvas);sheet.dataset.rendered='1';
     }catch(err){if(isCurrent())console.warn('Preview page render failed',err);}finally{sheet.dataset.rendering='0';}
   };
@@ -2443,34 +2412,8 @@ async function renderLivePdfPreview(){
   const isCurrent=()=>token===state.previewRenderToken;
   if(status){status.textContent='Updating local PDF preview…';status.classList.remove('hidden');}
   try{
-    // Preview generation stays entirely on this user's machine. Fast-preview mode
-    // skips PDF compression and yields between pages so the editor remains responsive.
     const doc=await exportPdf({preview:true,fastPreview:true,yieldToUi:true,isCurrent});
     if(!doc||!isCurrent())return;
-
-    // Let Chrome/Edge's native PDF renderer handle the visual preview. This avoids
-    // painting PDF.js canvases on the editor's main thread, which was the largest
-    // source of typing stalls on slower office machines.
-    if(false&&navigator.pdfViewerEnabled!==false){
-      const blob=doc.output('blob');
-      const url=URL.createObjectURL(blob);
-      if(!isCurrent()){URL.revokeObjectURL(url);return;}
-      const oldUrl=state.previewBlobUrl;
-      state.previewBlobUrl=url;
-      const frame=document.createElement('iframe');
-      frame.className='native-pdf-preview-frame';
-      frame.title='Local PDF preview';
-      frame.src=`${url}#toolbar=0&navpanes=0&view=FitH`;
-      pagesWrap.classList.add('native-pdf-host');
-      scroller.classList.add('native-pdf-scroll');
-      pagesWrap.replaceChildren(frame);
-      frame.addEventListener('load',()=>{if(isCurrent()&&status)status.classList.add('hidden');},{once:true});
-      setTimeout(()=>{if(isCurrent()&&status)status.classList.add('hidden');},450);
-      if(oldUrl&&oldUrl!==url)setTimeout(()=>{try{URL.revokeObjectURL(oldUrl);}catch{}},2200);
-      return;
-    }
-
-    // Use the local lazy page renderer so live refreshes can preserve the exact page and scroll position.
     pagesWrap.classList.remove('native-pdf-host');
     scroller.classList.remove('native-pdf-scroll');
     if(!window.pdfjsLib)throw new Error('PDF preview renderer did not load.');
@@ -2532,8 +2475,6 @@ function scopeItemsFromRichHtml(html="",fallbackText="") {
     if(tag==="i"||tag==="em")next.italic=true;
     if(tag==="u")next.underline=true;
     if(tag==="div"||tag==="p"){
-      // Every editor block is one intentional manual line. Empty blocks remain
-      // available as paragraph spacing rather than being discarded.
       if(lines[lines.length-1].length)lineBreak();
       [...node.childNodes].forEach(ch=>walk(ch,next));
       if(lines[lines.length-1].length)lineBreak();
@@ -2542,7 +2483,6 @@ function scopeItemsFromRichHtml(html="",fallbackText="") {
     [...node.childNodes].forEach(ch=>walk(ch,next));
   };
   [...root.childNodes].forEach(ch=>walk(ch));
-
   const mergeRuns=runs=>{
     const out=[];
     runs.forEach(run=>{
@@ -2562,17 +2502,14 @@ function scopeItemsFromRichHtml(html="",fallbackText="") {
     }).filter(r=>r.text);
   };
   const visualIndentCount=prefix=>[...String(prefix||"")].reduce((n,ch)=>n+(ch==="\t"?4:1),0);
-
   lines=lines.map(mergeRuns);
   while(lines.length&&!lines[0].some(r=>r.text.trim()))lines.shift();
   while(lines.length&&!lines[lines.length-1].some(r=>r.text.trim()))lines.pop();
   const contentLineCount=lines.filter(runs=>runs.some(r=>r.text.trim())).length;
   const multipleManualLines=contentLineCount>1;
-
   return lines.map(runs=>{
     const raw=runs.map(r=>r.text).join("");
     if(!raw.trim())return {blank:true,text:"",runs:[],bullet:false,indentIn:0};
-
     const leadingMatch=raw.match(/^[ \t\u00a0]+/);
     const leadingChars=leadingMatch?leadingMatch[0].length:0;
     const indentSpaces=leadingMatch?visualIndentCount(leadingMatch[0]):0;
@@ -2583,9 +2520,6 @@ function scopeItemsFromRichHtml(html="",fallbackText="") {
     if(explicit)cleanRuns=stripPrefix(cleanRuns,bulletMatch[0].length);
     if(cleanRuns.length)cleanRuns[cleanRuns.length-1].text=cleanRuns[cleanRuns.length-1].text.replace(/\s+$/g,"");
     cleanRuns=cleanRuns.filter(r=>r.text);
-
-    // Two or more leading spaces (or a tab) are treated as intentional layout.
-    // Indented lines remain indented and are not converted into normal bullets.
     const intentionalIndent=indentSpaces>=2;
     const indentIn=intentionalIndent?Math.min(.60,Math.max(.14,indentSpaces*.05)):0;
     const bullet=explicit||(!intentionalIndent&&multipleManualLines);
@@ -2680,19 +2614,12 @@ async function buildKickoffPdf(options={}){
     }
     return y;
   }
-  // Project information pages based on the existing kickoff template's information architecture.
   let y=newPage('PROJECT KICKOFF',`${p.projectName||'Untitled Project'}${p.projectNumber?`  •  ${p.projectNumber}`:''}`);
   y=drawSection(y,'Project Overview',info.projectOverview||'');
   y=drawTwoColumnRows(y,[[['Owner / Client',info.owner||p.clientName],['Contract Type',info.contractType]],[['Tax Status',info.taxStatus],['Contract Value',info.contractValue]],[['Target GP',info.targetGP],['Preliminary Schedule',`${info.startDate?fmtDate(info.startDate):'—'} – ${info.endDate?fmtDate(info.endDate):'—'}`]]]);
   y=drawSection(y,'Owner Contacts',info.ownerContacts||'');
   y=drawSection(y,'Project Location',info.projectLocation||p.projectAddress||'');
   y=drawSection(y,'Design Team',info.designTeam||'');
-
-  // Optional project-location screenshot pages. Wide and Close-Up views share
-  // one page in matching standard slots; Street View gets the following page.
-  // Images are scaled proportionally and are never stretched. The frame is drawn
-  // around the actual image rather than a tall fixed gray box, which keeps the
-  // page compact and avoids unnecessary empty space above or below screenshots.
   const maps=info.maps||{};
   if(maps.enabled&&(maps.wide||maps.close||maps.street)){
     const loadMapDims=mapData=>new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve({w:img.naturalWidth||1,h:img.naturalHeight||1});img.onerror=reject;img.src=mapData;});
@@ -2711,9 +2638,7 @@ async function buildKickoffPdf(options={}){
           const fmt=mapData.startsWith('data:image/jpeg')?'JPEG':mapData.startsWith('data:image/webp')?'WEBP':'PNG';
           doc.addImage(mapData,fmt,drawX,drawY,drawW,drawH,undefined,'FAST');
           return drawY+drawH;
-        }catch(err){
-          console.warn('Kickoff map screenshot could not be placed in PDF.',err);
-        }
+        }catch(err){console.warn('Kickoff map screenshot could not be placed in PDF.',err);}
       }
       const placeholderH=Math.min(maxH,1.15);
       doc.setDrawColor(...border);doc.setFillColor(...light);doc.roundedRect(contentX,imageTop,contentW,placeholderH,.06,.06,'FD');
@@ -2722,7 +2647,6 @@ async function buildKickoffPdf(options={}){
       doc.text(doc.splitTextToSize(msg,contentW-.34),contentX+.17,imageTop+.36,{lineHeightFactor:1.2});
       return imageTop+placeholderH;
     }
-
     const paired=[];
     if(maps.wide)paired.push({label:'WIDE VIEW',snapshot:String(maps.wideSnapshot||'')});
     if(maps.close)paired.push({label:'CLOSE-UP VIEW',snapshot:String(maps.closeSnapshot||'')});
@@ -2738,7 +2662,6 @@ async function buildKickoffPdf(options={}){
       await drawMapView({label:'STREET VIEW',snapshot:String(maps.streetSnapshot||'')},streetY,4.45);
     }
   }
-
   function newKickoffDivisionPage(){
     if(firstPage)firstPage=false;else doc.addPage('letter','portrait');
     background();
@@ -2801,8 +2724,6 @@ async function buildKickoffPdf(options={}){
     if(token.startsWith('division:')){const d=kickoffDivisionsById.get(token.slice(9));if(d)await drawDivisionNotes(d);}
     else if(token.startsWith('quote:')){const q=kickoffQuotesById.get(token.slice(6));if(q)await addQuotePages(q);}
   }
-
-  // Add the familiar page numbering after the final page count is known.
   const total=doc.getNumberOfPages();
   for(let i=1;i<=total;i++){doc.setPage(i);doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...text);doc.text(`PAGE ${i} OF ${total}`,pageW-right,10.62,{align:'right'});doc.setDrawColor(...orange);doc.setLineWidth(.022);doc.line(pageW-right-.50,10.73,pageW-right,10.73);}
   if(previewOnly)return doc;
@@ -2855,13 +2776,10 @@ async function exportPdf(options={}) {
   const p=previewOnly?collectEditorProject():getCurrentProject();
   if(!p||!isCurrent())return;
   if(!window.jspdf)return toast("PDF library did not load. Check your internet connection and try again.");
-
   if(!previewOnly)setSaveStatus("Building PDF…");
   const {jsPDF}=window.jspdf;
   const pageW=8.5,pageH=11;
   const proposalType=["civil","concrete"].includes(p.proposalType)?p.proposalType:"standard";
-  // Marketing's standard cover master is 8.5 x 11.333 in; Civil and Concrete
-  // division covers are US Letter. Each is rendered at its exact supplied size.
   const coverPageH=proposalType==="standard"?11.333333:11;
   const doc=new jsPDF({unit:"in",format:[pageW,coverPageH],orientation:"portrait",compress:!fastPreview});
   const orange=hexToRgb(p.company.orange||DEFAULT_COMPANY.orange);
@@ -2876,8 +2794,6 @@ async function exportPdf(options={}) {
       ? ['assets/marketing/concrete/cover-revision.png','assets/marketing/concrete/cover-original.png']
       : ['assets/marketing/marketing-cover-revision.png','assets/marketing/marketing-cover-original.png'];
   try {
-    // Only decode the cover artwork this proposal type actually uses. Previously
-    // every preview decoded all six cover images on each machine's first render.
     [coverRevisionData,coverOriginalData,interiorData]=await Promise.all([
       imageToDataUrl(coverPaths[0]),
       imageToDataUrl(coverPaths[1]),
@@ -2885,31 +2801,19 @@ async function exportPdf(options={}) {
     ]);
   } catch {}
   if(!await uiYield())return null;
-
   const rgb=(arr)=>arr;
   const fmtProjectNo=()=>String(p.projectNumber||"PROJECT").toUpperCase();
   const rev=(p.version||0)>0?versionLabel(p):"";
-
   function setFill(c){doc.setFillColor(...c);}
   function setText(c){doc.setTextColor(...c);}
   function coverMask(x,y,w,h,color=[255,255,255]){doc.setFillColor(...color);doc.rect(x,y,w,h,'F');}
-
   function drawCover(){
-    // Marketing-approved cover artwork is used as an immutable background master.
-    // The app only overlays live values in the designated form locations.
-    // Original proposals use the master with the Revision icon/label suppressed.
     const coverData=rev?coverRevisionData:coverOriginalData;
     if(coverData) doc.addImage(coverData,'PNG',0,0,pageW,coverPageH,undefined,'FAST');
     else { setFill([255,255,255]);doc.rect(0,0,pageW,pageH,'F'); }
-
     const coverOffice={...getOfficeContact(p.estimatingOffice||"fredonia"),...(p.officeContact||{})};
     const livePhone=coverOffice.phone||"";
     const website=p.company.website||DEFAULT_COMPANY.website||"";
-
-    // Exact fill locations from each Marketing master. The Standard cover is
-    // 8.5 x 11.333 in, while Civil and Concrete are true 8.5 x 11 in covers.
-    // Civil/Concrete therefore use their own field-row coordinates rather than
-    // a proportional scale of the Standard cover.
     const standardFields={
       project:{x1:1.10,x2:3.42,cy:5.88},
       date:{x1:4.10,x2:5.82,cy:5.88},
@@ -2917,21 +2821,22 @@ async function exportPdf(options={}) {
       prepared:{x1:4.10,x2:5.82,cy:7.03},
       attn:{x1:1.10,x2:3.42,cy:8.17},
       revision:{x1:4.10,x2:5.82,cy:8.17},
-      // Align the address value with the same left edge used by the other left-column fields.
       address:{x1:1.10,x2:3.58,cy:9.18},
       phone:{x1:1.10,x2:3.42,cy:10.12},
       website:{x1:4.10,x2:5.82,cy:10.12}
     };
+    // Civil and Concrete keep their own vertical row positions, but now use the
+    // same left/right column text flow as the Standard proposal cover.
     const divisionFields={
-      project:{x1:.96,x2:3.35,cy:5.48},
-      date:{x1:3.92,x2:5.72,cy:5.48},
-      client:{x1:.96,x2:3.35,cy:6.67},
-      prepared:{x1:3.92,x2:5.72,cy:6.67},
-      attn:{x1:.96,x2:3.35,cy:7.95},
-      revision:{x1:3.92,x2:5.72,cy:7.95},
-      address:{x1:.96,x2:3.55,cy:8.99},
-      phone:{x1:.96,x2:3.35,cy:9.79},
-      website:{x1:3.92,x2:5.72,cy:9.79}
+      project:{x1:1.10,x2:3.42,cy:5.48},
+      date:{x1:4.10,x2:5.82,cy:5.48},
+      client:{x1:1.10,x2:3.42,cy:6.67},
+      prepared:{x1:4.10,x2:5.82,cy:6.67},
+      attn:{x1:1.10,x2:3.42,cy:7.95},
+      revision:{x1:4.10,x2:5.82,cy:7.95},
+      address:{x1:1.10,x2:3.58,cy:8.99},
+      phone:{x1:1.10,x2:3.42,cy:9.79},
+      website:{x1:4.10,x2:5.82,cy:9.79}
     };
     const fields=proposalType==='standard'?standardFields:divisionFields;
     const drawCentered=(value,box,{bold=true,fontSize=12.0,maxLines=2,align='center'}={})=>{
@@ -2946,7 +2851,6 @@ async function exportPdf(options={}) {
       doc.text(lines,x,startY,{align,lineHeightFactor:leading/(Math.max(minPdfFont,fontSize)/72)});
     };
     const coverAlign='left';
-
     drawCentered(p.projectName||'Untitled Project',fields.project,{fontSize:12.5,maxLines:2,align:coverAlign});
     drawCentered(fmtDate(p.proposalDate),fields.date,{fontSize:12.0,maxLines:1,align:coverAlign});
     drawCentered(p.clientName||'—',fields.client,{fontSize:12.0,maxLines:2,align:coverAlign});
@@ -2957,17 +2861,12 @@ async function exportPdf(options={}) {
     drawCentered(livePhone,fields.phone,{bold:false,fontSize:12.0,maxLines:1,align:coverAlign});
     drawCentered(website,fields.website,{bold:false,fontSize:12.0,maxLines:1,align:coverAlign});
   }
-
   function drawBackground(){
-    // Pages 2+ use Marketing's blank proposal sheet exactly as supplied.
     if(interiorData)doc.addImage(interiorData,'PNG',0,0,pageW,pageH,undefined,'FAST');
     else {setFill([255,255,255]);doc.rect(0,0,pageW,pageH,'F');}
   }
-
   function drawInteriorHeader(pageNum,totalPages){
     drawBackground();
-    // Use the Project Info Document Title as the compact PDF identifier.
-    // Keep it on one line and shrink only when a longer title needs the space.
     const headerTitle=String(p.documentTitle||'Proposal').trim()||'Proposal';
     doc.setFont('helvetica','bold');
     let headerTitleSize=12.5;doc.setFontSize(headerTitleSize);
@@ -2976,13 +2875,10 @@ async function exportPdf(options={}) {
     doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);
     doc.text(`${fmtProjectNo()}${rev?`  •  ${rev}`:''}`,pageW-right,.56,{align:'right'});
     doc.setDrawColor(125,129,132);doc.setLineWidth(.007);doc.line(contentX,.82,pageW-right,.82);
-
-    // Preserve the original Scope Builder page-numbering scheme.
     doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);
     doc.text(`PAGE ${pageNum} OF ${totalPages}`,pageW-right,10.66,{align:'right'});
     doc.setDrawColor(...orange);doc.setLineWidth(.022);doc.line(pageW-right-.45,10.73,pageW-right,10.73);
   }
-
   function itemsFromText(value){
     const source=String(value||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
     const multipleManualLines=source.length>1;
@@ -3000,9 +2896,7 @@ async function exportPdf(options={}) {
   function measureRunText(value,run,fontSize){doc.setFont('helvetica',runFontStyle(run));doc.setFontSize(fontSize);return doc.getTextWidth(String(value||''));}
   function wrapStyledRuns(runs,fontSize=bodyFont,maxW=contentW-.90){
     const tokens=[];
-    (runs||[]).forEach(run=>{
-      String(run.text||'').split(/(\s+)/).filter(Boolean).forEach(text=>tokens.push({...run,text}));
-    });
+    (runs||[]).forEach(run=>{String(run.text||'').split(/(\s+)/).filter(Boolean).forEach(text=>tokens.push({...run,text}));});
     const lines=[];let line=[],width=0;
     const pushLine=()=>{if(line.length){while(line.length&&/^\s+$/.test(line[line.length-1].text))line.pop();if(line.length)lines.push(line);line=[];width=0;}};
     const addToken=token=>{
@@ -3037,19 +2931,14 @@ async function exportPdf(options={}) {
         doc.setFont('helvetica',runFontStyle(run));doc.setFontSize(fontSize);setText(text);
         doc.text(run.text,cx,baseline);
         const w=doc.getTextWidth(run.text);
-        if(run.underline&&run.text.trim()){
-          doc.setDrawColor(...text);doc.setLineWidth(.008);doc.line(cx,baseline+.025,cx+w,baseline+.025);
-        }
+        if(run.underline&&run.text.trim()){doc.setDrawColor(...text);doc.setLineWidth(.008);doc.line(cx,baseline+.025,cx+w,baseline+.025);}
         cx+=w;
       });
     });
   }
   function cardHeight(items,{fontSize=bodyFont,leading=bodyLeading,division=true,titleGap=0}={}){
     let bodyH=0;
-    items.forEach(i=>{
-      if(itemBlank(i)){bodyH+=leading*.72;return;}
-      bodyH+=Math.max(1,wrapItem(i,fontSize).length)*leading+.055;
-    });
+    items.forEach(i=>{if(itemBlank(i)){bodyH+=leading*.72;return;}bodyH+=Math.max(1,wrapItem(i,fontSize).length)*leading+.055;});
     const heading=.43+titleGap,bottom=.20;
     return Math.max(.76+titleGap,heading+bodyH+bottom);
   }
@@ -3086,7 +2975,6 @@ async function exportPdf(options={}) {
     return {disclaimer,lines,h};
   }
   function termsHeight(){return termsMetrics()?.h||0;}
-
   function buildLayout(){
     const pages=[];let current=[],y=topY;
     const active=CSI_DIVISIONS.map(([n])=>p.divisions[n]).filter(d=>d?.enabled&&d.text.trim());
@@ -3099,7 +2987,6 @@ async function exportPdf(options={}) {
         const [fit,rest]=fitItems(remaining,available,opts);
         if(fit.length){current.push({...entryBase,items:fit,cont});pages.push(current);current=[];y=topY;remaining=rest;while(remaining[0]?.blank)remaining.shift();cont=true;continue;}
         if(current.length){pages.push(current);current=[];y=topY;continue;}
-        // One unusually long bullet: give it the full page rather than dropping content.
         current.push({...entryBase,items:[remaining[0]],cont});pages.push(current);current=[];y=topY;remaining=remaining.slice(1);cont=true;
       }
     };
@@ -3114,13 +3001,10 @@ async function exportPdf(options={}) {
       {title:'EXCLUSIONS',value:p.exclusions,rich:p.exclusionsRichText,on:p.sectionEnabled?.exclusions}
     ].filter(item=>item.on&&String(item.value||'').trim());
     extras.forEach(item=>addSplittable({type:'simple',title:item.title},scopeItemsFromRichHtml(item.rich,item.value),{fontSize:minPdfFont,leading:bodyLeading}));
-    // Each proposal alternate is intentionally its own independent card, matching
-    // the division-card workflow instead of combining all alternates together.
     (p.alternateScopes||[]).filter(a=>a.enabled!==false&&String(a.text||'').trim()).forEach((a,index)=>{
       const title=String(a.title||`Alternate ${String(index+1).padStart(2,'0')}`).trim().toUpperCase();
       addSplittable({type:'alternate',title},scopeItemsFromRichHtml(a.richText,a.text),{fontSize:minPdfFont,leading:bodyLeading,titleGap:.12});
     });
-
     if(p.sectionEnabled?.clientSelections&&p.priceItems.some(i=>(i.name||'').trim()||(i.price||'').trim())){
       const h=selectionHeight(p.priceItems.filter(i=>(i.name||'').trim()||(i.price||'').trim()));
       if(pageH-bottomLimit-y<h){if(current.length)pages.push(current);current=[];y=topY;}
@@ -3135,7 +3019,6 @@ async function exportPdf(options={}) {
     pages.push([{type:'closing'}]);
     return pages;
   }
-
   function drawCardBase(y,h){
     setFill(shadow);doc.roundedRect(contentX+.025,y+.025,contentW,h,.10,.10,'F');
     setFill([255,255,255]);doc.roundedRect(contentX,y,contentW,h,.10,.10,'F');
@@ -3181,7 +3064,7 @@ async function exportPdf(options={}) {
     doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(muted);
     doc.text(metrics.noteLines,contentX+.42,y+.56,{lineHeightFactor:metrics.noteLeading/minPdfFont*72});
     let cy=y+metrics.itemsY;
-    items.forEach((item,index)=>{
+    items.forEach(item=>{
       const isBase=Boolean(item.isBaseBid),x=isBase?contentX+.42:contentX+.67;
       if(!isBase){doc.setDrawColor(70,73,76);doc.setLineWidth(.01);doc.rect(contentX+.43,cy-.12,.14,.14);}
       const itemFontSize=isBase?14:minPdfFont;
@@ -3192,20 +3075,15 @@ async function exportPdf(options={}) {
       doc.text(nameLines,x,cy,{lineHeightFactor:1.22});
       doc.text(currencyText(item.price),pageW-right-.16,cy,{align:'right'});
       cy+=Math.max(isBase?.36:.30,nameLines.length*itemLeading+.09);
-      if(isBase&&metrics.hasAlternates){
-        doc.setDrawColor(185,189,192);doc.setLineWidth(.012);doc.line(contentX+.42,cy-.16,pageW-right-.12,cy-.16);cy+=.10;
-      }
+      if(isBase&&metrics.hasAlternates){doc.setDrawColor(185,189,192);doc.setLineWidth(.012);doc.line(contentX+.42,cy-.16,pageW-right-.12,cy-.16);cy+=.10;}
     });
     return y+h+cardGap;
   }
   function drawTerms(y){
     const metrics=termsMetrics();if(!metrics)return y;
-    const {lines,h}=metrics;
-    drawCardBase(y,h);
-    doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText(text);
-    doc.text('TERMS AND CONDITIONS',contentX+.42,y+.28,{maxWidth:contentW-.60});
-    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);
-    doc.text(lines,contentX+.42,y+.55,{lineHeightFactor:bodyLeading/minPdfFont*72});
+    const {lines,h}=metrics;drawCardBase(y,h);
+    doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText(text);doc.text('TERMS AND CONDITIONS',contentX+.42,y+.28,{maxWidth:contentW-.60});
+    doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);doc.text(lines,contentX+.42,y+.55,{lineHeightFactor:bodyLeading/minPdfFont*72});
     return y+h+cardGap;
   }
   function drawClosing(y){
@@ -3221,7 +3099,6 @@ async function exportPdf(options={}) {
     const fields=[[contentX,2.10,'CLIENT / AUTHORIZED REPRESENTATIVE'],[contentX+2.35,2.25,'SIGNATURE'],[contentX+4.90,1.50,'DATE']];
     fields.forEach(([x,w,label])=>{doc.line(x,lineY,x+w,lineY);doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(muted);doc.text(label,x,lineY+.20,{maxWidth:w});});
   }
-
   function basicSummaryRows(){
     const rows=[];
     activeSummaryDivisions(p).forEach(d=>{
@@ -3239,10 +3116,7 @@ async function exportPdf(options={}) {
     const rows=[];let directTotal=0;
     const custom=Array.isArray(p.summary?.customDivisions)?p.summary.customDivisions:[];
     const addCustomRows=(afterDivision)=>{
-      custom.filter(r=>String(r.afterDivision||"__start__")===String(afterDivision)).forEach(r=>{
-        const amt=moneyNumber(r.amount);directTotal+=amt;
-        rows.push({kind:'custom-division',label:r.label||'',amount:r.amount||''});
-      });
+      custom.filter(r=>String(r.afterDivision||"__start__")===String(afterDivision)).forEach(r=>{const amt=moneyNumber(r.amount);directTotal+=amt;rows.push({kind:'custom-division',label:r.label||'',amount:r.amount||''});});
     };
     addCustomRows('__start__');
     const active=activeSummaryDivisions(p);
@@ -3260,11 +3134,8 @@ async function exportPdf(options={}) {
       addCustomRows(d.number);
     });
     const activeNums=new Set(active.map(d=>String(d.number)));
-    custom.filter(r=>r.afterDivision!=="__start__"&&!activeNums.has(String(r.afterDivision))).forEach(r=>{
-      const amt=moneyNumber(r.amount);directTotal+=amt;rows.push({kind:'custom-division',label:r.label||'',amount:r.amount||''});
-    });
+    custom.filter(r=>r.afterDivision!=="__start__"&&!activeNums.has(String(r.afterDivision))).forEach(r=>{const amt=moneyNumber(r.amount);directTotal+=amt;rows.push({kind:'custom-division',label:r.label||'',amount:r.amount||''});});
     rows.push({kind:'direct-total',label:'DIRECT COST TOTAL',amount:formatMoneyNumber(directTotal)});
-
     let sectionTotal=0,additionalTotal=0;
     (p.summary?.extraRows||[]).forEach(r=>{
       if(r.type==='subtotal'){
@@ -3317,9 +3188,7 @@ async function exportPdf(options={}) {
   function drawSummaryTableHeader(y){
     setFill(orange);doc.rect(contentX,y,contentW,.30,'F');
     doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText([255,255,255]);
-    doc.text('DESCRIPTION',contentX+.08,y+.21);
-    doc.text('TOTAL',pageW-right-.10,y+.21,{align:'right'});
-    return y+.30;
+    doc.text('DESCRIPTION',contentX+.08,y+.21);doc.text('TOTAL',pageW-right-.10,y+.21,{align:'right'});return y+.30;
   }
   function drawSummaryDataRow(row,y){
     const h=summaryRowHeight(row);
@@ -3342,14 +3211,9 @@ async function exportPdf(options={}) {
     drawInteriorHeader(pageNum,totalPages);drawSummaryTitle('basic',pageData.cont);let y=1.95;
     const note=(p.summary?.basicNote||'').trim();
     if(note&&!pageData.cont){doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);const lines=doc.splitTextToSize(note,contentW);doc.text(lines,contentX,y,{lineHeightFactor:1.25});y+=lines.length*.21+.16;}
-    y=drawSummaryTableHeader(y);
-    (pageData.rows||[]).forEach(row=>{y=drawSummaryDataRow(row,y);});
+    y=drawSummaryTableHeader(y);(pageData.rows||[]).forEach(row=>{y=drawSummaryDataRow(row,y);});
   }
-  function drawAdvancedSummaryPage(pageData,pageNum,totalPages){
-    drawInteriorHeader(pageNum,totalPages);drawSummaryTitle('advanced',pageData.cont);let y=1.95;y=drawSummaryTableHeader(y);
-    (pageData.rows||[]).forEach(row=>{y=drawSummaryDataRow(row,y);});
-  }
-
+  function drawAdvancedSummaryPage(pageData,pageNum,totalPages){drawInteriorHeader(pageNum,totalPages);drawSummaryTitle('advanced',pageData.cont);let y=1.95;y=drawSummaryTableHeader(y);(pageData.rows||[]).forEach(row=>{y=drawSummaryDataRow(row,y);});}
   const layout=buildLayout();
   if(!await uiYield())return null;
   const summaryPages=buildSummaryPages();
@@ -3368,7 +3232,6 @@ async function exportPdf(options={}) {
     if(pageData.mode==='advanced')drawAdvancedSummaryPage(pageData,pageNum,totalPages);else drawBasicSummaryPage(pageData,pageNum,totalPages);
     if(!await uiYield())return null;
   }
-
   if(previewOnly)return doc;
   const proposalNumber=cleanPdfFilenameText(p.projectNumber||'');
   doc.save(`Proposal${proposalNumber?` ${proposalNumber}`:''}.pdf`);
@@ -3382,7 +3245,6 @@ function handleVersionDeleteRestore(){
   softDeleteVersion(p.id,owner);
 }
 
-// Admin disclaimer library
 function openAdminDialog(){if(!isAdmin())return toast("Admin access required.");if(state.currentProjectId)saveEditorProject();renderAdminDisclaimers();renderAdminUsers();populateOfficeSettings();$("#adminInvitePanel")?.classList.toggle("hidden",!authBackendConfigured);$("#adminCreateUserPanel")?.classList.toggle("hidden",!authBackendConfigured);if($("#adminUsersNote"))$("#adminUsersNote").textContent=authBackendConfigured?"Admins can create active Employee accounts with a temporary password or use email invitations. Temporary-password users must choose a new password at first sign-in. Admins can promote another user to Admin, send password resets, or remove users while preserving company project history.":"Secure Supabase login is unavailable in this browser session.";$("#adminDialog").showModal();}
 function closeAdminDialog(){$("#adminDialog").close();}
 function activateAdminTab(name){$$('.admin-tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===name));$$('.admin-tab-panel').forEach(p=>p.classList.remove('active'));$(`#admin${name[0].toUpperCase()+name.slice(1)}Tab`).classList.add('active');}
@@ -3425,17 +3287,11 @@ async function createRemoteUserWithTempPassword(){
   try{
     await supabaseFunctionFetch('scope-admin-create-user',{method:'POST',body:JSON.stringify({email,password})});
     $("#adminCreateEmail").value="";$("#adminCreatePassword").value="";
-    await renderAdminUsers();
-    toast(`Employee account created for ${email}.`);
+    await renderAdminUsers();toast(`Employee account created for ${email}.`);
   }catch(err){console.error(err);toast(err.message||"Could not create employee account.");}
   finally{if(btn)btn.disabled=false;}
 }
-function generateAdminTemporaryPassword(){
-  const input=$("#adminCreatePassword");if(!input)return;
-  input.value=generateTemporaryPassword();input.focus();input.select();
-  toast("Temporary password generated. Copy it before creating the user.");
-}
-
+function generateAdminTemporaryPassword(){const input=$("#adminCreatePassword");if(!input)return;input.value=generateTemporaryPassword();input.focus();input.select();toast("Temporary password generated. Copy it before creating the user.");}
 async function inviteRemoteUser(){
   if(!authBackendConfigured)return toast("Secure backend is not configured.");
   const input=$("#adminInviteEmail"),email=input.value.trim().toLowerCase();if(!email)return toast("Enter an employee email.");
@@ -3452,45 +3308,26 @@ async function adminRemoveRemoteUser(userId,email){
   try{
     const result=await supabaseFunctionFetch('scope-admin-remove-user',{method:'POST',body:JSON.stringify({userId})});
     const data=readDataStore(),targetKey=ownerKey(email);delete data.users[targetKey];delete data.projects[targetKey];writeDataStore(data);
-    await loadCloudWorkspace();
-    await renderAdminUsers();refreshDashboardNav();renderProjects();
-    toast(`${email} removed. Their projects were transferred to ${result.projectsTransferredTo||state.user.username}.`);
+    await loadCloudWorkspace();await renderAdminUsers();refreshDashboardNav();renderProjects();toast(`${email} removed. Their projects were transferred to ${result.projectsTransferredTo||state.user.username}.`);
   }catch(err){console.error(err);toast(err.message||'Could not remove that user.');}
 }
-async function adminSendPasswordReset(email){
-  if(!authClient)return;try{await authClient.auth.resetPasswordForEmail(email,{redirectTo:authRedirectUrl('recovery')});}catch(err){console.error(err);}toast(`If the account is active, a reset link was sent to ${email}.`);
-}
+async function adminSendPasswordReset(email){if(!authClient)return;try{await authClient.auth.resetPasswordForEmail(email,{redirectTo:authRedirectUrl('recovery')});}catch(err){console.error(err);}toast(`If the account is active, a reset link was sent to ${email}.`);}
 function generateTemporaryPassword(){const chars='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';const bytes=new Uint32Array(16);crypto.getRandomValues(bytes);return [...bytes].map(n=>chars[n%chars.length]).join('');}
 async function adminSetTemporaryPassword(userId,email){
-  const generated=generateTemporaryPassword();const value=prompt(`Temporary password for ${email}:
-
-Edit it if desired, then copy it before clicking OK. The user will be required to change it at next sign-in.`,generated);if(value===null)return;if(value.length<12)return toast("Temporary password must be at least 12 characters.");
+  const generated=generateTemporaryPassword();const value=prompt(`Temporary password for ${email}:\n\nEdit it if desired, then copy it before clicking OK. The user will be required to change it at next sign-in.`,generated);if(value===null)return;if(value.length<12)return toast("Temporary password must be at least 12 characters.");
   try{await supabaseFunctionFetch('scope-admin-temp-password',{method:'POST',body:JSON.stringify({userId,password:value})});toast("Temporary password set. Make sure you copied it before closing the prompt.");await renderAdminUsers();}catch(err){console.error(err);toast(err.message||"Could not set temporary password.");}
 }
 
-// Portable data backup / restore for moving between prototype builds
 function buildBackupPayload() {
   if (state.currentProjectId) saveEditorProject();
   const data = readDataStore();
   let backupData;
-  if (isAdmin()) {
-    backupData = JSON.parse(JSON.stringify(data));
-  } else if (state.user) {
+  if (isAdmin()) backupData = JSON.parse(JSON.stringify(data));
+  else if (state.user) {
     const key = state.user.username.toLowerCase();
-    backupData = blankDataStore();
-    backupData.users = { [key]: data.users[key] };
-    backupData.projects = { [key]: data.projects[key] || [] };
-    backupData.disclaimers = data.disclaimers;
-  } else {
-    backupData = JSON.parse(JSON.stringify(data));
-  }
-  return {
-    type: "Koehn Scope Builder Backup",
-    backupVersion: BACKUP_VERSION,
-    exportedAt: nowIso(),
-    scope: isAdmin() ? "full-workspace" : "user-workspace",
-    data: backupData
-  };
+    backupData = blankDataStore();backupData.users = { [key]: data.users[key] };backupData.projects = { [key]: data.projects[key] || [] };backupData.disclaimers = data.disclaimers;
+  } else backupData = JSON.parse(JSON.stringify(data));
+  return {type: "Koehn Scope Builder Backup",backupVersion: BACKUP_VERSION,exportedAt: nowIso(),scope: isAdmin() ? "full-workspace" : "user-workspace",data: backupData};
 }
 function downloadDataBackup() {
   const payload = buildBackupPayload();
@@ -3498,21 +3335,10 @@ function downloadDataBackup() {
   const suffix = isAdmin() ? "FULL" : (state.user?.username || "USER").replace(/[^a-z0-9_-]+/gi,"_");
   const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `Koehn_Scope_Builder_Backup_${suffix}_${stamp}.ksb`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
-  $("#userMenuPopover")?.classList.add("hidden");
-  toast("Scope Builder backup downloaded.");
+  const a = document.createElement("a");a.href = url;a.download = `Koehn_Scope_Builder_Backup_${suffix}_${stamp}.ksb`;document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);$("#userMenuPopover")?.classList.add("hidden");toast("Scope Builder backup downloaded.");
 }
-function triggerRestoreBackup() {
-  if (state.currentProjectId) saveEditorProject();
-  $("#userMenuPopover")?.classList.add("hidden");
-  const input=$("#backupFileInput");
-  input.value="";
-  input.click();
-}
+function triggerRestoreBackup() {if (state.currentProjectId) saveEditorProject();$("#userMenuPopover")?.classList.add("hidden");const input=$("#backupFileInput");input.value="";input.click();}
 function mergeProjectArrays(existing=[], incoming=[]) {
   const byId = new Map();
   [...existing, ...incoming].forEach(p=>{
@@ -3532,7 +3358,6 @@ function mergeDisclaimers(existing=[], incoming=[]) {
     const idx=result.findIndex(x=>x.id===d.id);
     if (idx<0) { result.push({...d}); return; }
     if (result[idx].name===d.name && result[idx].text===d.text) return;
-    // Preserve both when the same ID has different wording so a restore never silently destroys an approved disclaimer.
     result.push({...d,id:`${d.id}-restored-${Date.now()}-${Math.random().toString(16).slice(2,6)}`,name:`${d.name} (Restored)`});
   });
   return result.length ? result : DEFAULT_DISCLAIMERS.map(x=>({...x}));
@@ -3551,14 +3376,7 @@ async function restoreDataBackup(file) {
     const freshWorkspace=currentUserCount===0 && currentProjectCount===0;
     let merged;
     if (freshWorkspace) {
-      merged={
-        schemaVersion:1, updatedAt:nowIso(),
-        users:{...(incoming.users||{})},
-        projects:{...(incoming.projects||{})},
-        disclaimers:Array.isArray(incoming.disclaimers)&&incoming.disclaimers.length?incoming.disclaimers:DEFAULT_DISCLAIMERS.map(x=>({...x})),
-        officeSettings:normalizeOfficeSettings(incoming.officeSettings),
-        mapsSettings:{apiKey:String(incoming.mapsSettings?.apiKey||"")}
-      };
+      merged={schemaVersion:1, updatedAt:nowIso(),users:{...(incoming.users||{})},projects:{...(incoming.projects||{})},disclaimers:Array.isArray(incoming.disclaimers)&&incoming.disclaimers.length?incoming.disclaimers:DEFAULT_DISCLAIMERS.map(x=>({...x})),officeSettings:normalizeOfficeSettings(incoming.officeSettings),mapsSettings:{apiKey:String(incoming.mapsSettings?.apiKey||"")}};
     } else {
       merged=JSON.parse(JSON.stringify(current));
       Object.entries(incoming.users||{}).forEach(([key,u])=>{ if (!merged.users[key]) merged.users[key]=u; });
@@ -3566,45 +3384,27 @@ async function restoreDataBackup(file) {
       merged.disclaimers=mergeDisclaimers(merged.disclaimers||[],incoming.disclaimers||[]);
       if(incoming.officeSettings){
         const currentOffices=normalizeOfficeSettings(merged.officeSettings), incomingOffices=normalizeOfficeSettings(incoming.officeSettings);
-        Object.keys(currentOffices).forEach(k=>{
-          ["address","phone"].forEach(field=>{ if((incomingOffices[k]?.[field]||"").trim()) currentOffices[k][field]=incomingOffices[k][field]; });
-        });
+        Object.keys(currentOffices).forEach(k=>{["address","phone"].forEach(field=>{ if((incomingOffices[k]?.[field]||"").trim()) currentOffices[k][field]=incomingOffices[k][field]; });});
         merged.officeSettings=currentOffices;
       }
       if((incoming.mapsSettings?.apiKey||"").trim())merged.mapsSettings={apiKey:String(incoming.mapsSettings.apiKey)};
     }
     const users=Object.values(merged.users||{}).filter(Boolean);
-    if (users.length && !users.some(u=>u.role==="admin")) {
-      users[0].role="admin";
-      merged.users[users[0].username.toLowerCase()]=users[0];
-    }
+    if (users.length && !users.some(u=>u.role==="admin")) {users[0].role="admin";merged.users[users[0].username.toLowerCase()]=users[0];}
     writeDataStore(merged);
     const importedCount=Object.values(incoming.projects||{}).reduce((n,arr)=>n+(Array.isArray(arr)?arr.length:0),0);
     if (state.user) {
-      const refreshed=getUserRecord(state.user.username);
-      if (refreshed) state.user=normalizeUser(refreshed);
-      refreshRoleUi();
-      enterDashboard();
+      const refreshed=getUserRecord(state.user.username);if (refreshed) state.user=normalizeUser(refreshed);refreshRoleUi();enterDashboard();
     } else {
-      const firstUser=Object.values(incoming.users||{})[0];
-      if (firstUser?.username) $("#authUsername").value=firstUser.username;
-      showAuth();
+      const firstUser=Object.values(incoming.users||{})[0];if (firstUser?.username) $("#authUsername").value=firstUser.username;showAuth();
     }
     toast(`Backup restored · ${importedCount} project${importedCount===1?"":"s"} imported.`);
   } catch (err) {
-    console.error(err);
-    alert(`Could not restore this backup. ${err.message || "The file may be invalid."}`);
-  } finally {
-    $("#backupFileInput").value="";
-  }
+    console.error(err);alert(`Could not restore this backup. ${err.message || "The file may be invalid."}`);
+  } finally {$("#backupFileInput").value="";}
 }
-async function requestPersistentBrowserStorage() {
-  try {
-    if (navigator.storage?.persist) await navigator.storage.persist();
-  } catch {}
-}
+async function requestPersistentBrowserStorage() {try {if (navigator.storage?.persist) await navigator.storage.persist();} catch {}}
 
-// Event wiring
 $("#authForm").addEventListener("submit",handleAuthSubmit);
 $("#toggleAuthMode").addEventListener("click",()=>{if(authBackendConfigured)return;state.authMode=state.authMode==='login'?'register':'login';updateAuthMode();});
 $("#forgotPasswordBtn")?.addEventListener("click",handleForgotPassword);
@@ -3652,14 +3452,10 @@ $("#summaryMode").addEventListener("change",()=>{const p=collectEditorProject();
 $("#addTopCustomDivisionBtn")?.addEventListener("click",()=>addCustomAdvancedDivision("__start__"));
 $("#addSummaryRowBtn").addEventListener("click",addAdvancedSummaryRow);
 $("#advancedDivisionRows").addEventListener("click",e=>{
-  const add=e.target.closest('.add-summary-subrow');
-  if(add){const group=add.closest('.summary-division-group');if(group)addAdvancedDivisionSubRow(group.dataset.summaryDivision);return;}
-  const insertCustom=e.target.closest('.insert-custom-summary-division');
-  if(insertCustom){addCustomAdvancedDivision(insertCustom.dataset.afterDivision||'__start__');return;}
-  const removeCustom=e.target.closest('.remove-custom-summary-division');
-  if(removeCustom){removeCustom.closest('.summary-custom-division-row')?.remove();updateAdvancedSummaryTotals();scheduleSave();updatePreview();return;}
-  const remove=e.target.closest('.remove-summary-subrow');
-  if(remove){remove.closest('.summary-subrow')?.remove();updateAdvancedSummaryTotals();scheduleSave();updatePreview();}
+  const add=e.target.closest('.add-summary-subrow');if(add){const group=add.closest('.summary-division-group');if(group)addAdvancedDivisionSubRow(group.dataset.summaryDivision);return;}
+  const insertCustom=e.target.closest('.insert-custom-summary-division');if(insertCustom){addCustomAdvancedDivision(insertCustom.dataset.afterDivision||'__start__');return;}
+  const removeCustom=e.target.closest('.remove-custom-summary-division');if(removeCustom){removeCustom.closest('.summary-custom-division-row')?.remove();updateAdvancedSummaryTotals();scheduleSave();updatePreview();return;}
+  const remove=e.target.closest('.remove-summary-subrow');if(remove){remove.closest('.summary-subrow')?.remove();updateAdvancedSummaryTotals();scheduleSave();updatePreview();}
 });
 $("#advancedDivisionRows").addEventListener("change",e=>{if(e.target.matches('.summary-division-visible')){updateAdvancedSummaryTotals();scheduleSave();updatePreview();}});
 $("#advancedExtraRows").addEventListener("click",e=>{const b=e.target.closest('.remove-summary-row');if(!b)return;b.closest('.summary-extra-row')?.remove();updateAdvancedSummaryTotals();scheduleSave();updatePreview();});
@@ -3669,13 +3465,7 @@ const closeoutTab=$("#closeoutTab");
 closeoutTab.addEventListener("input",e=>{if(e.target.matches('.rich-closeout-editor')){scheduleSave();updatePreview();}});
 closeoutTab.addEventListener("paste",e=>{if(!e.target.matches('.rich-closeout-editor'))return;e.preventDefault();const text=e.clipboardData?.getData("text/plain")||"";document.execCommand("insertText",false,text);});
 closeoutTab.addEventListener("mousedown",e=>{const btn=e.target.closest('.scope-format-btn');if(btn)e.preventDefault();});
-closeoutTab.addEventListener("click",e=>{
-  const btn=e.target.closest('.scope-format-btn');if(!btn)return;
-  const card=btn.closest('.text-section-card'),editor=$('.rich-closeout-editor',card);
-  if(!editor||editor.getAttribute('contenteditable')==='false')return;
-  editor.focus();try{document.execCommand("styleWithCSS",false,false);}catch{}
-  document.execCommand(btn.dataset.format,false,null);editor.dispatchEvent(new Event("input",{bubbles:true}));
-});
+closeoutTab.addEventListener("click",e=>{const btn=e.target.closest('.scope-format-btn');if(!btn)return;const card=btn.closest('.text-section-card'),editor=$('.rich-closeout-editor',card);if(!editor||editor.getAttribute('contenteditable')==='false')return;editor.focus();try{document.execCommand("styleWithCSS",false,false);}catch{}document.execCommand(btn.dataset.format,false,null);editor.dispatchEvent(new Event("input",{bubbles:true}));});
 $("#priceItems").addEventListener("click",e=>{const b=e.target.closest('.remove-price-item');if(!b)return;const row=b.closest('.price-item-row');row.remove();const base=$('.base-bid-row');if(base)base.classList.toggle('has-alternates',$$('.price-item-row:not(.base-bid-row)').length>0);$("#emptyPriceItems").classList.toggle("hidden",$$('.price-item-row').length>0);scheduleSave();updatePreview();});
 $("#projectDisclaimerSelect").addEventListener("change",()=>{updateSelectedDisclaimerPreview();scheduleSave();updatePreview();});
 document.addEventListener("input",e=>{
