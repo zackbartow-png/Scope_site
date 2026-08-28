@@ -3189,7 +3189,7 @@ async function exportPdf(options={}) {
       const h=Math.max(1.18,.58+lines.length*bodyLeading+.18);
       drawCardBase(y,h);
       doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText(text);
-      doc.text(`TERMS AND CONDITIONS - ${String(disclaimer.name).toUpperCase()}`,contentX+.42,y+.28,{maxWidth:contentW-.60});
+      doc.text('TERMS AND CONDITIONS',contentX+.42,y+.28,{maxWidth:contentW-.60});
       doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);
       doc.text(lines,contentX+.42,y+.55,{lineHeightFactor:bodyLeading/minPdfFont*72});
       y+=h+cardGap;
