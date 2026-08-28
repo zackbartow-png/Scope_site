@@ -2086,39 +2086,29 @@ function collectAlternateScopes(){
 
 function renderPriceItems(p) {
   const wrap=$("#priceItems"); wrap.innerHTML="";
-  const alternateById=new Map((p.alternateScopes||[]).map(a=>[a.id,a]));
   const hasAlternates=p.priceItems.some(i=>!i.isBaseBid);
   p.priceItems.forEach((item,index)=>{
     const isBase=Boolean(item.isBaseBid);
-    const linkedAlternate=!isBase&&item.alternateScopeId?alternateById.get(item.alternateScopeId):null;
-    const displayName=linkedAlternate?.title||item.name||'';
-    const row=document.createElement("div"); row.className=`price-item-row ${isBase?'base-bid-row':''} ${isBase&&hasAlternates?'has-alternates':''} ${linkedAlternate?'linked-alternate-row':''}`.trim(); row.dataset.priceId=item.id; row.dataset.baseBid=isBase?'true':'false'; row.dataset.alternateScopeId=linkedAlternate?.id||'';
+    const importedAlternate=!isBase&&Boolean(item.alternateScopeId);
+    const row=document.createElement("div"); row.className=`price-item-row ${isBase?'base-bid-row':''} ${isBase&&hasAlternates?'has-alternates':''} ${importedAlternate?'imported-alternate-row':''}`.trim(); row.dataset.priceId=item.id; row.dataset.baseBid=isBase?'true':'false'; row.dataset.alternateScopeId=item.alternateScopeId||'';
     row.innerHTML=isBase
       ? `<input class="price-item-input price-name" value="Base Bid" readonly><input class="price-item-input price-value" value="${esc(item.price||'')}" placeholder="$0.00"><span class="base-bid-lock" title="Base Bid is always included in Proposed Pricing">Base</span>`
-      : `<div class="row-check-preview" title="Printed alternate/add-on selection box"></div><input class="price-item-input price-name" value="${esc(displayName)}" ${linkedAlternate?'readonly title="Linked to Alternate Scope"':'placeholder="Custom alternate / add-on pricing line"'}><input class="price-item-input price-value" value="${esc(item.price||'')}" placeholder="$0.00"><button class="remove-price-item" type="button" title="Remove line">×</button>`;
+      : `<div class="row-check-preview" title="Printed alternate/add-on selection box"></div><input class="price-item-input price-name" value="${esc(item.name||'')}" placeholder="Custom alternate / add-on pricing line"><input class="price-item-input price-value" value="${esc(item.price||'')}" placeholder="$0.00"><button class="remove-price-item" type="button" title="Remove line">×</button>`;
     wrap.appendChild(row);
   });
-  renderPricingAlternatePicker(p);
   $("#emptyPriceItems").classList.add("hidden");
 }
-function renderPricingAlternatePicker(p){
-  const select=$("#existingAlternatePriceSelect"),btn=$("#addExistingAlternatePriceBtn");
-  if(!select||!btn)return;
-  const linkedIds=new Set((p.priceItems||[]).map(i=>i.alternateScopeId).filter(Boolean));
-  const available=(p.alternateScopes||[]).filter(a=>a.enabled!==false&&!linkedIds.has(a.id));
-  select.innerHTML='';
-  const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent=available.length?'Select existing alternate…':'No unused alternates available';select.appendChild(placeholder);
-  available.forEach(a=>{const option=document.createElement('option');option.value=a.id;option.textContent=a.title||'Untitled Alternate';select.appendChild(option);});
-  btn.disabled=!available.length;
-}
-function addExistingAlternatePriceItem(){
+function importAlternatePriceItems(){
   const p=collectEditorProject();if(!p)return;
-  const id=$("#existingAlternatePriceSelect")?.value||'';if(!id)return toast('Select an alternate to add.');
-  const alt=(p.alternateScopes||[]).find(a=>a.id===id);if(!alt)return toast('That alternate could not be found.');
-  if((p.priceItems||[]).some(i=>i.alternateScopeId===id))return toast('That alternate is already in Proposed Pricing.');
-  p.priceItems.push({id:uid(),name:alt.title||'Alternate',description:'',price:'',isBaseBid:false,alternateScopeId:id});
+  const alternates=Array.isArray(p.alternateScopes)?p.alternateScopes:[];
+  if(!alternates.length)return toast('No alternates have been created yet.');
+  const importedIds=new Set((p.priceItems||[]).map(i=>i.alternateScopeId).filter(Boolean));
+  const toImport=alternates.filter(a=>a.id&&!importedIds.has(a.id));
+  if(!toImport.length)return toast('All current alternates are already in Proposed Pricing.');
+  toImport.forEach(alt=>p.priceItems.push({id:uid(),name:alt.title||'Alternate',description:'',price:'',isBaseBid:false,alternateScopeId:alt.id}));
   putProject(p);renderPriceItems(p);updatePreview();
-  const row=$(`.price-item-row[data-alternate-scope-id="${id}"]`);$('.price-value',row)?.focus();
+  const firstNew=$(`.price-item-row[data-alternate-scope-id="${toImport[0].id}"] .price-value`);firstNew?.focus();
+  toast(`${toImport.length} alternate${toImport.length===1?'':'s'} imported to Proposed Pricing.`);
 }
 function addPriceItem() {
   const p=collectEditorProject(); if(!p)return;
@@ -3594,7 +3584,7 @@ $$('[data-kickoff-info]').forEach(el=>{el.addEventListener('input',()=>scheduleK
 $("#backToDashboard").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#sidebarBack").addEventListener("click",()=>{saveEditorProject();enterDashboard();});$("#kickoffBackBtn").addEventListener("click",()=>{saveKickoffInfoFromForm();if(document.querySelector('.kickoff-division-card'))collectKickoffDivisionsFromDom();enterDashboard();});$("#exportPdfBtn").addEventListener("click",exportPdf);$("#deleteProjectBtn").addEventListener("click",handleVersionDeleteRestore);
 $("#divisionSearch").addEventListener("input",filterDivisionNav);$("#expandAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.add('open')));$("#collapseAllBtn").addEventListener("click",()=>$$('.division-card').forEach(c=>c.classList.remove('open')));
 $("#previewToggle").addEventListener("click",()=>togglePreview());$("#closePreviewBtn").addEventListener("click",()=>togglePreview(false));$$('.tab-btn').forEach(b=>b.addEventListener('click',()=>activateTab(b.dataset.tab)));
-$("#projectTitleInline").addEventListener("input",()=>{scheduleSave();updatePreview();});$("#addPriceItemBtn").addEventListener("click",addPriceItem);$("#addExistingAlternatePriceBtn")?.addEventListener("click",addExistingAlternatePriceItem);
+$("#projectTitleInline").addEventListener("input",()=>{scheduleSave();updatePreview();});$("#addPriceItemBtn").addEventListener("click",addPriceItem);$("#importAlternatePricesBtn")?.addEventListener("click",importAlternatePriceItems);
 $("#addAlternateScopeBtn")?.addEventListener("click",addAlternateScope);
 $("#summaryMode").addEventListener("change",()=>{const p=collectEditorProject();if(p)renderSummaryEditor(p);scheduleSave();updatePreview();});
 $("#addTopCustomDivisionBtn")?.addEventListener("click",()=>addCustomAdvancedDivision("__start__"));
@@ -3628,6 +3618,7 @@ $("#priceItems").addEventListener("click",e=>{const b=e.target.closest('.remove-
 $("#projectDisclaimerSelect").addEventListener("change",()=>{updateSelectedDisclaimerPreview();scheduleSave();updatePreview();});
 document.addEventListener("input",e=>{
   if(e.target.matches('[data-field],[data-company],[data-office-setting],[data-map-setting],.price-item-input,#basicSummaryNote,.basic-summary-label,.basic-summary-amount,#basicOverheadLabel,#basicOverheadAmount,.summary-division-amount,.summary-sub-label,.summary-sub-amount,.summary-custom-label,.summary-custom-amount,.summary-extra-label,.summary-extra-amount')){
+    if(e.target.matches('.price-value,.basic-summary-amount,#basicOverheadAmount,.summary-division-amount,.summary-sub-amount,.summary-custom-amount,.summary-extra-amount'))normalizeProposalCurrencyInput(e.target);
     if(e.target.matches('.basic-summary-amount,#basicOverheadAmount'))updateBasicSummaryTotal();
     if(e.target.matches('.summary-division-amount,.summary-sub-amount,.summary-custom-amount,.summary-extra-amount'))updateAdvancedSummaryTotals();
     if(e.target.matches('[data-office-setting],[data-map-setting]'))collectAndSaveOfficeSettings();
