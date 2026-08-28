@@ -2967,9 +2967,13 @@ async function exportPdf(options={}) {
 
   function drawInteriorHeader(pageNum,totalPages){
     drawBackground();
-    // Keep the compact proposal identifier used in prior exports while leaving
-    // Marketing's fixed logo/artwork untouched.
-    doc.setFont('helvetica','bold');doc.setFontSize(12.5);setText(text);doc.text('PROPOSAL',pageW-right,.34,{align:'right'});
+    // Use the Project Info Document Title as the compact PDF identifier.
+    // Keep it on one line and shrink only when a longer title needs the space.
+    const headerTitle=String(p.documentTitle||'Proposal').trim()||'Proposal';
+    doc.setFont('helvetica','bold');
+    let headerTitleSize=12.5;doc.setFontSize(headerTitleSize);
+    while(headerTitleSize>9&&doc.getTextWidth(headerTitle)>2.65){headerTitleSize-=.5;doc.setFontSize(headerTitleSize);}
+    setText(text);doc.text(headerTitle,pageW-right,.34,{align:'right',maxWidth:2.65});
     doc.setFont('helvetica','normal');doc.setFontSize(minPdfFont);setText(text);
     doc.text(`${fmtProjectNo()}${rev?`  •  ${rev}`:''}`,pageW-right,.56,{align:'right'});
     doc.setDrawColor(125,129,132);doc.setLineWidth(.007);doc.line(contentX,.82,pageW-right,.82);
