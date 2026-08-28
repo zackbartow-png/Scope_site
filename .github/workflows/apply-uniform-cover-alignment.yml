@@ -2,8 +2,7 @@ name: Apply uniform cover field alignment
 
 on:
   push:
-    branches:
-      - uniform-cover-field-alignment-2026-08-28
+    branches: [uniform-cover-field-alignment-2026-08-28]
     paths:
       - '.github/workflows/apply-uniform-cover-alignment.yml'
 
@@ -16,92 +15,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: uniform-cover-field-alignment-2026-08-28
           fetch-depth: 0
-
       - name: Align cover value columns
-        shell: python
+        shell: bash
         run: |
+          python - <<'PY'
           from pathlib import Path
-          path = Path('app.js')
-          text = path.read_text(encoding='utf-8')
-
-          old = '''    const standardFields={
-      project:{x1:1.10,x2:3.42,cy:5.88},
-      date:{x1:4.02,x2:5.82,cy:5.88},
-      client:{x1:1.10,x2:3.42,cy:7.03},
-      prepared:{x1:4.02,x2:5.82,cy:7.03},
-      attn:{x1:1.10,x2:3.42,cy:8.17},
-      revision:{x1:4.02,x2:5.82,cy:8.17},
-      // Keep the office address close to Marketing's address icon/label instead
-      // of centering it across the full-width address rule.
-      address:{x1:1.02,x2:3.58,cy:9.18},
-      phone:{x1:1.10,x2:3.42,cy:10.12},
-      website:{x1:4.02,x2:5.82,cy:10.12}
-    };
-    const divisionFields={
-      project:{x1:.96,x2:3.35,cy:5.48},
-      date:{x1:3.84,x2:5.72,cy:5.48},
-      client:{x1:.96,x2:3.35,cy:6.67},
-      prepared:{x1:3.84,x2:5.72,cy:6.67},
-      attn:{x1:.96,x2:3.35,cy:7.95},
-      revision:{x1:3.84,x2:5.72,cy:7.95},
-      address:{x1:.92,x2:3.55,cy:8.99},
-      phone:{x1:.96,x2:3.35,cy:9.79},
-      website:{x1:3.84,x2:5.72,cy:9.79}
-    };'''
-
-          new = '''    // Keep each cover's live values on a uniform two-column grid. Marketing's
-    // left-column inset is the visual standard; right-column values use the same
-    // label-to-value offset, and every value in a column shares one left edge.
-    const standardLeftX=1.10,standardRightX=4.10;
-    const standardFields={
-      project:{x1:standardLeftX,x2:3.42,cy:5.88},
-      date:{x1:standardRightX,x2:5.82,cy:5.88},
-      client:{x1:standardLeftX,x2:3.42,cy:7.03},
-      prepared:{x1:standardRightX,x2:5.82,cy:7.03},
-      attn:{x1:standardLeftX,x2:3.42,cy:8.17},
-      revision:{x1:standardRightX,x2:5.82,cy:8.17},
-      address:{x1:standardLeftX,x2:3.58,cy:9.18},
-      phone:{x1:standardLeftX,x2:3.42,cy:10.12},
-      website:{x1:standardRightX,x2:5.82,cy:10.12}
-    };
-    const divisionLeftX=.96,divisionRightX=3.92;
-    const divisionFields={
-      project:{x1:divisionLeftX,x2:3.35,cy:5.48},
-      date:{x1:divisionRightX,x2:5.72,cy:5.48},
-      client:{x1:divisionLeftX,x2:3.35,cy:6.67},
-      prepared:{x1:divisionRightX,x2:5.72,cy:6.67},
-      attn:{x1:divisionLeftX,x2:3.35,cy:7.95},
-      revision:{x1:divisionRightX,x2:5.72,cy:7.95},
-      address:{x1:divisionLeftX,x2:3.55,cy:8.99},
-      phone:{x1:divisionLeftX,x2:3.35,cy:9.79},
-      website:{x1:divisionRightX,x2:5.72,cy:9.79}
-    };'''
-
-          if text.count(old) != 1:
-              raise SystemExit(f'Expected one cover field block, found {text.count(old)}')
-          text = text.replace(old, new)
-          path.write_text(text, encoding='utf-8')
-
+          p=Path('app.js')
+          s=p.read_text(encoding='utf-8')
+          replacements={
+            'date:{x1:4.02,x2:5.82,cy:5.88}':'date:{x1:4.10,x2:5.82,cy:5.88}',
+            'prepared:{x1:4.02,x2:5.82,cy:7.03}':'prepared:{x1:4.10,x2:5.82,cy:7.03}',
+            'revision:{x1:4.02,x2:5.82,cy:8.17}':'revision:{x1:4.10,x2:5.82,cy:8.17}',
+            'address:{x1:1.02,x2:3.58,cy:9.18}':'address:{x1:1.10,x2:3.58,cy:9.18}',
+            'website:{x1:4.02,x2:5.82,cy:10.12}':'website:{x1:4.10,x2:5.82,cy:10.12}',
+            'date:{x1:3.84,x2:5.72,cy:5.48}':'date:{x1:3.92,x2:5.72,cy:5.48}',
+            'prepared:{x1:3.84,x2:5.72,cy:6.67}':'prepared:{x1:3.92,x2:5.72,cy:6.67}',
+            'revision:{x1:3.84,x2:5.72,cy:7.95}':'revision:{x1:3.92,x2:5.72,cy:7.95}',
+            'address:{x1:.92,x2:3.55,cy:8.99}':'address:{x1:.96,x2:3.55,cy:8.99}',
+            'website:{x1:3.84,x2:5.72,cy:9.79}':'website:{x1:3.92,x2:5.72,cy:9.79}',
+          }
+          for old,new in replacements.items():
+            if s.count(old)!=1: raise SystemExit(f'cover marker count for {old} = {s.count(old)}')
+            s=s.replace(old,new)
+          old_comment="""      // Keep the office address close to Marketing's address icon/label instead\n      // of centering it across the full-width address rule.\n"""
+          new_comment="""      // Align the address value with the same left edge used by the other left-column fields.\n"""
+          if s.count(old_comment)!=1: raise SystemExit(f'address comment marker count={s.count(old_comment)}')
+          s=s.replace(old_comment,new_comment)
+          p.write_text(s,encoding='utf-8')
+          PY
       - name: Validate JavaScript
         run: node --check app.js
-
       - name: Validate alignment rules
-        shell: python
+        shell: bash
         run: |
-          from pathlib import Path
-          text = Path('app.js').read_text(encoding='utf-8')
-          checks = [
-              'const standardLeftX=1.10,standardRightX=4.10;',
-              'address:{x1:standardLeftX,x2:3.58,cy:9.18}',
-              'const divisionLeftX=.96,divisionRightX=3.92;',
-              'address:{x1:divisionLeftX,x2:3.55,cy:8.99}',
-          ]
-          for check in checks:
-              if check not in text:
-                  raise SystemExit(f'Missing expected alignment rule: {check}')
-
+          grep -q "date:{x1:4.10,x2:5.82,cy:5.88}" app.js
+          grep -q "address:{x1:1.10,x2:3.58,cy:9.18}" app.js
+          grep -q "date:{x1:3.92,x2:5.72,cy:5.48}" app.js
+          grep -q "address:{x1:.96,x2:3.55,cy:8.99}" app.js
       - name: Remove temporary workflow and commit
         run: |
           rm .github/workflows/apply-uniform-cover-alignment.yml
