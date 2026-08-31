@@ -1,4 +1,16 @@
 (() => {
+  // Load currency auto-formatting for proposal and kickoff monetary fields.
+  if (!document.querySelector('script[data-currency-autoformat]')) {
+    const script = document.createElement('script');
+    script.src = 'currency-autoformat.js?v=20260831-1';
+    script.async = false;
+    script.dataset.currencyAutoformat = 'true';
+    script.onerror = () => console.error('Currency auto-formatting failed to load.');
+    document.head.appendChild(script);
+  }
+})();
+
+(() => {
   // Load nested quote page controls after the core kickoff functions.
   if (!document.querySelector('script[data-kickoff-quote-pages]')) {
     const script = document.createElement('script');
