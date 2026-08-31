@@ -90,8 +90,6 @@
 
     const requested = Math.max(0, Number(delay) || 0);
     const elapsed = Date.now() - (state.kickoffPreviewLastEditAt || 0);
-    // During typing, preserve one stable deadline about 1.2 seconds after the
-    // last edit instead of allowing delayed save callbacks to keep pushing it out.
     const wait = state.kickoffPreviewLastEditAt && elapsed < state.kickoffPreviewIdleMs
       ? Math.max(40, state.kickoffPreviewIdleMs - elapsed)
       : requested;
@@ -145,8 +143,6 @@
         return;
       }
 
-      // Proposal preview uses 1x DPR and lazy pages. Use the same lightweight
-      // settings here so large kickoff books and quote PDFs remain responsive.
       if (liveWrap && liveScroll) {
         await mountLazyPdfPreview(pdf, liveWrap, liveScroll, { token, isCurrent, maxWidth: 400, dprCap: 1 });
         if (isCurrent() && liveStatus) liveStatus.classList.add('hidden');
@@ -176,8 +172,6 @@
     }
   }
 
-  // Track edits exactly like the Proposal preview does, cancelling stale preview
-  // work while the user is actively typing.
   document.addEventListener('input', event => {
     if (!event.target?.closest?.('#kickoffView')) return;
     state.kickoffPreviewLastEditAt = Date.now();
@@ -198,7 +192,7 @@
   // Load the additional Kickoff-only Project Information fields.
   if (!document.querySelector('script[data-kickoff-project-info-fields]')) {
     const script = document.createElement('script');
-    script.src = 'kickoff-project-info-fields.js?v=20260831-2';
+    script.src = 'kickoff-project-info-fields.js?v=20260831-3';
     script.async = false;
     script.dataset.kickoffProjectInfoFields = 'true';
     script.onerror = () => console.error('Kickoff project information fields failed to load.');
