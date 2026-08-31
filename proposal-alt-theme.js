@@ -1,4 +1,16 @@
 (() => {
+  // Load nested quote page controls after the core kickoff functions.
+  if (!document.querySelector('script[data-kickoff-quote-pages]')) {
+    const script = document.createElement('script');
+    script.src = 'kickoff-quote-pages.js?v=20260831-1';
+    script.async = false;
+    script.dataset.kickoffQuotePages = 'true';
+    script.onerror = () => console.error('Kickoff quote page controls failed to load.');
+    document.head.appendChild(script);
+  }
+})();
+
+(() => {
   // Load the archive/import stability patch after the core app. The script only
   // overrides cloud merge + archive/import functions and leaves proposal data intact.
   if (!document.querySelector('script[data-archive-sync-fix]')) {
