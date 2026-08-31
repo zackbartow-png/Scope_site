@@ -11,7 +11,7 @@
   if (targetGpLabel && !document.querySelector('[data-kickoff-info="contingencyPercent"]')) {
     const contingencyLabel = document.createElement('label');
     contingencyLabel.className = 'kickoff-contingency-field';
-    contingencyLabel.innerHTML = 'Contingency %<input data-kickoff-info="contingencyPercent" inputmode="numeric" maxlength="2" placeholder="0" aria-label="Contingency percent" />';
+    contingencyLabel.innerHTML = 'Contingency %<input data-kickoff-info="contingencyPercent" inputmode="decimal" maxlength="5" placeholder="0" aria-label="Contingency percent" />';
     targetGpLabel.insertAdjacentElement('afterend', contingencyLabel);
 
     const permitLabel = document.createElement('label');
@@ -30,14 +30,27 @@
   const contingencyInput = document.querySelector('[data-kickoff-info="contingencyPercent"]');
   const permittingInput = document.querySelector('[data-kickoff-info="permittingInspectionsTesting"]');
 
+  function sanitizeContingencyPercent(value) {
+    let raw = String(value ?? '').replace(/[^0-9.]/g, '');
+    if (!raw) return '';
+    const dot = raw.indexOf('.');
+    if (dot < 0) return raw.slice(0, 2);
+    let whole = raw.slice(0, dot).slice(0, 2);
+    const decimals = raw.slice(dot + 1).replace(/\./g, '').slice(0, 2);
+    if (!whole) whole = '0';
+    return `${whole}.${decimals}`;
+  }
+
   if (contingencyInput && contingencyInput.dataset.kickoffExtraWired !== 'true') {
     contingencyInput.dataset.kickoffExtraWired = 'true';
     contingencyInput.addEventListener('input', () => {
-      const cleaned = String(contingencyInput.value || '').replace(/\D/g, '').slice(0, 2);
+      const cleaned = sanitizeContingencyPercent(contingencyInput.value);
       if (contingencyInput.value !== cleaned) contingencyInput.value = cleaned;
       if (typeof scheduleKickoffSave === 'function') scheduleKickoffSave();
     });
     contingencyInput.addEventListener('change', () => {
+      const cleaned = sanitizeContingencyPercent(contingencyInput.value).replace(/\.$/, '');
+      if (contingencyInput.value !== cleaned) contingencyInput.value = cleaned;
       if (typeof saveKickoffInfoFromForm === 'function') saveKickoffInfoFromForm();
       if (typeof scheduleKickoffPdfPreview === 'function') scheduleKickoffPdfPreview(120);
     });
@@ -59,7 +72,7 @@
     const info = typeof getCurrentKickoffProject === 'function'
       ? (getCurrentKickoffProject()?.kickoff?.projectInfo || {})
       : {};
-    if (contingencyInput) contingencyInput.value = String(info.contingencyPercent || '').replace(/\D/g, '').slice(0, 2);
+    if (contingencyInput) contingencyInput.value = sanitizeContingencyPercent(info.contingencyPercent).replace(/\.$/, '');
     if (permittingInput) permittingInput.value = info.permittingInspectionsTesting || '';
   } catch {}
 
@@ -77,7 +90,7 @@
   };
 
   const oldSummaryRow = "[['Target GP',info.targetGP],['Preliminary Schedule',`${info.startDate?fmtDate(info.startDate):'—'} – ${info.endDate?fmtDate(info.endDate):'—'}`]]";
-  const newSummaryRows = "[['Target GP',info.targetGP],['Contingency %',String(info.contingencyPercent||'').trim()?String(info.contingencyPercent||'').replace(/\\D/g,'').slice(0,2)+'%':'']],[['Start Date',info.startDate?fmtDate(info.startDate):'—'],['End Date',info.endDate?fmtDate(info.endDate):'—']]";
+  const newSummaryRows = "[['Target GP',info.targetGP],['Contingency %',String(info.contingencyPercent||'').trim()?sanitizeContingencyPercent(info.contingencyPercent).replace(/\\.$/,'')+'%':'']],[['Start Date',info.startDate?fmtDate(info.startDate):'—'],['End Date',info.endDate?fmtDate(info.endDate):'—']]";
   replaceOnce(oldSummaryRow, newSummaryRows, 'target GP / schedule row');
 
   replaceOnce(
