@@ -1,4 +1,16 @@
 (() => {
+  // Match Kickoff PDF preview controls and rendering speed to Proposal.
+  if (!document.querySelector('script[data-kickoff-preview-controls]')) {
+    const script = document.createElement('script');
+    script.src = 'kickoff-preview-controls.js?v=20260831-1';
+    script.async = false;
+    script.dataset.kickoffPreviewControls = 'true';
+    script.onerror = () => console.error('Kickoff preview controls failed to load.');
+    document.head.appendChild(script);
+  }
+})();
+
+(() => {
   // Load currency auto-formatting for proposal and kickoff monetary fields.
   if (!document.querySelector('script[data-currency-autoformat]')) {
     const script = document.createElement('script');
