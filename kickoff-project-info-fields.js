@@ -76,16 +76,13 @@
     replacements += 1;
   };
 
-  replaceOnce(
-`  y=drawTwoColumnRows(y,[[['Owner / Client',info.owner||p.clientName],['Contract Type',info.contractType]],[['Tax Status',info.taxStatus],['Contract Value',info.contractValue]],[['Target GP',info.targetGP],['Preliminary Schedule',\`${info.startDate?fmtDate(info.startDate):'—'} – ${info.endDate?fmtDate(info.endDate):'—'}\`]]]);`,
-`  y=drawTwoColumnRows(y,[[['Owner / Client',info.owner||p.clientName],['Contract Type',info.contractType]],[['Tax Status',info.taxStatus],['Contract Value',info.contractValue]],[['Target GP',info.targetGP],['Contingency %',String(info.contingencyPercent||'').trim()?\`${String(info.contingencyPercent||'').replace(/\\D/g,'').slice(0,2)}%\`:'']],[['Start Date',info.startDate?fmtDate(info.startDate):'—'],['End Date',info.endDate?fmtDate(info.endDate):'—']]]);`,
-    'project information summary rows'
-  );
+  const oldSummaryRow = "[['Target GP',info.targetGP],['Preliminary Schedule',`${info.startDate?fmtDate(info.startDate):'—'} – ${info.endDate?fmtDate(info.endDate):'—'}`]]";
+  const newSummaryRows = "[['Target GP',info.targetGP],['Contingency %',String(info.contingencyPercent||'').trim()?String(info.contingencyPercent||'').replace(/\\D/g,'').slice(0,2)+'%':'']],[['Start Date',info.startDate?fmtDate(info.startDate):'—'],['End Date',info.endDate?fmtDate(info.endDate):'—']]";
+  replaceOnce(oldSummaryRow, newSummaryRows, 'target GP / schedule row');
 
   replaceOnce(
-`  y=drawSection(y,'Owner Contacts',info.ownerContacts||'');`,
-`  if(String(info.permittingInspectionsTesting||'').trim())y=drawSection(y,'Permitting, Inspections & Testing',info.permittingInspectionsTesting||'');
-  y=drawSection(y,'Owner Contacts',info.ownerContacts||'');`,
+    "  y=drawSection(y,'Owner Contacts',info.ownerContacts||'');",
+    "  if(String(info.permittingInspectionsTesting||'').trim())y=drawSection(y,'Permitting, Inspections & Testing',info.permittingInspectionsTesting||'');\n  y=drawSection(y,'Owner Contacts',info.ownerContacts||'');",
     'permitting section placement'
   );
 
