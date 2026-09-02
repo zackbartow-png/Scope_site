@@ -199,3 +199,15 @@
     document.head.appendChild(script);
   }
 })();
+
+(() => {
+  // Compact the Kickoff financial summary after the Project Information fields load.
+  if (!document.querySelector('script[data-kickoff-financial-pdf-layout]')) {
+    const script = document.createElement('script');
+    script.src = 'kickoff-financial-pdf-layout.js?v=20260902-1';
+    script.async = false;
+    script.dataset.kickoffFinancialPdfLayout = 'true';
+    script.onerror = () => console.error('Kickoff financial PDF layout failed to load.');
+    document.head.appendChild(script);
+  }
+})();
