@@ -1,25 +1,27 @@
 (() => {
   // Kickoff-only cleanup: remove the redundant Contract Value field from the screen,
   // keep the Project Financials heading, and compact the kickoff PDF financial layout.
-  const removeContractValueField = () => {
-    const input = document.querySelector('[data-kickoff-info="contractValue"]');
-    const label = input?.closest('label');
-    if (label) label.remove();
-  };
-
-  const retitleFinancialBlock = () => {
-    const title = document.querySelector('.kickoff-financial-title');
-    if (title) title.textContent = 'Project Financials';
-  };
+  let uiObserver = null;
 
   const syncKickoffFinancialUi = () => {
-    removeContractValueField();
-    retitleFinancialBlock();
+    const contractInput = document.querySelector('[data-kickoff-info="contractValue"]');
+    const contractLabel = contractInput?.closest('label');
+    if (contractLabel) contractLabel.remove();
+
+    const title = document.querySelector('.kickoff-financial-title');
+    if (title && title.textContent !== 'Project Financials') title.textContent = 'Project Financials';
+
+    if (!document.querySelector('[data-kickoff-info="contractValue"]') && title && uiObserver) {
+      uiObserver.disconnect();
+      uiObserver = null;
+    }
   };
 
   syncKickoffFinancialUi();
-  const uiObserver = new MutationObserver(syncKickoffFinancialUi);
-  uiObserver.observe(document.documentElement, { childList: true, subtree: true });
+  if (!document.querySelector('.kickoff-financial-title')) {
+    uiObserver = new MutationObserver(syncKickoffFinancialUi);
+    uiObserver.observe(document.documentElement, { childList: true, subtree: true });
+  }
 
   function sanitizeContingencyPercent(value) {
     let raw = String(value ?? '').replace(/[^0-9.]/g, '');
@@ -58,7 +60,7 @@
       return;
     }
 
-    const threeColumnHelper = `  /* kickoff-financial-pdf-one-line */\n  function drawThreeColumnKickoffRow(y,row,title=''){\n    const gap=.10;\n    const cellW=(contentW-gap*2)/3;\n    const prepared=row.map(item=>{\n      const value=String(item?.[1]||'—');\n      doc.setFont('helvetica','normal');doc.setFontSize(12);\n      return {item,lines:doc.splitTextToSize(value,cellW-.26)};\n    });\n    const h=Math.max(.68,.34+Math.max(...prepared.map(entry=>entry.lines.length))* .20);\n    const titleH=title?.30:0;\n    y=ensureSpace(y,h+titleH+.12);\n    if(title){\n      doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);\n      doc.text(String(title).toUpperCase(),contentX,y+.20);\n      y+=titleH;\n    }\n    prepared.forEach((entry,idx)=>{\n      const x=contentX+idx*(cellW+gap);\n      doc.setFillColor(...light);doc.setDrawColor(...border);doc.roundedRect(x,y,cellW,h,.08,.08,'FD');\n      doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);doc.text(String(entry.item?.[0]||'').toUpperCase(),x+.14,y+.23);\n      doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...text);doc.text(entry.lines,x+.14,y+.46,{lineHeightFactor:1.16});\n    });\n    return y+h+.11;\n  }\n`;
+    const threeColumnHelper = `  /* kickoff-financial-pdf-one-line */\n  function drawThreeColumnKickoffRow(y,row,title=''){\n    const gap=.10;\n    const cellW=(contentW-gap*2)/3;\n    const prepared=row.map(item=>{\n      const value=String(item?.[1]||'—');\n      doc.setFont('helvetica','normal');doc.setFontSize(12);\n      return {item,lines:doc.splitTextToSize(value,cellW-.26)};\n    });\n    const h=Math.max(.68,.34+Math.max(...prepared.map(entry=>entry.lines.length))*.20);\n    const titleH=title ? .30 : 0;\n    y=ensureSpace(y,h+titleH+.12);\n    if(title){\n      doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);\n      doc.text(String(title).toUpperCase(),contentX,y+.20);\n      y+=titleH;\n    }\n    prepared.forEach((entry,idx)=>{\n      const x=contentX+idx*(cellW+gap);\n      doc.setFillColor(...light);doc.setDrawColor(...border);doc.roundedRect(x,y,cellW,h,.08,.08,'FD');\n      doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);doc.text(String(entry.item?.[0]||'').toUpperCase(),x+.14,y+.23);\n      doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...text);doc.text(entry.lines,x+.14,y+.46,{lineHeightFactor:1.16});\n    });\n    return y+h+.11;\n  }\n`;
 
     source = source.slice(0, anchorIndex) + threeColumnHelper + source.slice(anchorIndex);
 
