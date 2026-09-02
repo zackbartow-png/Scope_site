@@ -45,7 +45,7 @@
     }
 
     let source = buildKickoffPdf.toString();
-    if (source.includes('kickoff-financial-pdf-one-line')) return;
+    if (source.includes('kickoff-financial-pdf-nested-window')) return;
 
     // Wait until the existing Project Financials patch has added Revenue / Project Cost / Gross Profit.
     if (!source.includes("['Revenue'") || !source.includes("['Project Cost'") || !source.includes("['Gross Profit'")) {
@@ -60,9 +60,9 @@
       return;
     }
 
-    const threeColumnHelper = `  /* kickoff-financial-pdf-one-line */\n  function drawThreeColumnKickoffRow(y,row,title=''){\n    const gap=.10;\n    const cellW=(contentW-gap*2)/3;\n    const prepared=row.map(item=>{\n      const value=String(item?.[1]||'—');\n      doc.setFont('helvetica','normal');doc.setFontSize(12);\n      return {item,lines:doc.splitTextToSize(value,cellW-.26)};\n    });\n    const h=Math.max(.68,.34+Math.max(...prepared.map(entry=>entry.lines.length))*.20);\n    const titleH=title ? .30 : 0;\n    y=ensureSpace(y,h+titleH+.12);\n    if(title){\n      doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);\n      doc.text(String(title).toUpperCase(),contentX,y+.20);\n      y+=titleH;\n    }\n    prepared.forEach((entry,idx)=>{\n      const x=contentX+idx*(cellW+gap);\n      doc.setFillColor(...light);doc.setDrawColor(...border);doc.roundedRect(x,y,cellW,h,.08,.08,'FD');\n      doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);doc.text(String(entry.item?.[0]||'').toUpperCase(),x+.14,y+.23);\n      doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...text);doc.text(entry.lines,x+.14,y+.46,{lineHeightFactor:1.16});\n    });\n    return y+h+.11;\n  }\n`;
+    const financialBoxHelper = `  /* kickoff-financial-pdf-nested-window */\n  function drawProjectFinancialsBox(y,row){\n    const outerPad=.14;\n    const titleH=.28;\n    const gap=.10;\n    const innerW=(contentW-outerPad*2-gap*2)/3;\n    const innerH=.62;\n    const outerH=outerPad+titleH+innerH+outerPad;\n    y=ensureSpace(y,outerH+.12);\n\n    // Keep the outer window white so it matches the other kickoff PDF windows.\n    doc.setFillColor(255,255,255);doc.setDrawColor(...border);doc.setLineWidth(.008);\n    doc.roundedRect(contentX,y,contentW,outerH,.08,.08,'FD');\n    doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...orange);\n    doc.text('PROJECT FINANCIALS',contentX+outerPad,y+.23);\n\n    row.forEach((item,idx)=>{\n      const x=contentX+outerPad+idx*(innerW+gap);\n      const innerY=y+outerPad+titleH;\n      const value=String(item?.[1]||'—');\n      doc.setFillColor(255,255,255);doc.setDrawColor(...border);doc.setLineWidth(.008);\n      doc.roundedRect(x,innerY,innerW,innerH,.07,.07,'FD');\n      doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...text);\n      doc.text(String(item?.[0]||'').toUpperCase(),x+.12,innerY+.20);\n      doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(...text);\n      const lines=doc.splitTextToSize(value,innerW-.24);\n      doc.text(lines,x+.12,innerY+.44,{lineHeightFactor:1.12});\n    });\n    return y+outerH+.11;\n  }\n`;
 
-    source = source.slice(0, anchorIndex) + threeColumnHelper + source.slice(anchorIndex);
+    source = source.slice(0, anchorIndex) + financialBoxHelper + source.slice(anchorIndex);
 
     const summaryPattern = /  y=drawTwoColumnRows\(y,\[\[\['Owner \/ Client',info\.owner\|\|p\.clientName\],[\s\S]*?\]\]\);\n/;
     if (!summaryPattern.test(source)) {
@@ -74,7 +74,7 @@
     const grossProfitValue = "String(info.projectCost||'').trim()?formatMoneyNumber(moneyNumber(info.revenue||info.contractValue||'')-moneyNumber(info.projectCost||'')):(info.grossProfit||'')";
     const summaryReplacement =
       "  y=drawTwoColumnRows(y,[[['Owner / Client',info.owner||p.clientName],['Contract Type',info.contractType]],[['Tax Status',info.taxStatus],['Contingency %'," + contingencyValue + "]]]);\n" +
-      "  y=drawThreeColumnKickoffRow(y,[['Revenue',info.revenue||info.contractValue||''],['Project Cost',info.projectCost||''],['Gross Profit'," + grossProfitValue + "]],'Project Financials');\n" +
+      "  y=drawProjectFinancialsBox(y,[['Revenue',info.revenue||info.contractValue||''],['Project Cost',info.projectCost||''],['Gross Profit'," + grossProfitValue + "]]);\n" +
       "  y=drawTwoColumnRows(y,[[['Start Date',info.startDate?fmtDate(info.startDate):'—'],['End Date',info.endDate?fmtDate(info.endDate):'—']]]);\n";
 
     source = source.replace(summaryPattern, summaryReplacement);
