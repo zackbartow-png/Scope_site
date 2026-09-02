@@ -207,3 +207,46 @@
     console.error('Alternate proposal theme patch failed.', error);
   }
 })();
+
+(() => {
+  // Advanced Budget Summary PDF: only show the direct-cost total when the
+  // Additional Costs / Section Subtotals area is actually being used.
+  if (typeof exportPdf !== 'function') {
+    console.warn('Advanced summary PDF cleanup skipped: exportPdf is unavailable.');
+    return;
+  }
+
+  const currentExportPdf = exportPdf;
+  let source = currentExportPdf.toString();
+  const directTotalRow = `    rows.push({kind:'direct-total',label:'DIRECT COST TOTAL',amount:formatMoneyNumber(directTotal)});`;
+  const conditionalDirectTotal = `    const usesAdditionalCostSection=(p.summary?.extraRows||[]).some(r=>r.type==='subtotal'||String(r.label||'').trim()||String(r.amount||'').trim());\n    if(usesAdditionalCostSection)rows.push({kind:'direct-total',label:'DIRECT COST TOTAL',amount:formatMoneyNumber(directTotal)});`;
+
+  if (!source.includes(directTotalRow)) {
+    console.warn('Advanced summary PDF cleanup could not find the direct-cost total row.');
+    return;
+  }
+
+  source = source.replace(directTotalRow, conditionalDirectTotal);
+
+  try {
+    const patchedExportPdf = eval(`(${source})`);
+    exportPdf = patchedExportPdf;
+    window.exportPdf = patchedExportPdf;
+
+    // Replace the existing export button once so its direct click listener points
+    // at the final patched exporter rather than the prior Proposal theme function.
+    const oldButton = document.getElementById('exportPdfBtn');
+    if (oldButton && oldButton.dataset.advancedSummaryPdfPatched !== 'true') {
+      const newButton = oldButton.cloneNode(true);
+      newButton.dataset.advancedSummaryPdfPatched = 'true';
+      oldButton.replaceWith(newButton);
+      newButton.addEventListener('click', patchedExportPdf);
+    }
+
+    if (typeof schedulePdfPreview === 'function' && state?.currentProjectId) {
+      schedulePdfPreview(40);
+    }
+  } catch (error) {
+    console.error('Advanced summary PDF cleanup failed.', error);
+  }
+})();
