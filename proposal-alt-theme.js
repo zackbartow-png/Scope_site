@@ -1,4 +1,58 @@
 (() => {
+  // Use the short Koehn label for Division 23 on the Proposal side.
+  // Existing projects are only changed when they still use the untouched standard CSI label.
+  const legacyHvacTitle = 'Heating, Ventilating, and Air Conditioning (HVAC)';
+  const legacyHvacSummaryLabel = `23 - ${legacyHvacTitle}`;
+
+  try {
+    if (typeof CSI_DIVISIONS !== 'undefined') {
+      const hvac = CSI_DIVISIONS.find(([number]) => number === '23');
+      if (hvac) hvac[1] = 'HVAC';
+    }
+  } catch (error) {
+    console.warn('Could not shorten the Division 23 Proposal label.', error);
+  }
+
+  const normalizeProposalHvacLabel = project => {
+    if (!project) return project;
+    const division = project.divisions?.['23'];
+    if (division && (!String(division.title || '').trim() || String(division.title || '').trim() === legacyHvacTitle)) {
+      division.title = 'HVAC';
+    }
+    const basic = project.summary?.basicDivisions?.['23'];
+    if (basic && (!String(basic.label || '').trim() || String(basic.label || '').trim() === legacyHvacSummaryLabel)) {
+      basic.label = '23 - HVAC';
+    }
+    return project;
+  };
+
+  if (typeof normalizeProject === 'function' && !normalizeProject.__proposalHvacShortLabelWrapped) {
+    const originalNormalizeProject = normalizeProject;
+    const wrappedNormalizeProject = function(project, ownerUsername = '') {
+      return normalizeProposalHvacLabel(originalNormalizeProject.apply(this, arguments));
+    };
+    wrappedNormalizeProject.__proposalHvacShortLabelWrapped = true;
+    normalizeProject = wrappedNormalizeProject;
+    window.normalizeProject = wrappedNormalizeProject;
+  }
+
+  // The Kickoff financial block is inserted by a later-loaded patch, so update its heading
+  // when it appears without changing any of the financial field behavior.
+  const retitleKickoffFinancials = () => {
+    const title = document.querySelector('.kickoff-financial-title');
+    if (!title) return false;
+    title.textContent = 'Project Financials';
+    return true;
+  };
+  if (!retitleKickoffFinancials()) {
+    const observer = new MutationObserver(() => {
+      if (retitleKickoffFinancials()) observer.disconnect();
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  }
+})();
+
+(() => {
   // Match Kickoff PDF preview controls and rendering speed to Proposal.
   if (!document.querySelector('script[data-kickoff-preview-controls]')) {
     const script = document.createElement('script');
