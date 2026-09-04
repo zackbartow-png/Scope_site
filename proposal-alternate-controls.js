@@ -240,7 +240,7 @@
 `      const firstAlternateItems=scopeItemsFromRichHtml(enabledAlternates[0].richText,enabledAlternates[0].text);
       const firstAlternateTitle=String(enabledAlternates[0].title||'Alternate 01').trim().toUpperCase();
       doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);
-      const firstAlternateTitleLines=doc.splitTextToSize(`${firstAlternateTitle} (CONT.)`,contentW-.68);
+      const firstAlternateTitleLines=doc.splitTextToSize(firstAlternateTitle+' (CONT.)',contentW-.68);
       const firstAlternateTitleGap=.12+Math.max(0,firstAlternateTitleLines.length-1)*.19;
       const firstAlternateMinH=cardHeight(firstAlternateItems.slice(0,1),{fontSize:minPdfFont,leading:bodyLeading,titleGap:firstAlternateTitleGap});`,
       'first alternate wrapped title height'
@@ -249,7 +249,7 @@
     replaceOnce(
 `        addSplittable({type:'alternate',title},scopeItemsFromRichHtml(a.richText,a.text),{fontSize:minPdfFont,leading:bodyLeading,titleGap:.12});`,
 `        doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);
-        const titleWrapLines=doc.splitTextToSize(`${title} (CONT.)`,contentW-.68);
+        const titleWrapLines=doc.splitTextToSize(title+' (CONT.)',contentW-.68);
         const titleWrapGap=.12+Math.max(0,titleWrapLines.length-1)*.19;
         addSplittable({type:'alternate',title,titleWrapGap},scopeItemsFromRichHtml(a.richText,a.text),{fontSize:minPdfFont,leading:bodyLeading,titleGap:titleWrapGap});`,
       'alternate layout wrapped title height'
@@ -280,15 +280,16 @@
 `    const isAlternate=entry.type==='alternate';
     const titleGap=isAlternate?.12:0;`,
 `    const isAlternate=entry.type==='alternate';
-    const titleText=`${entry.title}${entry.cont?' (CONT.)':''}`;
+    const titleText=String(entry.title||'')+(entry.cont?' (CONT.)':'');
     doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);
     const titleLines=isAlternate?doc.splitTextToSize(titleText,contentW-.68):[titleText];
     const titleGap=isAlternate?(Number(entry.titleWrapGap)||(.12+Math.max(0,titleLines.length-1)*.19)):0;`,
       'alternate card title spacing'
     );
 
+    const alternateTitleDrawLine = "    doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText(text);doc.text(`${entry.title}${entry.cont?' (CONT.)':''}`,contentX+.42,y+.28);";
     replaceOnce(
-`    doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText(text);doc.text(`${entry.title}${entry.cont?' (CONT.)':''}`,contentX+.42,y+.28);`,
+      alternateTitleDrawLine,
 `    doc.setFont('helvetica','bold');doc.setFontSize(minPdfFont);setText(text);doc.text(titleLines,contentX+.42,y+.28,{lineHeightFactor:.19/minPdfFont*72});`,
       'alternate card wrapped title renderer'
     );
