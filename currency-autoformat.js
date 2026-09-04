@@ -97,7 +97,7 @@
   // and optional Base Bid display for unit-price proposals.
   if (!document.querySelector('script[data-proposal-alternate-controls]')) {
     const script = document.createElement('script');
-    script.src = 'proposal-alternate-controls.js?v=20260904-1';
+    script.src = 'proposal-alternate-controls.js?v=20260904-2';
     script.async = false;
     script.dataset.proposalAlternateControls = 'true';
     script.onerror = () => console.error('Proposal alternate controls failed to load.');
